@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4116401A2F78EE8E007D270C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 411640182F78EE8E007D270C /* FirebaseAuth */; };
+		4116401B2F78EE8E007D270C /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 411640192F78EE8E007D270C /* FirebaseCore */; };
+		4116401F2F78EE8E007D270C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 4116401D2F78EE8E007D270C /* GoogleSignIn */; };
+		411640202F78EE8E007D270C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 411640212F78EE8E007D270C /* FirebaseFirestore */; };
+		411640222F78EE8E007D270C /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 411640232F78EE8E007D270C /* FirebaseStorage */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		411640082F78EE8E007D270C /* Investtrust.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Investtrust.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +31,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4116401A2F78EE8E007D270C /* FirebaseAuth in Frameworks */,
+				4116401B2F78EE8E007D270C /* FirebaseCore in Frameworks */,
+				411640202F78EE8E007D270C /* FirebaseFirestore in Frameworks */,
+				411640222F78EE8E007D270C /* FirebaseStorage in Frameworks */,
+				4116401F2F78EE8E007D270C /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +78,11 @@
 			);
 			name = Investtrust;
 			packageProductDependencies = (
+				411640182F78EE8E007D270C /* FirebaseAuth */,
+				411640192F78EE8E007D270C /* FirebaseCore */,
+				411640212F78EE8E007D270C /* FirebaseFirestore */,
+				411640232F78EE8E007D270C /* FirebaseStorage */,
+				4116401D2F78EE8E007D270C /* GoogleSignIn */,
 			);
 			productName = Investtrust;
 			productReference = 411640082F78EE8E007D270C /* Investtrust.app */;
@@ -94,6 +112,10 @@
 			);
 			mainGroup = 41163FFF2F78EE8D007D270C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 411640092F78EE8E007D270C /* Products */;
 			projectDirPath = "";
@@ -253,6 +275,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Investtrust-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -263,7 +286,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-52.Investtrust";
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -284,6 +307,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Investtrust-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -294,7 +318,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-52.Investtrust";
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -328,6 +352,53 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+		4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		411640182F78EE8E007D270C /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		411640192F78EE8E007D270C /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		4116401D2F78EE8E007D270C /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		411640212F78EE8E007D270C /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		411640232F78EE8E007D270C /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 411640002F78EE8D007D270C /* Project object */;
 }
