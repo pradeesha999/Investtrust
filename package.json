@@ -1,0 +1,16 @@
+{
+  "name": "investtrust",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.29.1"
+  },
+  "scripts": {
+    "firebase": "firebase",
+    "firebase:login": "firebase login",
+    "firebase:provision:storage": "bash scripts/provision-default-storage-bucket.sh",
+    "firebase:deploy:storage": "firebase deploy --only storage"
+  }
+}

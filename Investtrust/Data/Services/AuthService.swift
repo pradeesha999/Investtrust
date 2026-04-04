@@ -15,9 +15,17 @@ final class AuthService {
     var currentUserID: String?
     var currentUserEmail: String?
     var errorMessage: String?
+    /// True during sign-in / sign-up / Google flows. Stays true after success until `acknowledgeSessionReady()` (called from `HomeView`) so the main app can show under a full-screen transition.
     var isLoading = false
+
+    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Dashboard tab.
+    private(set) var sessionEpoch = 0
+
     var activeProfile: UserProfile.ActiveProfile = .investor
     var roles: UserProfile.Roles = .init(investor: true, seeker: true)
+
+    /// Incremented after a successful profile switch so `HomeView` can jump to the Dashboard tab.
+    private(set) var dashboardNavigationTrigger: Int = 0
 
     var isSignedIn: Bool { currentUserID != nil }
 
@@ -57,10 +65,11 @@ final class AuthService {
     func signIn(email: String, password: String) async {
         errorMessage = nil
         isLoading = true
-        defer { isLoading = false }
         do {
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
+            sessionEpoch += 1
         } catch {
+            isLoading = false
             errorMessage = (error as NSError).localizedDescription
         }
     }
@@ -68,11 +77,68 @@ final class AuthService {
     func signUp(email: String, password: String) async {
         errorMessage = nil
         isLoading = true
-        defer { isLoading = false }
         do {
             _ = try await Auth.auth().createUser(withEmail: email, password: password)
+            sessionEpoch += 1
         } catch {
+            isLoading = false
             errorMessage = (error as NSError).localizedDescription
+        }
+    }
+
+    /// Call when the signed-in shell (`HomeView`) is on screen so the post–sign-in loading overlay can dismiss.
+    func acknowledgeSessionReady() {
+        isLoading = false
+    }
+
+    /// Sends Firebase’s password-reset email. Does not touch `errorMessage` (used for sign-in).
+    func sendPasswordReset(email: String) async throws {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw PasswordResetError.emptyEmail
+        }
+        do {
+            try await Auth.auth().sendPasswordReset(withEmail: trimmed)
+        } catch {
+            throw PasswordResetError.map(error)
+        }
+    }
+
+    enum PasswordResetError: LocalizedError {
+        case emptyEmail
+        case invalidEmail
+        case network
+        case other(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyEmail:
+                return "Enter the email you used to sign up."
+            case .invalidEmail:
+                return "That doesn’t look like a valid email address."
+            case .network:
+                return "Check your connection and try again."
+            case .other(let message):
+                return message
+            }
+        }
+
+        static func map(_ error: Error) -> PasswordResetError {
+            let ns = error as NSError
+            if ns.domain == NSURLErrorDomain {
+                return .network
+            }
+            if let code = AuthErrorCode(rawValue: ns.code) {
+                switch code {
+                case .invalidEmail:
+                    return .invalidEmail
+                case .networkError:
+                    return .network
+                default:
+                    break
+                }
+            }
+            return .other(ns.localizedDescription)
         }
     }
 
@@ -84,7 +150,6 @@ final class AuthService {
         }
 
         isLoading = true
-        defer { isLoading = false }
 
         let configuration = GIDConfiguration(clientID: clientID)
         GIDSignIn.sharedInstance.configuration = configuration
@@ -93,6 +158,7 @@ final class AuthService {
               let rootViewController = windowScene.windows.first?.rootViewController
         else {
             errorMessage = "Could not find a view controller for Google sign-in."
+            isLoading = false
             return
         }
 
@@ -100,22 +166,28 @@ final class AuthService {
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
             guard let idToken = result.user.idToken?.tokenString else {
                 errorMessage = "Google sign-in did not return an ID token."
+                isLoading = false
                 return
             }
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             _ = try await Auth.auth().signIn(with: credential)
+            sessionEpoch += 1
         } catch {
             let ns = error as NSError
             if ns.domain == "com.google.GIDSignIn" && ns.code == GIDSignInError.canceled.rawValue {
+                isLoading = false
                 return
             }
             errorMessage = ns.localizedDescription
+            isLoading = false
         }
     }
 
     func signOut() {
         errorMessage = nil
+        isLoading = false
+        sessionEpoch = 0
         do {
             try Auth.auth().signOut()
             GIDSignIn.sharedInstance.signOut()
@@ -133,6 +205,9 @@ final class AuthService {
         activeProfile = profile
         do {
             try await userService.updateActiveProfile(userID: userID, activeProfile: profile)
+            if previous != profile {
+                dashboardNavigationTrigger += 1
+            }
         } catch {
             activeProfile = previous
             errorMessage = (error as NSError).localizedDescription
