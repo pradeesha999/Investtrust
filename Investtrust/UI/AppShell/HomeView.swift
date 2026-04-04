@@ -8,7 +8,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AuthService.self) private var auth
     @State private var selectedTab: AppTab = .dashboard
-    /// Avoids resetting the selected tab on every `onAppear`; still moves to Dashboard after a new sign-in (`sessionEpoch` bump).
+    /// Avoids resetting the selected tab on every `onAppear`; still moves to Browse after a new sign-in (`sessionEpoch` bump).
     @State private var lastSyncedSessionEpoch = -1
 
     enum AppTab {
@@ -22,7 +22,7 @@ struct HomeView: View {
         TabView(selection: $selectedTab) {
             DashboardView()
                 .tabItem {
-                    Label("Dashboard", systemImage: "house")
+                    Label("Browse", systemImage: "house")
                 }
                 .tag(AppTab.dashboard)
             

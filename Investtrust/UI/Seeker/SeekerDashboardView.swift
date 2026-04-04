@@ -16,14 +16,52 @@ struct SeekerDashboardView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                headerCard
-                opportunitiesList
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
+                    headerCard
+
+                    Text("My opportunities")
+                        .font(.headline)
+                        .padding(.top, 4)
+
+                    if let loadError {
+                        Text(loadError)
+                            .font(.subheadline)
+                            .foregroundStyle(.red)
+                            .padding(AppTheme.cardPadding)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(AppTheme.cardBackground)
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                            .appCardShadow()
+                    } else if isLoading && myOpportunities.isEmpty {
+                        ProgressView("Loading…")
+                            .frame(maxWidth: .infinity)
+                            .padding(20)
+                    } else if myOpportunities.isEmpty {
+                        StatusBlock(
+                            icon: "plus.app",
+                            title: "No listings yet",
+                            message: "Tap Add opportunity to publish your first investment request."
+                        )
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(myOpportunities) { item in
+                                NavigationLink {
+                                    SeekerOpportunityDetailView(opportunity: item) {
+                                        Task { await loadMyOpportunities() }
+                                    }
+                                } label: {
+                                    seekerListingRow(item)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(AppTheme.screenPadding)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Seeker Dashboard")
+            .navigationTitle("Create")
             .task { await loadMyOpportunities() }
             .refreshable { await loadMyOpportunities() }
             .sheet(isPresented: $showCreateFlow) {
@@ -66,94 +104,65 @@ struct SeekerDashboardView: View {
             Button {
                 showCreateFlow = true
             } label: {
-                Label("Add Opportunity", systemImage: "plus")
+                Label("Add opportunity", systemImage: "plus.circle.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.vertical, 14)
+                    .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
-            .padding(.top, 6)
+            .padding(.top, 4)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white)
-        )
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
-    private var opportunitiesList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("My Opportunities")
+    private func seekerListingRow(_ item: OpportunityListing) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.title)
                 .font(.headline)
+                .foregroundStyle(.primary)
+            Text(item.category)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack {
+                Text("LKR \(item.formattedAmountLKR)")
+                Spacer()
+                Text("\(item.interestRate)%")
+                Text("•")
+                Text(item.repaymentLabel)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
-            if let loadError {
-                Text(loadError)
-                    .font(.subheadline)
-                    .foregroundStyle(.red)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white)
-                    )
-            } else if isLoading && myOpportunities.isEmpty {
-                ProgressView("Loading…")
-                    .frame(maxWidth: .infinity)
-                    .padding(14)
-            } else if myOpportunities.isEmpty {
-                Text("No opportunities yet. Tap \"Add Opportunity\" to create your first listing.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white)
-                    )
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(myOpportunities) { item in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(item.title)
-                                    .font(.headline)
-                                Text(item.category)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                HStack {
-                                    Text("LKR \(item.formattedAmountLKR)")
-                                    Spacer()
-                                    Text("\(item.interestRate)%")
-                                    Text("•")
-                                    Text(item.repaymentLabel)
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                                HStack(spacing: 12) {
-                                    if !item.imageStoragePaths.isEmpty {
-                                        Label("\(item.imageStoragePaths.count) image\(item.imageStoragePaths.count > 1 ? "s" : "")", systemImage: "photo.fill")
-                                    }
-                                    if item.videoStoragePath != nil {
-                                        Label("Video", systemImage: "video.fill")
-                                    }
-                                }
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.white)
-                            )
-                        }
-                    }
+            HStack(spacing: 12) {
+                if !item.imageStoragePaths.isEmpty {
+                    Label("\(item.imageStoragePaths.count) image\(item.imageStoragePaths.count > 1 ? "s" : "")", systemImage: "photo.fill")
+                }
+                if item.effectiveVideoReference != nil {
+                    Label("Video", systemImage: "video.fill")
                 }
             }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            Text("Manage listing")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .padding(.top, 4)
         }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.5), lineWidth: 1)
+        )
     }
 }
 
@@ -161,4 +170,3 @@ struct SeekerDashboardView: View {
     SeekerDashboardView()
         .environment(AuthService.previewSignedIn)
 }
-

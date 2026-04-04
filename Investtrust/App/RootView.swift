@@ -26,6 +26,10 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: auth.isLoading)
+        .onReceive(NotificationCenter.default.publisher(for: .investtrustSessionMediaDidReset)) { _ in
+            CachedImageLoader.clearMemoryCache()
+            StorageBackedVideoPlayer.clearURLCache()
+        }
     }
 }
 

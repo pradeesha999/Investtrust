@@ -2,48 +2,55 @@ import SwiftUI
 
 struct DashboardView: View {
     @Environment(AuthService.self) private var auth
-    
+
     @State private var opportunities: [OpportunityListing] = []
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var selectedOpportunity: OpportunityListing?
-    
+
     private let opportunityService = OpportunityService()
-    
+
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
                     headerSection
-                    modeToggle
+                    profileHintCard
                     marketHeader
-                    
+
                     if isLoading && opportunities.isEmpty {
                         ProgressView("Loading opportunities…")
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 20)
                     } else if let loadError {
-                        errorState(loadError)
+                        StatusBlock(
+                            icon: "exclamationmark.triangle.fill",
+                            title: "Couldn't load opportunities",
+                            message: loadError,
+                            iconColor: .orange,
+                            actionTitle: "Try again",
+                            action: { Task { await load() } }
+                        )
                     } else if opportunities.isEmpty {
-                        emptyState
+                        StatusBlock(
+                            icon: "chart.line.uptrend.xyaxis",
+                            title: "No open opportunities yet",
+                            message: "When seekers publish investment opportunities, they will appear here."
+                        )
                     } else {
                         opportunityCards
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, AppTheme.screenPadding)
                 .padding(.top, 16)
                 .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Dashboard")
-            .navigationDestination(item: $selectedOpportunity) { opp in
-                OpportunityDetailView(opportunity: opp)
-            }
+            .navigationTitle("Opportunities")
             .task { await load() }
             .refreshable { await load() }
         }
     }
-    
+
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Hi,")
@@ -51,92 +58,71 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
             Text(displayNameText)
                 .font(.title.bold())
-            Text("Browse opportunities and track your investments.")
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+            Text("Browse opportunities and track your investments from the Invest tab.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
     }
-    
+
     private var displayNameText: String {
         auth.currentUserEmail ?? "Investor"
     }
-    
-    private var modeToggle: some View {
-        HStack(spacing: 8) {
-            Text("Mode")
+
+    /// Explains active profile and points users to Settings (read-only badge was misleading).
+    private var profileHintCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Active profile")
                 .font(.subheadline.weight(.semibold))
-            
-            Spacer()
-            
-            Text(auth.activeProfile == .investor ? "Investor" : "Opportunity Seeker")
-                .font(.footnote.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.black.opacity(0.06), in: Capsule())
+                .foregroundStyle(.secondary)
+            HStack(alignment: .center, spacing: 10) {
+                Text(auth.activeProfile == .investor ? "Investor" : "Opportunity Seeker")
+                    .font(.body.weight(.semibold))
+                Spacer(minLength: 0)
+                NavigationLink {
+                    SettingsContentView()
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    Text("Change in Settings")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+                }
+            }
         }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.5), lineWidth: 1)
+        )
     }
-    
+
     private var marketHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Opportunities")
+                Text("Open listings")
                     .font(.headline)
                 Spacer()
             }
-            Text("Open listings from seekers")
+            Text("From other seekers on the market")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 6)
     }
-    
+
     private var opportunityCards: some View {
-        LazyVStack(spacing: 14) {
-            ForEach(opportunities) { opp in
-                OpportunityCard(opp: opp) {
-                    selectedOpportunity = opp
-                }
+        LazyVStack(spacing: AppTheme.stackSpacing) {
+            ForEach(opportunities, id: \.id) { opp in
+                OpportunityCard(opp: opp)
             }
         }
     }
-    
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text("No open opportunities yet")
-                .font(.headline)
-            Text("When seekers publish investment opportunities, they will appear here.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.top, 24)
-        .frame(maxWidth: .infinity)
-    }
-    
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(.orange)
-            Text("Couldn't load opportunities")
-                .font(.headline)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Try again") {
-                Task { await load() }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AuthTheme.primaryPink)
-        }
-        .padding(.top, 24)
-        .frame(maxWidth: .infinity)
-    }
-    
+
     private func load() async {
         loadError = nil
         isLoading = true
@@ -151,81 +137,6 @@ struct DashboardView: View {
         } catch {
             loadError = (error as NSError).localizedDescription
         }
-    }
-}
-
-private struct OpportunityCard: View {
-    let opp: OpportunityListing
-    var onViewTapped: () -> Void
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            StorageBackedAsyncImage(
-                reference: opp.imageStoragePaths.first,
-                height: 190,
-                cornerRadius: 16
-            )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(opp.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                if !opp.category.isEmpty {
-                    Text(opp.category)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Amount")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("LKR \(opp.formattedAmountLKR)")
-                        .font(.subheadline.weight(.semibold))
-                }
-                Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Interest")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("\(opp.interestRate)%")
-                        .font(.subheadline.weight(.semibold))
-                }
-                Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Timeline")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(opp.repaymentLabel)
-                        .font(.subheadline.weight(.semibold))
-                }
-            }
-            
-            if !opp.description.isEmpty {
-                Text(opp.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            
-            Button {
-                onViewTapped()
-            } label: {
-                Text("View more")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-            .background(AuthTheme.primaryPink, in: Capsule())
-            .foregroundStyle(.white)
-        }
-        .padding(16)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 3)
     }
 }
 

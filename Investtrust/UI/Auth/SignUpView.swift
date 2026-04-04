@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SignUpView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
     @State private var email = ""
     @State private var password = ""
     @State private var confirmPassword = ""
@@ -24,7 +25,7 @@ struct SignUpView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         header
 
-                        fieldSection(title: "Email") {
+                        fieldSection(title: "Email", isFocused: focusedField == .email) {
                             TextField("Email", text: $email)
                                 .textContentType(.emailAddress)
                                 .keyboardType(.emailAddress)
@@ -36,7 +37,7 @@ struct SignUpView: View {
                         }
                         .padding(.top, 28)
 
-                        fieldSection(title: "Password") {
+                        fieldSection(title: "Password", isFocused: focusedField == .password) {
                             SecureField("At least 6 characters", text: $password)
                                 .textContentType(.newPassword)
                                 .textInputAutocapitalization(.never)
@@ -46,7 +47,7 @@ struct SignUpView: View {
                         }
                         .padding(.top, 24)
 
-                        fieldSection(title: "Confirm password") {
+                        fieldSection(title: "Confirm password", isFocused: focusedField == .confirm) {
                             SecureField("Re-enter password", text: $confirmPassword)
                                 .textContentType(.newPassword)
                                 .focused($focusedField, equals: .confirm)
@@ -67,6 +68,9 @@ struct SignUpView: View {
 
                         googleButton
                             .padding(.top, 28)
+
+                        signInFooter
+                            .padding(.top, 24)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 0)
@@ -91,36 +95,47 @@ struct SignUpView: View {
                 .scaledToFit()
                 .frame(width: 100, height: 100)
                 .shadow(color: AuthTheme.primaryPink.opacity(0.14), radius: 20, y: 10)
-                .padding(.bottom, 10)
-            Text("Create Account")
-                .font(AuthTheme.titleLarge)
-                .foregroundStyle(.black)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .multilineTextAlignment(.center)
+                .padding(.bottom, 4)
             Text("Join to post or support opportunities.")
                 .font(.subheadline)
                 .foregroundStyle(AuthTheme.subtitleMuted)
                 .multilineTextAlignment(.center)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private func fieldSection(title: String, @ViewBuilder content: () -> some View) -> some View {
+    private func fieldSection(title: String, isFocused: Bool, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(.primary)
             content()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(AuthTheme.background)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(AuthTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous)
+                        .strokeBorder(isFocused ? AuthTheme.primaryPink : AuthTheme.fieldBorder, lineWidth: isFocused ? 2 : 1)
                 )
+                .animation(.easeInOut(duration: 0.2), value: isFocused)
         }
+    }
+
+    private var signInFooter: some View {
+        HStack(spacing: 4) {
+            Text("Already have an account?")
+                .foregroundStyle(.secondary)
+            Button("Sign in") {
+                dismiss()
+            }
+            .buttonStyle(.plain)
+            .fontWeight(.semibold)
+            .foregroundStyle(AuthTheme.primaryPink)
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var createAccountButton: some View {
@@ -137,8 +152,8 @@ struct SignUpView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: 50)
+            .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
@@ -160,11 +175,11 @@ struct SignUpView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(AuthTheme.background)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(AuthTheme.fieldBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous)
+                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

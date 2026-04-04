@@ -12,22 +12,12 @@ struct ChatListView: View {
         NavigationStack {
             Group {
                 if threads.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("Negotiation and investment chats will appear here.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(.secondarySystemBackground))
-                            .overlay(
-                                Text("No chats yet")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            )
-                            .frame(height: 120)
-                    }
-                    .padding(20)
+                    StatusBlock(
+                        icon: "bubble.left.and.bubble.right",
+                        title: "No conversations yet",
+                        message: "Negotiation and investment chats will appear here when you contact a seeker or investor."
+                    )
+                    .padding(AppTheme.screenPadding)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
                     List(threads) { thread in

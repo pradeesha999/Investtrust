@@ -3,14 +3,22 @@ import SwiftUI
 import UIKit
 
 /// Loads an image from a Firebase Storage path, `gs://` URL, Firebase **HTTPS** download URL, or any other `https://` URL.
-/// Normalizes paths and falls back to a tokenized download URL when direct `data(maxSize:)` fails (rules / SDK quirks).
+/// Uses `CachedImageLoader` so carousels don’t re-fetch when pages change.
 struct StorageBackedAsyncImage: View {
     let reference: String?
     var height: CGFloat = 220
     var cornerRadius: CGFloat = 16
+    /// When `true`, Cloudinary `res.cloudinary.com/.../image/upload/...` URLs get a width-limited transform so feed rows don’t download full-size originals.
+    var feedThumbnail: Bool = false
 
     @State private var uiImage: UIImage?
     @State private var isLoading = false
+
+    private var effectiveReference: String? {
+        guard let reference, !reference.isEmpty else { return nil }
+        guard feedThumbnail else { return reference }
+        return Self.cloudinaryFeedOptimizedURL(reference)
+    }
 
     var body: some View {
         Group {
@@ -29,9 +37,21 @@ struct StorageBackedAsyncImage: View {
         .frame(height: height)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .task(id: reference) {
+        .task(id: effectiveReference) {
             await loadImage()
         }
+    }
+
+    private static func cloudinaryFeedOptimizedURL(_ ref: String) -> String {
+        let t = ref.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.contains("res.cloudinary.com"), t.contains("/image/upload/") else { return t }
+        if t.contains("/image/upload/w_") || t.contains("/image/upload/c_") || t.contains("/image/upload/h_") {
+            return t
+        }
+        return t.replacingOccurrences(
+            of: "/image/upload/",
+            with: "/image/upload/w_720,c_limit,q_auto,f_auto/"
+        )
     }
 
     private func placeholder(icon: String) -> some View {
@@ -44,71 +64,24 @@ struct StorageBackedAsyncImage: View {
     }
 
     private func loadImage() async {
-        uiImage = nil
-        guard let reference, !reference.isEmpty else { return }
+        guard let reference = effectiveReference, !reference.isEmpty else {
+            await MainActor.run { uiImage = nil }
+            return
+        }
 
-        isLoading = true
-        defer { isLoading = false }
-
-        let trimmed = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            if Self.isFirebaseStorageHTTPS(trimmed) {
-                let ref = Storage.storage().reference(forURL: trimmed)
-                await loadFromStorageReference(ref)
-            } else {
-                await loadFromRemoteURL(trimmed)
+        if let cached = CachedImageLoader.cachedImage(for: reference) {
+            await MainActor.run {
+                uiImage = cached
+                isLoading = false
             }
             return
         }
 
-        if trimmed.hasPrefix("gs://") {
-            let ref = Storage.storage().reference(forURL: trimmed)
-            await loadFromStorageReference(ref)
-            return
+        await MainActor.run { isLoading = true }
+        let image = await CachedImageLoader.loadImage(reference: reference)
+        await MainActor.run {
+            uiImage = image
+            isLoading = false
         }
-
-        let path = trimmed.hasPrefix("/") ? String(trimmed.dropFirst()) : trimmed
-        guard !path.isEmpty else { return }
-        let ref = Storage.storage().reference(withPath: path)
-        await loadFromStorageReference(ref)
-    }
-
-    private func loadFromRemoteURL(_ string: String) async {
-        guard let url = URL(string: string) else { return }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            await MainActor.run {
-                uiImage = UIImage(data: data)
-            }
-        } catch {
-            await MainActor.run { uiImage = nil }
-        }
-    }
-
-    private func loadFromStorageReference(_ ref: StorageReference) async {
-        let maxBytes: Int64 = 20 * 1024 * 1024
-        do {
-            let data = try await ref.data(maxSize: maxBytes)
-            let image = UIImage(data: data)
-            await MainActor.run { uiImage = image }
-            if image != nil { return }
-        } catch {
-            // fall through to download URL
-        }
-
-        do {
-            let url = try await ref.downloadURL()
-            let (data, _) = try await URLSession.shared.data(from: url)
-            await MainActor.run {
-                uiImage = UIImage(data: data)
-            }
-        } catch {
-            await MainActor.run { uiImage = nil }
-        }
-    }
-
-    private static func isFirebaseStorageHTTPS(_ s: String) -> Bool {
-        s.lowercased().contains("firebasestorage.googleapis.com")
     }
 }

@@ -15,16 +15,16 @@ final class AuthService {
     var currentUserID: String?
     var currentUserEmail: String?
     var errorMessage: String?
-    /// True during sign-in / sign-up / Google flows. Stays true after success until `acknowledgeSessionReady()` (called from `HomeView`) so the main app can show under a full-screen transition.
+    /// True during sign-in / sign-up / Google flows. Cleared on success or cancel via `acknowledgeSessionReady()` (also invoked from `HomeView.onAppear` as a no-op when already false).
     var isLoading = false
 
-    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Dashboard tab.
+    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Browse tab.
     private(set) var sessionEpoch = 0
 
     var activeProfile: UserProfile.ActiveProfile = .investor
     var roles: UserProfile.Roles = .init(investor: true, seeker: true)
 
-    /// Incremented after a successful profile switch so `HomeView` can jump to the Dashboard tab.
+    /// Incremented after a successful profile switch so `HomeView` can jump to the Browse tab.
     private(set) var dashboardNavigationTrigger: Int = 0
 
     var isSignedIn: Bool { currentUserID != nil }
@@ -67,7 +67,9 @@ final class AuthService {
         isLoading = true
         do {
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
+            syncLocalUserFromFirebase()
             sessionEpoch += 1
+            acknowledgeSessionReady()
         } catch {
             isLoading = false
             errorMessage = (error as NSError).localizedDescription
@@ -79,7 +81,9 @@ final class AuthService {
         isLoading = true
         do {
             _ = try await Auth.auth().createUser(withEmail: email, password: password)
+            syncLocalUserFromFirebase()
             sessionEpoch += 1
+            acknowledgeSessionReady()
         } catch {
             isLoading = false
             errorMessage = (error as NSError).localizedDescription
@@ -89,6 +93,12 @@ final class AuthService {
     /// Call when the signed-in shell (`HomeView`) is on screen so the post–sign-in loading overlay can dismiss.
     func acknowledgeSessionReady() {
         isLoading = false
+    }
+
+    private func syncLocalUserFromFirebase() {
+        let user = Auth.auth().currentUser
+        currentUserID = user?.uid
+        currentUserEmail = user?.email
     }
 
     /// Sends Firebase’s password-reset email. Does not touch `errorMessage` (used for sign-in).
@@ -172,7 +182,9 @@ final class AuthService {
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             _ = try await Auth.auth().signIn(with: credential)
+            syncLocalUserFromFirebase()
             sessionEpoch += 1
+            acknowledgeSessionReady()
         } catch {
             let ns = error as NSError
             if ns.domain == "com.google.GIDSignIn" && ns.code == GIDSignInError.canceled.rawValue {
@@ -188,6 +200,12 @@ final class AuthService {
         errorMessage = nil
         isLoading = false
         sessionEpoch = 0
+        Task {
+            await SessionMediaCache.shared.clear()
+            await MainActor.run {
+                NotificationCenter.default.post(name: .investtrustSessionMediaDidReset, object: nil)
+            }
+        }
         do {
             try Auth.auth().signOut()
             GIDSignIn.sharedInstance.signOut()

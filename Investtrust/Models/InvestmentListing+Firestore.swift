@@ -54,11 +54,32 @@ extension InvestmentListing {
         if imageURLs.isEmpty, let direct = data["imageURLs"] as? [String] {
             imageURLs = direct
         }
-        
+
+        var opportunityId = (data["opportunityId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if opportunityId.isEmpty, let opportunity = data["opportunity"] as? [String: Any] {
+            if let oid = opportunity["id"] as? String {
+                opportunityId = oid.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        let rawInvestor = (data["investorId"] as? String) ?? (data["investor"] as? String)
+        let trimmedInvestor = rawInvestor?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        var seeker = (data["seekerId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if seeker.isEmpty, let opportunity = data["opportunity"] as? [String: Any],
+           let oid = opportunity["ownerId"] as? String {
+            seeker = oid.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         self.init(
             id: id,
             status: status,
             createdAt: createdAt,
+            opportunityId: opportunityId.isEmpty ? nil : opportunityId,
+            investorId: trimmedInvestor.isEmpty ? nil : trimmedInvestor,
+            seekerId: seeker.isEmpty ? nil : seeker,
             opportunityTitle: opportunityTitle,
             imageURLs: imageURLs,
             investmentAmount: investmentAmount,

@@ -27,6 +27,7 @@ struct ChatRoomView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
                         withAnimation(.easeOut(duration: 0.2)) {
@@ -49,13 +50,14 @@ struct ChatRoomView: View {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title)
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, AuthTheme.primaryPink)
+                        .foregroundStyle(.white, AppTheme.accent)
                 }
                 .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(12)
             .background(Color(.systemBackground))
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { startListening() }
@@ -87,9 +89,9 @@ struct ChatRoomView: View {
                 .padding(.vertical, 10)
                 .background(
                     isMine
-                        ? AuthTheme.primaryPink.opacity(0.18)
+                        ? AppTheme.accent.opacity(0.2)
                         : Color(.secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                 )
             if !isMine { Spacer(minLength: 48) }
         }

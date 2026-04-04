@@ -24,7 +24,7 @@ struct LoginView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         titleBlock
 
-                        fieldSection(title: "Email") {
+                        fieldSection(title: "Email", isFocused: focusedField == .email) {
                             TextField("Email", text: $email)
                                 .textContentType(.emailAddress)
                                 .keyboardType(.emailAddress)
@@ -36,7 +36,7 @@ struct LoginView: View {
                         }
                         .padding(.top, 28)
 
-                        fieldSection(title: "Password") {
+                        fieldSection(title: "Password", isFocused: focusedField == .password) {
                             SecureField("Password", text: $password)
                                 .textContentType(.password)
                                 .textInputAutocapitalization(.never)
@@ -94,7 +94,7 @@ struct LoginView: View {
                 .padding(.bottom, 10)
             Text("Welcome Back")
                 .font(AuthTheme.titleLarge)
-                .foregroundStyle(.black)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .multilineTextAlignment(.center)
@@ -106,20 +106,21 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private func fieldSection(title: String, @ViewBuilder content: () -> some View) -> some View {
+    private func fieldSection(title: String, isFocused: Bool, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.black)
+                .foregroundStyle(.primary)
             content()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(AuthTheme.background)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(AuthTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous)
+                        .strokeBorder(isFocused ? AuthTheme.primaryPink : AuthTheme.fieldBorder, lineWidth: isFocused ? 2 : 1)
                 )
+                .animation(.easeInOut(duration: 0.2), value: isFocused)
         }
     }
 
@@ -146,8 +147,8 @@ struct LoginView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: 50)
+            .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
             .foregroundStyle(.white)
         }
         .buttonStyle(.plain)
@@ -158,7 +159,7 @@ struct LoginView: View {
     private var signUpFooter: some View {
         HStack(spacing: 4) {
             Text("Don't have an account?")
-                .foregroundStyle(Color(white: 0.35))
+                .foregroundStyle(.secondary)
             NavigationLink {
                 SignUpView()
             } label: {
@@ -185,11 +186,11 @@ struct LoginView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(AuthTheme.background)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(AuthTheme.fieldBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous)
+                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -259,7 +260,7 @@ private struct ForgotPasswordSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Email")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.primary)
                     TextField("you@example.com", text: $resetEmail)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
@@ -268,12 +269,13 @@ private struct ForgotPasswordSheet: View {
                         .focused($resetEmailFocused)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
-                        .background(AuthTheme.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(AuthTheme.fieldBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                            RoundedRectangle(cornerRadius: AuthTheme.fieldCornerRadius, style: .continuous)
+                                .strokeBorder(resetEmailFocused ? AuthTheme.primaryPink : AuthTheme.fieldBorder, lineWidth: resetEmailFocused ? 2 : 1)
                         )
+                        .animation(.easeInOut(duration: 0.2), value: resetEmailFocused)
                 }
 
                 if let errorText {
@@ -293,8 +295,8 @@ private struct ForgotPasswordSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(height: 50)
+                    .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)

@@ -3,9 +3,35 @@
 //  Investtrust
 //
 
+import CoreTransferable
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+/// Loads a picked video file via `Transferable` / `FileRepresentation` (no `PhotosPickerItem.itemProvider`, which isn’t available on all SDKs).
+private struct PickedVideoData: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie, shouldAttemptToOpenInPlace: true) { received in
+            let url = received.file
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+            }
+            let data = try Data(contentsOf: url)
+            guard !data.isEmpty else {
+                throw NSError(  
+                    domain: "Investtrust",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "Video file was empty."]
+                )
+            }
+            return PickedVideoData(data: data)
+        }
+    }
+}
 
 struct CreateOpportunityWizardView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +45,7 @@ struct CreateOpportunityWizardView: View {
     @State private var videoPickerItem: PhotosPickerItem?
     @State private var selectedImageDataList: [Data] = []
     @State private var selectedVideoData: Data?
+    @State private var videoPickerError: String?
     @State private var selectedImages: [Image] = []
 
     private let steps = ["Basics", "Terms", "Details", "Review"]
@@ -27,24 +54,31 @@ struct CreateOpportunityWizardView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                progressHeader
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        progressHeader
 
-                Group {
-                    switch currentStep {
-                    case 0: basicStep
-                    case 1: termsStep
-                    case 2: detailsStep
-                    default: reviewStep
+                        Group {
+                            switch currentStep {
+                            case 0: basicStep
+                            case 1: termsStep
+                            case 2: detailsStep
+                            default: reviewStep
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
                     }
+                    .padding(AppTheme.screenPadding)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 footerButtons
+                    .padding(.horizontal, AppTheme.screenPadding)
+                    .padding(.vertical, 12)
+                    .background(.bar)
             }
-            .padding(20)
-            .background(Color.white)
-            .navigationTitle("Create Investment")
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Create opportunity")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -56,7 +90,7 @@ struct CreateOpportunityWizardView: View {
                     dismiss()
                 }
             } message: {
-                Text("Your opportunity draft has been added to the dashboard.")
+                Text("Your opportunity draft has been added to the Create tab.")
             }
             .alert("Couldn't submit", isPresented: .constant(submitError != nil)) {
                 Button("OK") { submitError = nil }
@@ -80,10 +114,19 @@ struct CreateOpportunityWizardView: View {
                 }
             }
             .onChange(of: videoPickerItem) { _, newValue in
-                guard let newValue else { return }
+                guard let newValue else {
+                    selectedVideoData = nil
+                    videoPickerError = nil
+                    return
+                }
                 Task {
-                    if let data = try? await newValue.loadTransferable(type: Data.self) {
+                    do {
+                        let data = try await loadVideoData(from: newValue)
                         selectedVideoData = data
+                        videoPickerError = nil
+                    } catch {
+                        selectedVideoData = nil
+                        videoPickerError = error.localizedDescription
                     }
                 }
             }
@@ -99,16 +142,20 @@ struct CreateOpportunityWizardView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.black.opacity(0.08))
+                        .fill(AppTheme.secondaryFill)
                         .frame(height: 8)
 
                     Capsule()
-                        .fill(AuthTheme.primaryPink)
+                        .fill(AppTheme.accent)
                         .frame(width: max(14, geo.size.width * progress), height: 8)
                 }
             }
             .frame(height: 8)
         }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     private var basicStep: some View {
@@ -138,36 +185,34 @@ struct CreateOpportunityWizardView: View {
     }
 
     private var reviewStep: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Review your listing")
-                    .font(.title3.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Review your listing")
+                .font(.title3.bold())
 
-                Group {
-                    reviewCard(
-                        title: "Basics",
-                        rows: [
-                            ("Title", draft.title),
-                            ("Category", draft.category),
-                            ("Amount", "LKR \(draft.amount)")
-                        ]
-                    )
-                    reviewCard(
-                        title: "Terms",
-                        rows: [
-                            ("Interest", "\(draft.interestRate)%"),
-                            ("Timeline", draft.repaymentTimeline)
-                        ]
-                    )
-                    reviewCard(
-                        title: "Details",
-                        rows: [
-                            ("Description", draft.description),
-                            ("Images attached", selectedImageDataList.isEmpty ? "0" : "\(selectedImageDataList.count)"),
-                            ("Video attached", selectedVideoData == nil ? "No" : "Yes")
-                        ]
-                    )
-                }
+            Group {
+                reviewCard(
+                    title: "Basics",
+                    rows: [
+                        ("Title", draft.title),
+                        ("Category", draft.category),
+                        ("Amount", "LKR \(draft.amount)")
+                    ]
+                )
+                reviewCard(
+                    title: "Terms",
+                    rows: [
+                        ("Interest", "\(draft.interestRate)%"),
+                        ("Timeline", draft.repaymentTimeline)
+                    ]
+                )
+                reviewCard(
+                    title: "Details",
+                    rows: [
+                        ("Description", draft.description),
+                        ("Images attached", selectedImageDataList.isEmpty ? "0" : "\(selectedImageDataList.count)"),
+                        ("Video attached", selectedVideoData == nil ? "No" : "Yes")
+                    ]
+                )
             }
         }
     }
@@ -242,9 +287,11 @@ struct CreateOpportunityWizardView: View {
                 .autocorrectionDisabled()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                .background(AuthTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
                 )
         }
     }
@@ -271,9 +318,11 @@ struct CreateOpportunityWizardView: View {
                         .padding(.vertical, 16)
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+            .background(AuthTheme.fieldBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
             )
         }
     }
@@ -288,14 +337,14 @@ struct CreateOpportunityWizardView: View {
                     Label(selectedImageDataList.isEmpty ? "Upload images (max 5)" : "Change images (\(selectedImageDataList.count)/5)", systemImage: "photo")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                 }
 
                 PhotosPicker(selection: $videoPickerItem, matching: .videos) {
                     Label(selectedVideoData == nil ? "Upload video (max 1)" : "Change video", systemImage: "video")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                 }
             }
 
@@ -318,11 +367,19 @@ struct CreateOpportunityWizardView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            if let videoPickerError {
+                Text(videoPickerError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
         )
     }
 
@@ -345,19 +402,35 @@ struct CreateOpportunityWizardView: View {
                 }
             }
         }
-        .padding(14)
+        .padding(AppTheme.cardPadding)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.03))
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .fill(AppTheme.secondaryFill)
         )
     }
     
+    /// Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
+    private func loadVideoData(from item: PhotosPickerItem) async throws -> Data {
+        if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
+            return data
+        }
+        if let picked = try? await item.loadTransferable(type: PickedVideoData.self) {
+            return picked.data
+        }
+        throw NSError(
+            domain: "Investtrust",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Could not read the video file. Try a shorter clip or a different format."]
+        )
+    }
+
     private func readableErrorMessage(for error: Error) -> String {
         if let localized = error as? LocalizedError, let description = localized.errorDescription {
             return description
         }
         
         let nsError = error as NSError
+        
         let message = nsError.localizedDescription.lowercased()
         if message.contains("permission") || message.contains("unauthorized") {
             return "Permission denied from Firebase. Check Firestore/Storage rules for authenticated users."
