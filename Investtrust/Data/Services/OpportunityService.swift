@@ -359,6 +359,14 @@ final class OpportunityService {
         return false
     }
 
+    /// Count of listings this user has created (opportunity builder). Used for profile activity metrics.
+    func countOpportunitiesForOwner(ownerId: String) async throws -> Int {
+        let snapshot = try await db.collection("opportunities")
+            .whereField("ownerId", isEqualTo: ownerId)
+            .getDocuments()
+        return snapshot.documents.count
+    }
+
     func fetchSeekerListings(ownerId: String, limit: Int = 50) async throws -> [OpportunityListing] {
         let base = db.collection("opportunities")
         // Avoid composite index (ownerId + createdAt): filter only, then sort in memory.

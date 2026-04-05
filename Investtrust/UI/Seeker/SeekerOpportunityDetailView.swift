@@ -229,9 +229,9 @@ struct SeekerOpportunityDetailView: View {
 
             if let investorId = inv.investorId {
                 NavigationLink {
-                    InvestorProfileView(userId: investorId)
+                    PublicProfileView(userId: investorId)
                 } label: {
-                    Label("View investor profile", systemImage: "person.crop.circle")
+                    Label("View profile", systemImage: "person.crop.circle")
                         .font(.subheadline.weight(.semibold))
                 }
                 .buttonStyle(.bordered)

@@ -9,24 +9,45 @@ struct SettingsContentView: View {
             Section("Account") {
                 Text(auth.currentUserEmail ?? "No email")
                     .font(.subheadline)
+
+                NavigationLink {
+                    ProfileEditView()
+                } label: {
+                    Label("Your profile", systemImage: "person.crop.circle")
+                }
             }
 
             Section {
-                Picker("Profile", selection: profileBinding) {
-                    if auth.roles.investor {
-                        Text("Investor")
-                            .tag(UserProfile.ActiveProfile.investor)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("How you use Investtrust")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        if auth.roles.investor {
+                            roleCard(
+                                title: "Investor",
+                                subtitle: "Browse & invest",
+                                systemImage: "chart.line.uptrend.xyaxis",
+                                role: .investor
+                            )
+                        }
+                        if auth.roles.seeker {
+                            roleCard(
+                                title: "Opportunity builder",
+                                subtitle: "Create & raise",
+                                systemImage: "building.columns.fill",
+                                role: .seeker
+                            )
+                        }
                     }
-                    if auth.roles.seeker {
-                        Text("Opportunity Seeker")
-                            .tag(UserProfile.ActiveProfile.seeker)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .pickerStyle(.menu)
+                .padding(.vertical, 4)
             } header: {
-                Text("Active profile")
+                Text("Active mode")
             } footer: {
-                Text("Switching profile updates the Create/Invest tab and defaults you to the Home tab when a new session starts.")
+                Text("The tab bar highlights Create vs Invest based on this. You can change it anytime.")
                     .font(.footnote)
             }
 
@@ -79,14 +100,50 @@ struct SettingsContentView: View {
         .listStyle(.insetGrouped)
     }
 
-    private var profileBinding: Binding<UserProfile.ActiveProfile> {
-        Binding(
-            get: { auth.activeProfile },
-            set: { newValue in
-                Task {
-                    await auth.switchActiveProfile(newValue)
-                }
+    @ViewBuilder
+    private func roleCard(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        role: UserProfile.ActiveProfile
+    ) -> some View {
+        let selected = auth.activeProfile == role
+        Button {
+            Task {
+                await auth.switchActiveProfile(role)
             }
-        )
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: systemImage)
+                        .font(.title3)
+                        .foregroundStyle(selected ? AppTheme.accent : .secondary)
+                    Spacer(minLength: 0)
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(AppTheme.accent)
+                            .font(.body.weight(.semibold))
+                    }
+                }
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(selected ? AppTheme.accent.opacity(0.12) : Color(.secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(selected ? AppTheme.accent.opacity(0.45) : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

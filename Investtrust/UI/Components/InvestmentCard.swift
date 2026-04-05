@@ -14,16 +14,19 @@ struct InvestmentCard: View {
     @State private var agreementToShow: InvestmentListing?
     private let investmentService = InvestmentService()
 
+    private static let thumbnailSize: CGFloat = 100
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                media
-                    .frame(width: 110, height: 110)
+                thumbnail
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(inv.opportunityTitle.isEmpty ? "Investment" : inv.opportunityTitle)
                         .font(.headline)
                         .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(inv.investmentType.displayName)
                         .font(.caption.weight(.semibold))
@@ -33,7 +36,7 @@ struct InvestmentCard: View {
                         .font(.caption)
                         .foregroundStyle(lifecycleColor(inv))
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Amount: LKR \(format(inv.investmentAmount))")
                             .font(.subheadline)
                         Text("Interest: \(inv.interestLabel)")
@@ -42,6 +45,7 @@ struct InvestmentCard: View {
                             .font(.subheadline)
                     }
                 }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
 
             if let oid = inv.opportunityId, !oid.isEmpty {
@@ -124,23 +128,42 @@ struct InvestmentCard: View {
         }
     }
 
+    /// Fixed-size thumbnail: `AsyncImage` + `scaledToFill` must be clipped inside an explicit frame or it can draw over sibling text.
     @ViewBuilder
-    private var media: some View {
+    private var thumbnail: some View {
+        let corner = RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
         if let first = inv.imageURLs.first, let url = URL(string: first) {
-            AsyncImage(url: url) { img in
-                img.resizable().scaledToFill()
-            } placeholder: {
-                Color(.systemGray4)
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    placeholderFill
+                case .empty:
+                    Color(.systemGray5)
+                @unknown default:
+                    Color(.systemGray5)
+                }
             }
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+            .clipped()
+            .clipShape(corner)
         } else {
-            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                .fill(Color(.systemGray4))
-                .overlay(
-                    Image(systemName: "photo")
-                        .foregroundStyle(.secondary)
-                )
+            placeholderFill
+                .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                .clipShape(corner)
         }
+    }
+
+    private var placeholderFill: some View {
+        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+            .fill(Color(.systemGray4))
+            .overlay {
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            }
     }
 
     private func lifecycleColor(_ inv: InvestmentListing) -> Color {

@@ -13,6 +13,10 @@ struct OpportunityDetailView: View {
     private let chatService = ChatService()
     private let opportunityService = OpportunityService()
     private let investmentService = InvestmentService()
+    private let userService = UserService()
+
+    @State private var userProfileLoaded: UserProfile?
+    @State private var showProfileEdit = false
 
     @State private var contactError: String?
     @State private var showContactError = false
@@ -91,6 +95,20 @@ struct OpportunityDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showProfileEdit) {
+            NavigationStack {
+                ProfileEditView()
+            }
+        }
+        .onChange(of: showProfileEdit) { _, isPresented in
+            if !isPresented {
+                Task { await loadUserProfile() }
+            }
+        }
+    }
+
+    private var profileReadyForInvesting: Bool {
+        userProfileLoaded?.profileDetails?.isCompleteForInvesting == true
     }
 
     @ViewBuilder
@@ -734,6 +752,30 @@ struct OpportunityDetailView: View {
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
             .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        } else if !profileReadyForInvesting {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Complete your profile")
+                    .font(.headline.weight(.semibold))
+                Text("Legal name, phone, country, city, a short bio, and experience level are required before you can send an investment request.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    showProfileEdit = true
+                } label: {
+                    Text("Fill in profile")
+                        .font(.headline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+                .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
         } else {
             Button {
                 showInvestSheet = true
@@ -765,6 +807,19 @@ struct OpportunityDetailView: View {
         }
     }
 
+    private func loadUserProfile() async {
+        guard let uid = auth.currentUserID else {
+            await MainActor.run { userProfileLoaded = nil }
+            return
+        }
+        do {
+            let p = try await userService.fetchProfile(userID: uid)
+            await MainActor.run { userProfileLoaded = p }
+        } catch {
+            await MainActor.run { userProfileLoaded = nil }
+        }
+    }
+
     private func loadOpportunityFromServer() async {
         loadError = nil
         do {
@@ -779,6 +834,7 @@ struct OpportunityDetailView: View {
                 opportunity = fresh
             }
             await loadMyRequest(for: fresh)
+            await loadUserProfile()
         } catch {
             await MainActor.run {
                 loadError = (error as NSError).localizedDescription

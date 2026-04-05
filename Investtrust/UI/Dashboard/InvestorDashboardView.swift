@@ -19,6 +19,10 @@ struct InvestorDashboardView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     headerBlock
 
+                    if profile?.profileDetails?.isCompleteForInvesting != true {
+                        profileCompletionBanner
+                    }
+
                     if isLoading && investments.isEmpty {
                         ProgressView("Loading your portfolio…")
                             .frame(maxWidth: .infinity)
@@ -87,6 +91,29 @@ struct InvestorDashboardView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var profileCompletionBanner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Complete your profile")
+                .font(.headline)
+            Text("Add your legal name, phone, location, bio, and experience so you can send investment requests.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            NavigationLink {
+                ProfileEditView()
+            } label: {
+                Text("Open profile form")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AppTheme.accent)
+        }
+        .padding(AppTheme.cardPadding)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
     }
 
     private var greetingLine: String {

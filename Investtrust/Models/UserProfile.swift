@@ -17,10 +17,11 @@ struct UserProfile: Codable, Equatable {
     var roles: Roles
     var displayName: String?
     var avatarURL: String?
+    /// Shared details for investors & opportunity builders (Firestore: `profile`; legacy: `investorProfile`).
+    var profileDetails: ProfileDetails?
 
     struct Roles: Codable, Equatable {
         var investor: Bool
         var seeker: Bool
     }
 }
-

@@ -19,6 +19,7 @@ final class InvestmentService {
         case agreementNotAwaitingSignatures
         case wrongSigner
         case alreadySigned
+        case profileIncomplete
 
         var errorDescription: String? {
             switch self {
@@ -46,6 +47,8 @@ final class InvestmentService {
                 return "Only the investor or seeker on this deal can sign."
             case .alreadySigned:
                 return "You have already signed this agreement."
+            case .profileIncomplete:
+                return "Complete your profile (legal name, phone, location, bio, and experience) before sending a request."
             }
         }
     }
@@ -184,6 +187,14 @@ final class InvestmentService {
             throw InvestmentServiceError.invalidAmount
         }
 
+        if let p = try await userService.fetchProfile(userID: investorId) {
+            guard p.profileDetails?.isCompleteForInvesting == true else {
+                throw InvestmentServiceError.profileIncomplete
+            }
+        } else {
+            throw InvestmentServiceError.profileIncomplete
+        }
+
         if let existing = try await fetchLatestRequestForInvestor(opportunityId: opportunity.id, investorId: investorId) {
             let s = existing.status.lowercased()
             if !["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
@@ -254,7 +265,7 @@ final class InvestmentService {
         }
 
         let now = Date()
-        let investorDisplay = await Self.displayName(userService: userService, userId: investorId, fallback: "Investor")
+        let investorDisplay = await Self.investorLegalOrDisplayName(userService: userService, userId: investorId, fallback: "Investor")
         let seekerDisplay = await Self.displayName(userService: userService, userId: seekerId, fallback: "Seeker")
         let agreementPayload = Self.makeAgreementPayload(
             opportunity: opportunity,
@@ -349,6 +360,18 @@ final class InvestmentService {
         if let p = try? await userService.fetchProfile(userID: userId),
            let n = p.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !n.isEmpty {
+            return n
+        }
+        return fallback
+    }
+
+    /// Prefer legal name from `profile` for agreements, then display name.
+    private static func investorLegalOrDisplayName(userService: UserService, userId: String, fallback: String) async -> String {
+        guard let p = try? await userService.fetchProfile(userID: userId) else { return fallback }
+        if let legal = p.profileDetails?.legalFullName?.trimmingCharacters(in: .whitespacesAndNewlines), !legal.isEmpty {
+            return legal
+        }
+        if let n = p.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
             return n
         }
         return fallback
