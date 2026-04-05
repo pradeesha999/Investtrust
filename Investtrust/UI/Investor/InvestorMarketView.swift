@@ -19,50 +19,47 @@ struct InvestorMarketView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: AppTheme.stackSpacing) {
-                    header
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: AppTheme.stackSpacing) {
+                header
 
-                    if isLoading && investments.isEmpty {
-                        ProgressView("Loading requests…")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 20)
-                    } else if let loadError {
-                        StatusBlock(
-                            icon: "exclamationmark.triangle.fill",
-                            title: "Couldn't load investments",
-                            message: loadError,
-                            iconColor: .orange,
-                            actionTitle: "Try again",
-                            action: { Task { await load() } }
-                        )
-                    } else if filteredInvestments.isEmpty {
-                        StatusBlock(
-                            icon: "doc.richtext",
-                            title: searchText.isEmpty ? "No requests yet" : "No matches",
-                            message: searchText.isEmpty
-                                ? "Tap Invest on an opportunity to send a request. It will show up here with status."
-                                : "Try a different search term."
-                        )
-                    } else {
-                        LazyVStack(spacing: AppTheme.stackSpacing) {
-                            ForEach(filteredInvestments) { inv in
-                                InvestmentCard(inv: inv)
-                            }
+                if isLoading && investments.isEmpty {
+                    ProgressView("Loading requests…")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 20)
+                } else if let loadError {
+                    StatusBlock(
+                        icon: "exclamationmark.triangle.fill",
+                        title: "Couldn't load investments",
+                        message: loadError,
+                        iconColor: .orange,
+                        actionTitle: "Try again",
+                        action: { Task { await load() } }
+                    )
+                } else if filteredInvestments.isEmpty {
+                    StatusBlock(
+                        icon: "doc.richtext",
+                        title: searchText.isEmpty ? "No requests yet" : "No matches",
+                        message: searchText.isEmpty
+                            ? "Use Explore to find listings, then send a request. Statuses appear here."
+                            : "Try a different search term."
+                    )
+                } else {
+                    LazyVStack(spacing: AppTheme.stackSpacing) {
+                        ForEach(filteredInvestments) { inv in
+                            InvestmentCard(inv: inv)
                         }
                     }
                 }
-                .padding(.horizontal, AppTheme.screenPadding)
-                .padding(.top, 8)
-                .padding(.bottom, 20)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Invest")
-            .searchable(text: $searchText, prompt: "Search by listing name")
-            .task { await load() }
-            .refreshable { await load() }
+            .padding(.horizontal, AppTheme.screenPadding)
+            .padding(.top, 8)
+            .padding(.bottom, 20)
         }
+        .background(Color(.systemGroupedBackground))
+        .searchable(text: $searchText, prompt: "Search by listing name")
+        .task { await load() }
+        .refreshable { await load() }
     }
 
     private var header: some View {
@@ -106,7 +103,9 @@ struct InvestorMarketView: View {
 }
 
 #Preview {
-    InvestorMarketView()
-        .environment(AuthService.previewSignedIn)
-        .environmentObject(MainTabRouter())
+    NavigationStack {
+        InvestorMarketView()
+    }
+    .environment(AuthService.previewSignedIn)
+    .environmentObject(MainTabRouter())
 }

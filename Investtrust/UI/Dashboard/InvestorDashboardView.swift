@@ -4,6 +4,7 @@ import SwiftUI
 /// Investor home: portfolio tracking, not browsing (see `MarketBrowseView`).
 struct InvestorDashboardView: View {
     @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
 
     @State private var investments: [InvestmentListing] = []
     @State private var profile: UserProfile?
@@ -68,8 +69,9 @@ struct InvestorDashboardView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        MarketBrowseView()
+                    Button {
+                        tabRouter.selectedTab = .action
+                        tabRouter.investorInvestSegment = .explore
                     } label: {
                         Label("Explore", systemImage: "safari")
                     }
@@ -141,8 +143,9 @@ struct InvestorDashboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            NavigationLink {
-                MarketBrowseView()
+            Button {
+                tabRouter.selectedTab = .action
+                tabRouter.investorInvestSegment = .explore
             } label: {
                 Text("Explore opportunities")
                     .font(.headline.weight(.semibold))
@@ -183,8 +186,9 @@ struct InvestorDashboardView: View {
                 Text("You’ve completed \(InvestorPortfolioMetrics.completedDealsCount(investments)) deal(s).")
                     .font(.subheadline.weight(.semibold))
             }
-            NavigationLink {
-                MarketBrowseView()
+            Button {
+                tabRouter.selectedTab = .action
+                tabRouter.investorInvestSegment = .explore
             } label: {
                 Text("Reinvest — explore opportunities")
                     .font(.subheadline.weight(.semibold))

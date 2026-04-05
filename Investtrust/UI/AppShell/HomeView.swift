@@ -63,7 +63,7 @@ struct HomeView: View {
     @ViewBuilder
     private var actionTab: some View {
         if auth.activeProfile == .investor {
-            InvestorMarketView()
+            InvestorActionTabView()
         } else {
             SeekerDashboardView()
         }
