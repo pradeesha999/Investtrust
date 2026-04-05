@@ -5,7 +5,7 @@ extension InvestmentListing {
     init?(id: String, data: [String: Any]) {
         let status = (data["status"] as? String)?.lowercased() ?? "unknown"
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
-        
+
         // Investment amount
         let investmentAmount: Double = {
             if let v = data["investmentAmount"] as? Double { return v }
@@ -17,7 +17,7 @@ extension InvestmentListing {
             }
             return 0
         }()
-        
+
         let finalInterestRate: Double? = {
             if let v = data["finalInterestRate"] as? Double { return v }
             if let n = data["finalInterestRate"] as? NSNumber { return n.doubleValue }
@@ -26,7 +26,7 @@ extension InvestmentListing {
             }
             return nil
         }()
-        
+
         let finalTimelineMonths: Int? = {
             if let v = data["finalTimelineMonths"] as? Int { return v }
             if let n = data["finalTimelineMonths"] as? NSNumber { return n.intValue }
@@ -35,19 +35,55 @@ extension InvestmentListing {
             }
             return nil
         }()
-        
-        // Opportunity title + media
+
+        let investmentType = InvestmentType.parse(
+            (data["investmentType"] as? String) ?? (data["opportunityInvestmentType"] as? String)
+        )
+
+        let acceptedAt: Date? = {
+            if let ts = data["acceptedAt"] as? Timestamp { return ts.dateValue() }
+            return nil
+        }()
+
+        let receivedAmount: Double = {
+            if let v = data["receivedAmount"] as? Double { return max(0, v) }
+            if let n = data["receivedAmount"] as? NSNumber { return max(0, n.doubleValue) }
+            return 0
+        }()
+
+        let agreementStatus: AgreementStatus = {
+            if let raw = data["agreementStatus"] as? String,
+               let a = AgreementStatus(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                return a
+            }
+            return .none
+        }()
+
+        let signedByInvestorAt: Date? = (data["signedByInvestorAt"] as? Timestamp)?.dateValue()
+        let signedBySeekerAt: Date? = (data["signedBySeekerAt"] as? Timestamp)?.dateValue()
+        let agreementGeneratedAt: Date? = (data["agreementGeneratedAt"] as? Timestamp)?.dateValue()
+
+        let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
+
+        // Title + thumbnail: prefer `thumbnailImageURL` (new), then nested `opportunity`, then legacy `imageURLs` array.
         var opportunityTitle = ""
         var imageURLs: [String] = []
-        
-        if let opportunity = data["opportunity"] as? [String: Any] {
-            opportunityTitle = (opportunity["title"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            
-            imageURLs = (opportunity["imageURLs"] as? [String] ?? [])
+
+        if let thumb = data["thumbnailImageURL"] as? String {
+            let t = thumb.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { imageURLs = [t] }
         }
-        
-        // Fallbacks if media/title are stored directly
+
+        if let opportunity = data["opportunity"] as? [String: Any] {
+            if opportunityTitle.isEmpty {
+                opportunityTitle = (opportunity["title"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            }
+            if imageURLs.isEmpty {
+                imageURLs = (opportunity["imageURLs"] as? [String] ?? [])
+            }
+        }
+
         if opportunityTitle.isEmpty {
             opportunityTitle = (data["opportunityTitle"] as? String) ?? ""
         }
@@ -84,10 +120,43 @@ extension InvestmentListing {
             imageURLs: imageURLs,
             investmentAmount: investmentAmount,
             finalInterestRate: finalInterestRate,
-            finalTimelineMonths: finalTimelineMonths
+            finalTimelineMonths: finalTimelineMonths,
+            investmentType: investmentType,
+            acceptedAt: acceptedAt,
+            receivedAmount: receivedAmount,
+            agreementStatus: agreementStatus,
+            signedByInvestorAt: signedByInvestorAt,
+            signedBySeekerAt: signedBySeekerAt,
+            agreementGeneratedAt: agreementGeneratedAt,
+            agreement: agreement
         )
     }
-    
+
+    private static func parseAgreementMap(_ raw: Any?) -> InvestmentAgreementSnapshot? {
+        guard let m = raw as? [String: Any], !m.isEmpty else { return nil }
+        let title = (m["opportunityTitle"] as? String) ?? ""
+        let investorName = (m["investorName"] as? String) ?? ""
+        let seekerName = (m["seekerName"] as? String) ?? ""
+        let amount = parseDouble(m["investmentAmount"]) ?? 0
+        let type = InvestmentType.parse(m["investmentType"] as? String)
+        let termsMap = (m["termsSnapshot"] as? [String: Any]) ?? [:]
+        let wrap: [String: Any] = ["terms": termsMap]
+        let terms = OpportunityFirestoreCoding.parseTerms(from: wrap, type: type)
+        let createdAt: Date = {
+            if let ts = m["createdAt"] as? Timestamp { return ts.dateValue() }
+            return Date()
+        }()
+        return InvestmentAgreementSnapshot(
+            opportunityTitle: title,
+            investorName: investorName,
+            seekerName: seekerName,
+            investmentAmount: amount,
+            investmentType: type,
+            termsSnapshot: terms,
+            createdAt: createdAt
+        )
+    }
+
     private static func parseDouble(_ value: Any) -> Double? {
         if let v = value as? Double { return v }
         if let n = value as? NSNumber { return n.doubleValue }
@@ -97,7 +166,7 @@ extension InvestmentListing {
         }
         return nil
     }
-    
+
     private static func parseInt(_ value: Any) -> Int? {
         if let v = value as? Int { return v }
         if let n = value as? NSNumber { return n.intValue }
@@ -108,4 +177,3 @@ extension InvestmentListing {
         return nil
     }
 }
-

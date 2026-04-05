@@ -25,7 +25,7 @@ struct InvestorMarketView: View {
                     header
 
                     if isLoading && investments.isEmpty {
-                        ProgressView("Loading investments…")
+                        ProgressView("Loading requests…")
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 20)
                     } else if let loadError {
@@ -40,9 +40,9 @@ struct InvestorMarketView: View {
                     } else if filteredInvestments.isEmpty {
                         StatusBlock(
                             icon: "doc.richtext",
-                            title: searchText.isEmpty ? "No investments yet" : "No matches",
+                            title: searchText.isEmpty ? "No requests yet" : "No matches",
                             message: searchText.isEmpty
-                                ? "When you finalize a deal, it will appear here."
+                                ? "Tap Invest on an opportunity to send a request. It will show up here with status."
                                 : "Try a different search term."
                         )
                     } else {
@@ -76,9 +76,9 @@ struct InvestorMarketView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Your investments")
+                Text("Investment requests")
                     .font(.headline)
-                Text("Track deals and agreements")
+                Text("Track requests, signatures, and agreement status.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -108,4 +108,5 @@ struct InvestorMarketView: View {
 #Preview {
     InvestorMarketView()
         .environment(AuthService.previewSignedIn)
+        .environmentObject(MainTabRouter())
 }

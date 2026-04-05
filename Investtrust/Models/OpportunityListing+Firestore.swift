@@ -19,12 +19,46 @@ extension OpportunityListing {
         let description = (data["description"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
+        let investmentType = InvestmentType.parse(data["investmentType"] as? String)
+
         let amountRequested = Self.parseAmount(from: data)
-        let interestRate = Self.parseInterest(from: data)
-        let repaymentTimelineMonths = Self.parseTimelineMonths(from: data)
+        let minimumInvestment = Self.parseMinimumInvestment(from: data, fallbackTotal: amountRequested)
+
+        let maximumInvestors: Int? = {
+            if let v = data["maximumInvestors"] as? Int { return v > 0 ? v : nil }
+            if let n = data["maximumInvestors"] as? NSNumber { let i = n.intValue; return i > 0 ? i : nil }
+            return nil
+        }()
+
+        var terms = OpportunityFirestoreCoding.parseTerms(from: data, type: investmentType)
+
+        // Legacy listings: only top-level loan fields.
+        if investmentType == .loan {
+            if terms.interestRate == nil {
+                terms.interestRate = Self.parseInterest(from: data)
+            }
+            if terms.repaymentTimelineMonths == nil {
+                terms.repaymentTimelineMonths = Self.parseTimelineMonths(from: data)
+            }
+            if terms.repaymentFrequency == nil, let raw = data["repaymentFrequency"] as? String {
+                terms.repaymentFrequency = RepaymentFrequency(rawValue: raw.lowercased())
+            }
+        }
+
+        let useOfFunds = (data["useOfFunds"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let milestones = OpportunityFirestoreCoding.milestones(from: data)
+
+        let location = (data["location"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let riskLevel = RiskLevel.parse(data["riskLevel"] as? String)
+        let verificationStatus = VerificationStatus.parse(data["verificationStatus"] as? String)
+
+        let documentURLs = Self.parseStringArray(data["documentURLs"])
 
         let status = (data["status"] as? String)?.lowercased() ?? "open"
-
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
 
         let imageStoragePaths = Self.collectImageReferences(from: data)
@@ -80,9 +114,17 @@ extension OpportunityListing {
             title: rawTitle,
             category: category,
             description: description,
+            investmentType: investmentType,
             amountRequested: amountRequested,
-            interestRate: interestRate,
-            repaymentTimelineMonths: repaymentTimelineMonths,
+            minimumInvestment: minimumInvestment,
+            maximumInvestors: maximumInvestors,
+            terms: terms,
+            useOfFunds: useOfFunds,
+            milestones: milestones,
+            location: location,
+            riskLevel: riskLevel,
+            verificationStatus: verificationStatus,
+            documentURLs: documentURLs,
             status: status,
             createdAt: createdAt,
             imageStoragePaths: imageStoragePaths,
@@ -92,6 +134,16 @@ extension OpportunityListing {
             imagePublicIds: imagePublicIds,
             videoPublicId: videoPublicId
         )
+    }
+
+    private static func parseMinimumInvestment(from data: [String: Any], fallbackTotal: Double) -> Double {
+        if let v = data["minimumInvestment"] as? Double, v > 0 { return v }
+        if let n = data["minimumInvestment"] as? NSNumber, n.doubleValue > 0 { return n.doubleValue }
+        if let s = data["minimumInvestment"] as? String {
+            let cleaned = s.replacingOccurrences(of: ",", with: "")
+            if let d = Double(cleaned), d > 0 { return d }
+        }
+        return min(fallbackTotal, max(1, fallbackTotal * 0.01))
     }
 
     private static func parseAmount(from data: [String: Any]) -> Double {
@@ -115,26 +167,29 @@ extension OpportunityListing {
         return 0
     }
 
-    /// Firestore may store paths under several keys depending on app version or manual edits.
     private static func collectImageReferences(from data: [String: Any]) -> [String] {
         var out: [String] = []
+        var seen = Set<String>()
         func appendStrings(_ arr: [String]?) {
             guard let arr else { return }
             for s in arr {
                 let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { out.append(t) }
+                if !t.isEmpty, !seen.contains(t) {
+                    seen.insert(t)
+                    out.append(t)
+                }
             }
         }
+        appendStrings(data["imageURLs"] as? [String])
         appendStrings(data["imageStoragePaths"] as? [String])
-        if out.isEmpty { appendStrings(data["imageURLs"] as? [String]) }
         if out.isEmpty { appendStrings(data["images"] as? [String]) }
         if out.isEmpty, let s = data["imageStoragePath"] as? String {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty { out.append(t) }
+            if !t.isEmpty, !seen.contains(t) { seen.insert(t); out.append(t) }
         }
         if out.isEmpty, let s = data["imageURL"] as? String {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty { out.append(t) }
+            if !t.isEmpty, !seen.contains(t) { seen.insert(t); out.append(t) }
         }
         return out
     }

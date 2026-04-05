@@ -1,0 +1,19 @@
+import Foundation
+
+/// Tracks the MOA lifecycle on the investment document (`agreementStatus`).
+enum AgreementStatus: String, Codable, Sendable, CaseIterable {
+    case none
+    case pending_signatures
+    case active
+}
+
+/// Structured agreement snapshot stored on the investment at seeker acceptance (no PDF).
+struct InvestmentAgreementSnapshot: Equatable, Hashable, Sendable {
+    var opportunityTitle: String
+    var investorName: String
+    var seekerName: String
+    var investmentAmount: Double
+    var investmentType: InvestmentType
+    var termsSnapshot: OpportunityTerms
+    var createdAt: Date
+}

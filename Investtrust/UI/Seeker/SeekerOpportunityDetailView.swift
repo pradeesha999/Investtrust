@@ -19,6 +19,8 @@ struct SeekerOpportunityDetailView: View {
     @State private var isDeleting = false
     @State private var actionError: String?
     @State private var decliningId: String?
+    @State private var acceptingFor: InvestmentListing?
+    @State private var agreementToReview: InvestmentListing?
 
     private let investmentService = InvestmentService()
     private let opportunityService = OpportunityService()
@@ -51,15 +53,19 @@ struct SeekerOpportunityDetailView: View {
                     Text(opportunity.category)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    HStack {
-                        Text("LKR \(opportunity.formattedAmountLKR)")
-                        Text("•")
-                        Text("\(opportunity.interestRate)%")
-                        Text("•")
-                        Text(opportunity.repaymentLabel)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("LKR \(opportunity.formattedAmountLKR)")
+                            Text("•")
+                            Text(opportunity.investmentType.displayName)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        Text(opportunity.termsSummaryLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
 
                 Text(opportunity.description)
@@ -158,13 +164,44 @@ struct SeekerOpportunityDetailView: View {
         } message: {
             Text("This removes the opportunity from the market. Related declined requests are cleared from your dashboard data.")
         }
+        .sheet(item: $acceptingFor) { inv in
+            AcceptInvestmentSheet(investment: inv, opportunity: opportunity) { message in
+                guard let seekerId = auth.currentUserID else {
+                    throw InvestmentService.InvestmentServiceError.notSignedIn
+                }
+                try await investmentService.acceptInvestmentRequest(
+                    investmentId: inv.id,
+                    seekerId: seekerId,
+                    opportunity: opportunity,
+                    verificationMessage: message
+                )
+                Task { @MainActor in
+                    await loadInvestments()
+                    onMutate()
+                }
+            }
+        }
+        .sheet(item: $agreementToReview) { inv in
+            InvestmentAgreementReviewView(
+                investment: inv,
+                canSign: inv.needsSeekerSignature(currentUserId: auth.currentUserID),
+                onSign: {
+                    guard let uid = auth.currentUserID else {
+                        throw InvestmentService.InvestmentServiceError.notSignedIn
+                    }
+                    try await investmentService.signAgreement(investmentId: inv.id, userId: uid)
+                    await loadInvestments()
+                    await MainActor.run { onMutate() }
+                }
+            )
+        }
     }
 
     private var blockingBanner: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "hand.raised.fill")
                 .foregroundStyle(.orange)
-            Text("You have pending investment requests. Decline each offer below before you can edit or delete this listing.")
+            Text("You have active investment requests (pending or accepted). Resolve pending offers below before you can edit or delete this listing.")
                 .font(.subheadline)
         }
         .padding(14)
@@ -173,22 +210,45 @@ struct SeekerOpportunityDetailView: View {
     }
 
     private func requestRow(_ inv: InvestmentListing) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        let pending = inv.status.lowercased() == "pending"
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LKR \(formatAmount(inv.investmentAmount))")
                         .font(.subheadline.weight(.semibold))
-                    Text("Status: \(inv.status.capitalized)")
+                    Text("Status: \(inv.lifecycleDisplayTitle)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let investor = inv.investorId {
-                        Text("Investor: \(shortId(investor))")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
+                        .foregroundStyle(statusColor(inv))
+                    Text("\(inv.interestLabel) • \(inv.timelineLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 Spacer()
-                if inv.blocksSeekerFromManagingOpportunity {
+            }
+
+            if let investorId = inv.investorId {
+                NavigationLink {
+                    InvestorProfileView(userId: investorId)
+                } label: {
+                    Label("View investor profile", systemImage: "person.crop.circle")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if pending {
+                HStack(spacing: 10) {
+                    Button {
+                        acceptingFor = inv
+                    } label: {
+                        Text("Accept")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AuthTheme.primaryPink)
+
                     Button {
                         Task { await decline(inv) }
                     } label: {
@@ -197,16 +257,53 @@ struct SeekerOpportunityDetailView: View {
                         } else {
                             Text("Decline")
                                 .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
                         }
                     }
                     .buttonStyle(.bordered)
                     .disabled(decliningId != nil)
                 }
+            } else if inv.agreementStatus == .pending_signatures, inv.needsSeekerSignature(currentUserId: auth.currentUserID) {
+                Button {
+                    agreementToReview = inv
+                } label: {
+                    Text("Review & sign agreement")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AuthTheme.primaryPink)
+            } else if inv.agreement != nil {
+                Button {
+                    agreementToReview = inv
+                } label: {
+                    Text("View agreement")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func statusColor(_ inv: InvestmentListing) -> Color {
+        switch inv.agreementStatus {
+        case .active:
+            return .green
+        case .pending_signatures:
+            return .orange
+        case .none:
+            break
+        }
+        switch inv.status.lowercased() {
+        case "pending": return .orange
+        case "accepted", "active": return .green
+        case "declined", "rejected": return .red
+        default: return .secondary
+        }
     }
 
     private func shortId(_ id: String) -> String {

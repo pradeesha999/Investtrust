@@ -33,7 +33,7 @@ struct AutoPagingImageCarousel: View {
                             height: height,
                             cornerRadius: cornerRadius
                         )
-                        .tag(index)
+                        .tag(index) 
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .automatic))

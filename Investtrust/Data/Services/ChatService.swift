@@ -48,6 +48,8 @@ final class ChatService {
                 let data = doc.data()
                 return ChatThread(
                     id: doc.documentID,
+                    seekerId: data["seekerId"] as? String,
+                    investorId: data["investorId"] as? String,
                     title: data["title"] as? String ?? "Chat",
                     lastMessagePreview: data["lastMessagePreview"] as? String ?? "",
                     lastMessageAt: (data["lastMessageAt"] as? Timestamp)?.dateValue()
@@ -56,6 +58,17 @@ final class ChatService {
             .sorted {
                 ($0.lastMessageAt ?? .distantPast) > ($1.lastMessageAt ?? .distantPast)
             }
+    }
+
+    /// For resolving the other participant’s profile (name / avatar) in the chat UI.
+    func fetchParticipantIds(chatId: String) async throws -> (seekerId: String, investorId: String)? {
+        let snap = try await db.collection("chats").document(chatId).getDocument()
+        guard let data = snap.data(),
+              let seeker = data["seekerId"] as? String,
+              let investor = data["investorId"] as? String else {
+            return nil
+        }
+        return (seeker, investor)
     }
 
     func sendMessage(chatId: String, senderId: String, text: String) async throws {

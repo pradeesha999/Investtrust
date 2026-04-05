@@ -12,17 +12,23 @@ final class OpportunityService {
         case invalidAmount
         case invalidInterestRate
         case invalidTimeline
+        case invalidTerms
+        case invalidMinimum
         case notOwner
         case blockedByActiveInvestmentRequests
 
         var errorDescription: String? {
             switch self {
             case .invalidAmount:
-                return "Enter a valid amount (numbers only)."
+                return "Enter a valid funding goal (numbers only)."
             case .invalidInterestRate:
                 return "Enter a valid interest rate (for example 12.5)."
             case .invalidTimeline:
                 return "Enter a valid repayment timeline in months."
+            case .invalidTerms:
+                return "Fill in all required fields for the selected investment type."
+            case .invalidMinimum:
+                return "Minimum investment must be greater than zero and not more than the funding goal."
             case .notOwner:
                 return "You don’t have permission to change this listing."
             case .blockedByActiveInvestmentRequests:
@@ -40,17 +46,31 @@ final class OpportunityService {
         let normalizedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCategory = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedDescription = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedTimelineText = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUseOfFunds = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let amountRequested = Self.parseDouble(from: draft.amount), amountRequested > 0 else {
             throw OpportunityServiceError.invalidAmount
         }
-        guard let interestRate = Self.parseDouble(from: draft.interestRate), interestRate >= 0 else {
-            throw OpportunityServiceError.invalidInterestRate
+
+        let terms = try Self.validatedTerms(from: draft)
+
+        let minRaw = draft.minimumInvestment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let minimumInvestment: Double
+        if minRaw.isEmpty {
+            minimumInvestment = min(amountRequested, max(1, amountRequested * 0.01))
+        } else {
+            guard let m = Self.parseDouble(from: minRaw), m > 0, m <= amountRequested else {
+                throw OpportunityServiceError.invalidMinimum
+            }
+            minimumInvestment = m
         }
-        guard let repaymentTimelineMonths = Self.parseInt(from: normalizedTimelineText), repaymentTimelineMonths > 0 else {
-            throw OpportunityServiceError.invalidTimeline
-        }
+
+        let maxInvestors: Int? = {
+            let t = draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
+            return n
+        }()
 
         let doc = db.collection("opportunities").document()
         let opportunityID = doc.documentID
@@ -96,29 +116,41 @@ final class OpportunityService {
             }
         }
 
+        let milestonesPayload = Self.milestonesPayload(from: draft.milestones)
+        let termsMap = OpportunityFirestoreCoding.termsDictionary(from: terms, type: draft.investmentType)
+
         let now = Date()
         var payload: [String: Any] = [
             "ownerId": userID,
             "title": normalizedTitle,
             "category": normalizedCategory,
             "description": normalizedDescription,
+            "location": normalizedLocation,
+            "investmentType": draft.investmentType.rawValue,
             "amountRequested": amountRequested,
-            "interestRate": interestRate,
-            "repaymentTimelineMonths": repaymentTimelineMonths,
+            "minimumInvestment": minimumInvestment,
+            "useOfFunds": normalizedUseOfFunds,
+            "milestones": milestonesPayload,
+            "riskLevel": draft.riskLevel.rawValue,
+            "verificationStatus": draft.verificationStatus.rawValue,
+            "documentURLs": [String](),
+            "terms": termsMap,
             "imageURLs": imageURLs,
-            "imageStoragePaths": [],
             "imagePublicIds": imagePublicIds,
             "videoStoragePath": videoStoragePath as Any,
             "videoPublicId": videoPublicId as Any,
-            "mediaCount": [
-                "images": imageURLs.count,
-                "hasVideo": (videoHTTPSURL != nil) || (videoStoragePath != nil)
-            ],
             "status": "open",
             "mediaWarnings": mediaWarnings,
             "createdAt": Timestamp(date: now),
             "updatedAt": Timestamp(date: now)
         ]
+        if let maxInvestors {
+            payload["maximumInvestors"] = maxInvestors
+        }
+        if draft.investmentType == .loan {
+            if let r = terms.interestRate { payload["interestRate"] = r }
+            if let m = terms.repaymentTimelineMonths { payload["repaymentTimelineMonths"] = m }
+        }
         if let videoHTTPSURL {
             payload["videoURL"] = videoHTTPSURL
         }
@@ -127,24 +159,11 @@ final class OpportunityService {
             try await doc.setData(payload)
         }
 
-        return OpportunityListing(
-            id: opportunityID,
-            ownerId: userID,
-            title: normalizedTitle,
-            category: normalizedCategory,
-            description: normalizedDescription,
-            amountRequested: amountRequested,
-            interestRate: interestRate,
-            repaymentTimelineMonths: repaymentTimelineMonths,
-            status: "open",
-            createdAt: now,
-            imageStoragePaths: imageURLs,
-            videoStoragePath: videoStoragePath,
-            videoURL: videoHTTPSURL,
-            mediaWarnings: mediaWarnings,
-            imagePublicIds: imagePublicIds,
-            videoPublicId: videoPublicId
-        )
+        let snap = try await doc.getDocument()
+        guard let merged = snap.data() else {
+            throw NSError(domain: "Investtrust", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not read listing after save."])
+        }
+        return OpportunityListing(documentID: opportunityID, data: merged)
     }
 
     /// If the listing has a Storage path but no `videoURL`, fetch the download URL and save it (owner only). Lets investors play video for listings created before `videoURL` was written.
@@ -200,7 +219,7 @@ final class OpportunityService {
         }
     }
 
-    /// Updates listing text/terms only (media unchanged). Blocked while any non-declined investment request exists for this opportunity.
+    /// Updates listing fields (media unchanged). Blocked while any non-declined investment request exists for this opportunity.
     func updateOpportunity(
         opportunityId: String,
         ownerId: String,
@@ -209,17 +228,31 @@ final class OpportunityService {
         let normalizedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCategory = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedDescription = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedTimelineText = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUseOfFunds = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let amountRequested = Self.parseDouble(from: draft.amount), amountRequested > 0 else {
             throw OpportunityServiceError.invalidAmount
         }
-        guard let interestRate = Self.parseDouble(from: draft.interestRate), interestRate >= 0 else {
-            throw OpportunityServiceError.invalidInterestRate
+
+        let terms = try Self.validatedTerms(from: draft)
+
+        let minRaw = draft.minimumInvestment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let minimumInvestment: Double
+        if minRaw.isEmpty {
+            minimumInvestment = min(amountRequested, max(1, amountRequested * 0.01))
+        } else {
+            guard let m = Self.parseDouble(from: minRaw), m > 0, m <= amountRequested else {
+                throw OpportunityServiceError.invalidMinimum
+            }
+            minimumInvestment = m
         }
-        guard let repaymentTimelineMonths = Self.parseInt(from: normalizedTimelineText), repaymentTimelineMonths > 0 else {
-            throw OpportunityServiceError.invalidTimeline
-        }
+
+        let maxInvestors: Int? = {
+            let t = draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
+            return n
+        }()
 
         let ref = db.collection("opportunities").document(opportunityId)
         let snapshot = try await ref.getDocument()
@@ -230,27 +263,47 @@ final class OpportunityService {
             throw OpportunityServiceError.blockedByActiveInvestmentRequests
         }
 
+        let milestonesPayload = Self.milestonesPayload(from: draft.milestones)
+        let termsMap = OpportunityFirestoreCoding.termsDictionary(from: terms, type: draft.investmentType)
+
         let now = Date()
-        try await withTimeout(seconds: 12) {
-            try await ref.updateData([
-                "title": normalizedTitle,
-                "category": normalizedCategory,
-                "description": normalizedDescription,
-                "amountRequested": amountRequested,
-                "interestRate": interestRate,
-                "repaymentTimelineMonths": repaymentTimelineMonths,
-                "updatedAt": Timestamp(date: now)
-            ])
+        var fields: [String: Any] = [
+            "title": normalizedTitle,
+            "category": normalizedCategory,
+            "description": normalizedDescription,
+            "location": normalizedLocation,
+            "investmentType": draft.investmentType.rawValue,
+            "amountRequested": amountRequested,
+            "minimumInvestment": minimumInvestment,
+            "useOfFunds": normalizedUseOfFunds,
+            "milestones": milestonesPayload,
+            "riskLevel": draft.riskLevel.rawValue,
+            "verificationStatus": draft.verificationStatus.rawValue,
+            "terms": termsMap,
+            "updatedAt": Timestamp(date: now)
+        ]
+        if let maxInvestors {
+            fields["maximumInvestors"] = maxInvestors
+        } else {
+            fields["maximumInvestors"] = FieldValue.delete()
         }
 
-        var merged = existing
-        merged["title"] = normalizedTitle
-        merged["category"] = normalizedCategory
-        merged["description"] = normalizedDescription
-        merged["amountRequested"] = amountRequested
-        merged["interestRate"] = interestRate
-        merged["repaymentTimelineMonths"] = repaymentTimelineMonths
-        merged["updatedAt"] = Timestamp(date: now)
+        if draft.investmentType == .loan {
+            if let r = terms.interestRate { fields["interestRate"] = r }
+            if let m = terms.repaymentTimelineMonths { fields["repaymentTimelineMonths"] = m }
+        } else {
+            fields["interestRate"] = FieldValue.delete()
+            fields["repaymentTimelineMonths"] = FieldValue.delete()
+        }
+
+        try await withTimeout(seconds: 12) {
+            try await ref.updateData(fields)
+        }
+
+        let mergedSnap = try await ref.getDocument()
+        guard let merged = mergedSnap.data() else {
+            throw NSError(domain: "Investtrust", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not read listing after update."])
+        }
         return OpportunityListing(documentID: opportunityId, data: merged)
     }
 
@@ -316,6 +369,89 @@ final class OpportunityService {
         return snapshot.documents
             .map { OpportunityListing(document: $0) }
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+    }
+
+    /// Same rules as `createOpportunity` / `updateOpportunity` — use for client-side step validation.
+    static func validateDraftTerms(_ draft: OpportunityDraft) throws -> OpportunityTerms {
+        try validatedTerms(from: draft)
+    }
+
+    private static func validatedTerms(from draft: OpportunityDraft) throws -> OpportunityTerms {
+        switch draft.investmentType {
+        case .loan:
+            guard let r = Self.parseDouble(from: draft.interestRate), r >= 0 else {
+                throw OpportunityServiceError.invalidInterestRate
+            }
+            let tl = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let m = Self.parseInt(from: tl), m > 0 else {
+                throw OpportunityServiceError.invalidTimeline
+            }
+            var t = OpportunityTerms()
+            t.interestRate = r
+            t.repaymentTimelineMonths = m
+            t.repaymentFrequency = draft.repaymentFrequency
+            return t
+        case .equity:
+            guard let p = Self.parseDouble(from: draft.equityPercentage), p > 0, p <= 100 else {
+                throw OpportunityServiceError.invalidTerms
+            }
+            var t = OpportunityTerms()
+            t.equityPercentage = p
+            let bv = draft.businessValuation.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !bv.isEmpty, let v = Self.parseDouble(from: bv), v > 0 {
+                t.businessValuation = v
+            }
+            let exit = draft.exitPlan.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !exit.isEmpty else { throw OpportunityServiceError.invalidTerms }
+            t.exitPlan = exit
+            return t
+        case .revenue_share:
+            guard let p = Self.parseDouble(from: draft.revenueSharePercent), p > 0 else {
+                throw OpportunityServiceError.invalidTerms
+            }
+            guard let target = Self.parseDouble(from: draft.targetReturnAmount), target > 0 else {
+                throw OpportunityServiceError.invalidTerms
+            }
+            let md = draft.maxDurationMonths.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let maxM = Self.parseInt(from: md), maxM > 0 else {
+                throw OpportunityServiceError.invalidTimeline
+            }
+            var t = OpportunityTerms()
+            t.revenueSharePercent = p
+            t.targetReturnAmount = target
+            t.maxDurationMonths = maxM
+            return t
+        case .project:
+            let val = draft.expectedReturnValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !val.isEmpty else { throw OpportunityServiceError.invalidTerms }
+            var t = OpportunityTerms()
+            t.expectedReturnType = draft.expectedReturnType
+            t.expectedReturnValue = val
+            t.completionDate = draft.completionDate
+            return t
+        case .custom:
+            let s = draft.customTermsSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { throw OpportunityServiceError.invalidTerms }
+            var t = OpportunityTerms()
+            t.customTermsSummary = s
+            return t
+        }
+    }
+
+    private static func milestonesPayload(from items: [MilestoneDraft]) -> [[String: Any]] {
+        items.compactMap { d -> [String: Any]? in
+            let title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let desc = d.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty && desc.isEmpty { return nil }
+            var o: [String: Any] = [
+                "title": title.isEmpty ? "Milestone" : title,
+                "description": desc
+            ]
+            if let date = d.expectedDate {
+                o["expectedDate"] = Timestamp(date: date)
+            }
+            return o
+        }
     }
 
     /// Photos picker / camera may supply HEIC/PNG; we always store JPEG bytes so downloads decode reliably as `image/jpeg`.

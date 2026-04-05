@@ -8,6 +8,12 @@ import SwiftUI
 struct InvestmentCard: View {
     let inv: InvestmentListing
 
+    @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
+
+    @State private var agreementToShow: InvestmentListing?
+    private let investmentService = InvestmentService()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -19,9 +25,13 @@ struct InvestmentCard: View {
                         .font(.headline)
                         .lineLimit(2)
 
-                    Text(inv.status.capitalized)
+                    Text(inv.investmentType.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.accent)
+
+                    Text(inv.lifecycleDisplayTitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(lifecycleColor(inv))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Amount: LKR \(format(inv.investmentAmount))")
@@ -49,38 +59,69 @@ struct InvestmentCard: View {
             }
 
             HStack(spacing: 12) {
-                Button {
-                    // Hook: route to chat when thread id is available on investment.
-                } label: {
-                    Text("Chat")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                if let oid = inv.opportunityId, let iid = inv.investorId,
+                   auth.currentUserID == iid {
+                    Button {
+                        let chatId = "\(oid)_\(iid)"
+                        tabRouter.pendingChatDeepLink = ChatDeepLink(chatId: chatId)
+                        tabRouter.selectedTab = .chat
+                    } label: {
+                        Text("Chat")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(AppTheme.accent)
+                } else {
+                    Button {
+                    } label: {
+                        Text("Chat")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(AppTheme.accent)
+                    .disabled(true)
                 }
-                .buttonStyle(.bordered)
-                .tint(AppTheme.accent)
-                .disabled(true)
-                .accessibilityLabel("Chat, coming soon")
 
-                Button {
-                    // Hook: agreement documents.
-                } label: {
-                    Text("Agreement")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                if inv.agreement != nil {
+                    Button {
+                        agreementToShow = inv
+                    } label: {
+                        Text(inv.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review & sign" : "Agreement")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(AppTheme.accent)
+                } else {
+                    Button {
+                    } label: {
+                        Text("Agreement")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(true)
                 }
-                .buttonStyle(.bordered)
-                .disabled(true)
-                .accessibilityLabel("Agreement, coming soon")
             }
-
-            Text("Chat and agreement actions will connect here in a future update.")
-                .font(.caption2)
-                .foregroundStyle(.secondary.opacity(0.85))
         }
         .padding(AppTheme.cardPadding)
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
         .appCardShadow()
+        .sheet(item: $agreementToShow) { row in
+            InvestmentAgreementReviewView(
+                investment: row,
+                canSign: row.needsInvestorSignature(currentUserId: auth.currentUserID),
+                onSign: {
+                    guard let uid = auth.currentUserID else {
+                        throw InvestmentService.InvestmentServiceError.notSignedIn
+                    }
+                    try await investmentService.signAgreement(investmentId: row.id, userId: uid)
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -99,6 +140,23 @@ struct InvestmentCard: View {
                     Image(systemName: "photo")
                         .foregroundStyle(.secondary)
                 )
+        }
+    }
+
+    private func lifecycleColor(_ inv: InvestmentListing) -> Color {
+        switch inv.agreementStatus {
+        case .active:
+            return .green
+        case .pending_signatures:
+            return .orange
+        case .none:
+            break
+        }
+        switch inv.status.lowercased() {
+        case "pending": return .orange
+        case "accepted", "active": return .green
+        case "declined", "rejected": return .red
+        default: return .secondary
         }
     }
 

@@ -2,14 +2,17 @@ import SwiftUI
 
 struct ChatListView: View {
     @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
+
     private let chatService = ChatService()
 
     @State private var threads: [ChatThread] = []
     @State private var loadError: String?
     @State private var showLoadError = false
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if threads.isEmpty {
                     StatusBlock(
@@ -21,21 +24,8 @@ struct ChatListView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
                     List(threads) { thread in
-                        NavigationLink {
-                            ChatRoomView(chatId: thread.id, title: thread.title)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(thread.title)
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                if !thread.lastMessagePreview.isEmpty {
-                                    Text(thread.lastMessagePreview)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(.vertical, 4)
+                        NavigationLink(value: ChatDeepLink(chatId: thread.id)) {
+                            ChatThreadRowView(thread: thread, currentUserId: auth.currentUserID)
                         }
                     }
                     .listStyle(.insetGrouped)
@@ -43,11 +33,19 @@ struct ChatListView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Chat")
+            .navigationDestination(for: ChatDeepLink.self) { link in
+                ChatRoomView(chatId: link.chatId)
+            }
             .task(id: auth.currentUserID) {
                 await loadThreads()
             }
             .refreshable {
                 await loadThreads()
+            }
+            .onChange(of: tabRouter.pendingChatDeepLink) { _, link in
+                guard let link else { return }
+                path.append(link)
+                tabRouter.pendingChatDeepLink = nil
             }
             .alert("Could not load chats", isPresented: $showLoadError) {
                 Button("OK") { loadError = nil }
@@ -74,4 +72,5 @@ struct ChatListView: View {
 #Preview {
     ChatListView()
         .environment(AuthService.previewSignedIn)
+        .environmentObject(MainTabRouter())
 }

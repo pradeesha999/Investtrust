@@ -3,16 +3,19 @@ import SwiftUI
 
 struct ChatRoomView: View {
     let chatId: String
-    let title: String
 
     @Environment(AuthService.self) private var auth
     private let chatService = ChatService()
+    private let userService = UserService()
 
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
     @State private var listener: ListenerRegistration?
     @State private var sendError: String?
     @State private var showSendError = false
+
+    @State private var partnerName: String = "Chat"
+    @State private var partnerAvatarURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,8 +61,21 @@ struct ChatRoomView: View {
             .background(Color(.systemBackground))
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 10) {
+                    partnerAvatar
+                        .frame(width: 34, height: 34)
+                    Text(partnerName)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .task(id: chatId) {
+            await loadPartnerHeader()
+        }
         .onAppear { startListening() }
         .onDisappear {
             listener?.remove()
@@ -69,6 +85,56 @@ struct ChatRoomView: View {
             Button("OK") { sendError = nil }
         } message: {
             Text(sendError ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var partnerAvatar: some View {
+        if let partnerAvatarURL {
+            AsyncImage(url: partnerAvatarURL) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                default:
+                    avatarPlaceholder
+                }
+            }
+            .clipShape(Circle())
+        } else {
+            avatarPlaceholder
+        }
+    }
+
+    private var avatarPlaceholder: some View {
+        Circle()
+            .fill(AppTheme.secondaryFill)
+            .overlay {
+                Image(systemName: "person.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+    }
+
+    private func loadPartnerHeader() async {
+        guard let uid = auth.currentUserID else { return }
+        guard let pair = try? await chatService.fetchParticipantIds(chatId: chatId) else { return }
+        let otherId = pair.seekerId == uid ? pair.investorId : pair.seekerId
+        guard let profile = try? await userService.fetchProfile(userID: otherId) else {
+            await MainActor.run {
+                partnerName = "Chat"
+                partnerAvatarURL = nil
+            }
+            return
+        }
+        await MainActor.run {
+            let raw = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            partnerName = raw.isEmpty ? "Member" : raw
+            if let s = profile.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+               let u = URL(string: s) {
+                partnerAvatarURL = u
+            } else {
+                partnerAvatarURL = nil
+            }
         }
     }
 
@@ -137,7 +203,7 @@ struct ChatRoomView: View {
 
 #Preview {
     NavigationStack {
-        ChatRoomView(chatId: "preview", title: "Samsung phone")
+        ChatRoomView(chatId: "preview")
             .environment(AuthService.previewSignedIn)
     }
 }

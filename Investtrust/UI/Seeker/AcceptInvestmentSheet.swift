@@ -4,12 +4,12 @@ import SwiftUI
 struct AcceptInvestmentSheet: View {
     let investment: InvestmentListing
     let opportunity: OpportunityListing
-    let onAccept: (String) async throws -> Void
+    var onAccept: (String) async throws -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var verificationMessage = ""
     @State private var isSubmitting = false
-    @State private var error: String?
+    @State private var submitError: String?
 
     var body: some View {
         NavigationStack {
@@ -25,9 +25,9 @@ struct AcceptInvestmentSheet: View {
                         .frame(minHeight: 120)
                 }
 
-                if let error {
+                if let submitError {
                     Section {
-                        Text(error)
+                        Text(submitError)
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
@@ -54,10 +54,10 @@ struct AcceptInvestmentSheet: View {
     }
 
     private func submit() async {
-        error = nil
+        submitError = nil
         let trimmed = verificationMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 8 else {
-            error = "Please write at least a short verification message (8+ characters)."
+            submitError = "Please write at least a short verification message (8+ characters)."
             return
         }
         isSubmitting = true
@@ -68,9 +68,9 @@ struct AcceptInvestmentSheet: View {
         } catch {
             await MainActor.run {
                 if let le = error as? LocalizedError, let d = le.errorDescription {
-                    error = d
+                    submitError = d
                 } else {
-                    error = (error as NSError).localizedDescription
+                    submitError = (error as NSError).localizedDescription
                 }
             }
         }

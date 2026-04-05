@@ -4,6 +4,7 @@ import Foundation
 final class InvestmentService {
     private let db = Firestore.firestore()
     private let chatService = ChatService()
+    private let userService = UserService()
 
     enum InvestmentServiceError: LocalizedError {
         case notSignedIn
@@ -15,6 +16,9 @@ final class InvestmentService {
         case notPending
         case verificationMessageTooShort
         case missingInvestor
+        case agreementNotAwaitingSignatures
+        case wrongSigner
+        case alreadySigned
 
         var errorDescription: String? {
             switch self {
@@ -36,6 +40,12 @@ final class InvestmentService {
                 return "Add a short verification message (at least a few words) before accepting."
             case .missingInvestor:
                 return "This request is missing investor information."
+            case .agreementNotAwaitingSignatures:
+                return "This agreement is not waiting for signatures."
+            case .wrongSigner:
+                return "Only the investor or seeker on this deal can sign."
+            case .alreadySigned:
+                return "You have already signed this agreement."
             }
         }
     }
@@ -176,26 +186,34 @@ final class InvestmentService {
 
         if let existing = try await fetchLatestRequestForInvestor(opportunityId: opportunity.id, investorId: investorId) {
             let s = existing.status.lowercased()
-            if s == "pending" || s == "accepted" {
+            if !["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
                 throw InvestmentServiceError.pendingRequestExists
             }
         }
 
         let ref = db.collection("investments").document()
         let now = Date()
-        let payload: [String: Any] = [
+        let firstThumb = opportunity.imageStoragePaths.first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var payload: [String: Any] = [
             "opportunityId": opportunity.id,
             "investorId": investorId,
             "seekerId": opportunity.ownerId,
             "status": "pending",
+            "agreementStatus": AgreementStatus.none.rawValue,
             "investmentAmount": proposedAmount,
             "finalInterestRate": opportunity.interestRate,
             "finalTimelineMonths": opportunity.repaymentTimelineMonths,
+            "investmentType": opportunity.investmentType.rawValue,
+            "opportunityInvestmentType": opportunity.investmentType.rawValue,
+            "receivedAmount": 0,
             "opportunityTitle": opportunity.title,
-            "imageURLs": opportunity.imageStoragePaths,
             "createdAt": Timestamp(date: now),
             "updatedAt": Timestamp(date: now)
         ]
+        if let firstThumb, !firstThumb.isEmpty {
+            payload["thumbnailImageURL"] = firstThumb
+        }
         try await ref.setData(payload)
         let snap = try await ref.getDocument()
         guard let merged = snap.data(), let created = InvestmentListing(id: ref.documentID, data: merged) else {
@@ -236,9 +254,22 @@ final class InvestmentService {
         }
 
         let now = Date()
+        let investorDisplay = await Self.displayName(userService: userService, userId: investorId, fallback: "Investor")
+        let seekerDisplay = await Self.displayName(userService: userService, userId: seekerId, fallback: "Seeker")
+        let agreementPayload = Self.makeAgreementPayload(
+            opportunity: opportunity,
+            investorName: investorDisplay,
+            seekerName: seekerDisplay,
+            investmentAmount: inv.investmentAmount,
+            at: now
+        )
+
         try await invRef.updateData([
             "status": "accepted",
             "acceptedAt": Timestamp(date: now),
+            "agreementStatus": AgreementStatus.pending_signatures.rawValue,
+            "agreementGeneratedAt": Timestamp(date: now),
+            "agreement": agreementPayload,
             "updatedAt": Timestamp(date: now)
         ])
 
@@ -248,8 +279,97 @@ final class InvestmentService {
             investorId: investorId,
             opportunityTitle: opportunity.title
         )
-        let body = "Verification (acceptance): \(trimmed)"
-        try await chatService.sendMessage(chatId: chatId, senderId: seekerId, text: body)
+        try await chatService.sendMessage(
+            chatId: chatId,
+            senderId: seekerId,
+            text: "Investment accepted. Agreement ready for signing."
+        )
+        try await chatService.sendMessage(
+            chatId: chatId,
+            senderId: seekerId,
+            text: "Verification (acceptance): \(trimmed)"
+        )
+    }
+
+    /// Records a timestamp signature for the current user (investor or seeker). Activates the MOA when both are set.
+    func signAgreement(investmentId: String, userId: String) async throws {
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.agreementStatus == .pending_signatures else {
+            throw InvestmentServiceError.agreementNotAwaitingSignatures
+        }
+        guard let investorId = inv.investorId, let seekerUid = inv.seekerId else {
+            throw InvestmentServiceError.missingInvestor
+        }
+
+        let now = Date()
+        var updates: [String: Any] = [
+            "updatedAt": Timestamp(date: now)
+        ]
+
+        if userId == investorId {
+            guard inv.signedByInvestorAt == nil else { throw InvestmentServiceError.alreadySigned }
+            updates["signedByInvestorAt"] = Timestamp(date: now)
+        } else if userId == seekerUid {
+            guard inv.signedBySeekerAt == nil else { throw InvestmentServiceError.alreadySigned }
+            updates["signedBySeekerAt"] = Timestamp(date: now)
+        } else {
+            throw InvestmentServiceError.wrongSigner
+        }
+
+        let willInvestorBeSigned = userId == investorId ? now : inv.signedByInvestorAt
+        let willSeekerBeSigned = userId == seekerUid ? now : inv.signedBySeekerAt
+        if willInvestorBeSigned != nil, willSeekerBeSigned != nil {
+            updates["agreementStatus"] = AgreementStatus.active.rawValue
+            updates["status"] = "active"
+        }
+
+        try await invRef.updateData(updates)
+
+        if willInvestorBeSigned != nil, willSeekerBeSigned != nil,
+           let opId = inv.opportunityId {
+            let chatId = try await chatService.getOrCreateChat(
+                opportunityId: opId,
+                seekerId: seekerUid,
+                investorId: investorId,
+                opportunityTitle: inv.opportunityTitle
+            )
+            try await chatService.sendMessage(
+                chatId: chatId,
+                senderId: userId,
+                text: "Agreement fully signed. Proceed with funding."
+            )
+        }
+    }
+
+    private static func displayName(userService: UserService, userId: String, fallback: String) async -> String {
+        if let p = try? await userService.fetchProfile(userID: userId),
+           let n = p.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !n.isEmpty {
+            return n
+        }
+        return fallback
+    }
+
+    private static func makeAgreementPayload(
+        opportunity: OpportunityListing,
+        investorName: String,
+        seekerName: String,
+        investmentAmount: Double,
+        at: Date
+    ) -> [String: Any] {
+        [
+            "opportunityTitle": opportunity.title,
+            "investorName": investorName,
+            "seekerName": seekerName,
+            "investmentAmount": investmentAmount,
+            "investmentType": opportunity.investmentType.rawValue,
+            "termsSnapshot": OpportunityFirestoreCoding.termsDictionary(from: opportunity.terms, type: opportunity.investmentType),
+            "createdAt": Timestamp(date: at)
+        ]
     }
 }
 

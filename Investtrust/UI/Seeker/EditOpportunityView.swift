@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-/// Text/terms edit for an existing listing (images and video stay as uploaded).
+/// Edit text, terms, and execution fields for an existing listing (images and video stay as uploaded).
 struct EditOpportunityView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -25,18 +25,137 @@ struct EditOpportunityView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Photos and video can’t be changed here yet. Update title, terms, and description below.")
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("Photos and video can’t be changed here yet. Update everything else below.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    field("Opportunity title", text: $draft.title, placeholder: "Title")
-                    field("Category", text: $draft.category, placeholder: "Category")
-                    field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
-                    field("Interest rate (%)", text: $draft.interestRate, placeholder: "12", keyboardType: .decimalPad)
-                    field("Repayment timeline", text: $draft.repaymentTimeline, placeholder: "12 months")
+                    section("Investment type") {
+                        Picker("Type", selection: $draft.investmentType) {
+                            ForEach(InvestmentType.allCases, id: \.self) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
 
-                    textArea("Description", text: $draft.description, placeholder: "Describe the opportunity.")
+                    section("Basics") {
+                        field("Opportunity title", text: $draft.title, placeholder: "Title")
+                        field("Category", text: $draft.category, placeholder: "Category")
+                        textArea("Description", text: $draft.description, placeholder: "Describe the opportunity.")
+                    }
+
+                    section("Funding & risk") {
+                        field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
+                        field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto")
+                        field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Risk level")
+                                .font(.subheadline.weight(.semibold))
+                            Picker("Risk", selection: $draft.riskLevel) {
+                                ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
+                                    Text(level.displayName).tag(level)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                        field("Location", text: $draft.location, placeholder: "City / region")
+                    }
+
+                    section("Terms — \(draft.investmentType.displayName)") {
+                        Group {
+                            switch draft.investmentType {
+                            case .loan:
+                                field("Interest rate (%)", text: $draft.interestRate, placeholder: "12", keyboardType: .decimalPad)
+                                field("Repayment timeline (months)", text: $draft.repaymentTimeline, placeholder: "12")
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Repayment frequency")
+                                        .font(.subheadline.weight(.semibold))
+                                    Picker("Frequency", selection: $draft.repaymentFrequency) {
+                                        Text("Monthly").tag(RepaymentFrequency.monthly)
+                                        Text("Weekly").tag(RepaymentFrequency.weekly)
+                                    }
+                                    .pickerStyle(.segmented)
+                                }
+                            case .equity:
+                                field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
+                                field("Business valuation (LKR, optional)", text: $draft.businessValuation, placeholder: "5000000", keyboardType: .numberPad)
+                                textArea("Exit plan", text: $draft.exitPlan, placeholder: "How investors may realize returns.")
+                            case .revenue_share:
+                                field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
+                                field("Target return amount (LKR)", text: $draft.targetReturnAmount, placeholder: "500000", keyboardType: .numberPad)
+                                field("Maximum duration (months)", text: $draft.maxDurationMonths, placeholder: "24")
+                            case .project:
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Expected return type")
+                                        .font(.subheadline.weight(.semibold))
+                                    Picker("Return type", selection: $draft.expectedReturnType) {
+                                        Text("Fixed").tag(ExpectedReturnType.fixed)
+                                        Text("Product").tag(ExpectedReturnType.product)
+                                        Text("None").tag(ExpectedReturnType.none)
+                                    }
+                                    .pickerStyle(.segmented)
+                                }
+                                field("Expected return (describe)", text: $draft.expectedReturnValue, placeholder: "Describe the return")
+                                DatePicker(
+                                    "Target completion date",
+                                    selection: Binding(
+                                        get: { draft.completionDate ?? Date() },
+                                        set: { draft.completionDate = $0 }
+                                    ),
+                                    displayedComponents: .date
+                                )
+                            case .custom:
+                                textArea("Custom terms summary", text: $draft.customTermsSummary, placeholder: "Plain-language deal terms.")
+                            }
+                        }
+                    }
+
+                    section("Execution plan") {
+                        textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
+
+                        HStack {
+                            Text("Milestones")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Button {
+                                draft.milestones.append(MilestoneDraft())
+                            } label: {
+                                Label("Add", systemImage: "plus.circle.fill")
+                            }
+                            .tint(AuthTheme.primaryPink)
+                        }
+
+                        ForEach($draft.milestones) { $m in
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("Milestone")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button(role: .destructive) {
+                                        if let idx = draft.milestones.firstIndex(where: { $0.id == m.id }) {
+                                            draft.milestones.remove(at: idx)
+                                        }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                }
+                                field("Title", text: $m.title, placeholder: "Title")
+                                field("Description", text: $m.description, placeholder: "Description")
+                                DatePicker(
+                                    "Expected date (optional)",
+                                    selection: Binding(
+                                        get: { m.expectedDate ?? Date() },
+                                        set: { m.expectedDate = $0 }
+                                    ),
+                                    displayedComponents: .date
+                                )
+                            }
+                            .padding(12)
+                            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                    }
 
                     if let errorMessage {
                         Text(errorMessage)
@@ -71,13 +190,24 @@ struct EditOpportunityView: View {
         }
     }
 
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+            content()
+        }
+    }
+
     private var canSave: Bool {
-        !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !draft.category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !draft.amount.isEmpty
-            && !draft.interestRate.isEmpty
-            && !draft.repaymentTimeline.isEmpty
-            && !draft.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let t = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let c = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
+        let d = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loc = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let u = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !c.isEmpty, !d.isEmpty, !loc.isEmpty, !u.isEmpty else { return false }
+        let cleaned = draft.amount.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
+        guard let amt = Double(cleaned), amt > 0 else { return false }
+        return (try? OpportunityService.validateDraftTerms(draft)) != nil
     }
 
     private func save() async {
@@ -98,16 +228,62 @@ struct EditOpportunityView: View {
 
     private static func draft(from listing: OpportunityListing) -> OpportunityDraft {
         var d = OpportunityDraft()
+        d.investmentType = listing.investmentType
         d.title = listing.title
         d.category = listing.category
-        d.amount = String(format: "%.0f", listing.amountRequested)
-        if listing.interestRate == floor(listing.interestRate) {
-            d.interestRate = String(Int(listing.interestRate))
-        } else {
-            d.interestRate = String(listing.interestRate)
-        }
-        d.repaymentTimeline = "\(listing.repaymentTimelineMonths) months"
         d.description = listing.description
+        d.location = listing.location
+        d.amount = String(format: "%.0f", listing.amountRequested)
+        d.minimumInvestment = listing.minimumInvestment > 0 ? String(format: "%.0f", listing.minimumInvestment) : ""
+        if let max = listing.maximumInvestors {
+            d.maximumInvestors = String(max)
+        }
+        d.riskLevel = listing.riskLevel
+        d.verificationStatus = listing.verificationStatus
+        d.useOfFunds = listing.useOfFunds
+        d.milestones = listing.milestones.map { m in
+            MilestoneDraft(title: m.title, description: m.description, expectedDate: m.expectedDate)
+        }
+
+        let t = listing.terms
+        switch listing.investmentType {
+        case .loan:
+            if let r = t.interestRate {
+                d.interestRate = r == floor(r) ? String(Int(r)) : String(r)
+            }
+            if let m = t.repaymentTimelineMonths {
+                d.repaymentTimeline = "\(m)"
+            }
+            if let f = t.repaymentFrequency {
+                d.repaymentFrequency = f
+            }
+        case .equity:
+            if let p = t.equityPercentage {
+                d.equityPercentage = p == floor(p) ? String(Int(p)) : String(p)
+            }
+            if let v = t.businessValuation {
+                d.businessValuation = String(format: "%.0f", v)
+            }
+            d.exitPlan = t.exitPlan ?? ""
+        case .revenue_share:
+            if let p = t.revenueSharePercent {
+                d.revenueSharePercent = String(p)
+            }
+            if let tr = t.targetReturnAmount {
+                d.targetReturnAmount = String(format: "%.0f", tr)
+            }
+            if let mx = t.maxDurationMonths {
+                d.maxDurationMonths = String(mx)
+            }
+        case .project:
+            if let rt = t.expectedReturnType {
+                d.expectedReturnType = rt
+            }
+            d.expectedReturnValue = t.expectedReturnValue ?? ""
+            d.completionDate = t.completionDate
+        case .custom:
+            d.customTermsSummary = t.customTermsSummary ?? ""
+        }
         return d
     }
 

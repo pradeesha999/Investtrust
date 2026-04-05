@@ -7,16 +7,20 @@ struct InvestProposalSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var amountText = ""
+    @State private var acknowledgesOffPlatform = false
+    @State private var agreesToTerms = false
     @State private var isSubmitting = false
-    @State private var error: String?
+    @State private var submitError: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text("You’re requesting to invest on the listing’s stated terms (interest \(formatRate(opportunity.interestRate))%, \(opportunity.repaymentLabel)). The seeker can accept or decline.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        "You’re requesting to invest on this listing’s stated terms: \(opportunity.investmentType.displayName) — \(opportunity.termsSummaryLine). Minimum ticket LKR \(opportunity.formattedMinimumLKR). The seeker can accept or decline."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 }
 
                 Section("Proposed amount (LKR)") {
@@ -24,9 +28,14 @@ struct InvestProposalSheet: View {
                         .keyboardType(.numberPad)
                 }
 
-                if let error {
+                Section {
+                    Toggle("I understand this investment happens outside the platform", isOn: $acknowledgesOffPlatform)
+                    Toggle("I agree to the opportunity terms", isOn: $agreesToTerms)
+                }
+
+                if let submitError {
                     Section {
-                        Text(error)
+                        Text(submitError)
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
@@ -46,6 +55,7 @@ struct InvestProposalSheet: View {
                         Button("Send") {
                             Task { await submit() }
                         }
+                        .disabled(!acknowledgesOffPlatform || !agreesToTerms)
                     }
                 }
             }
@@ -62,12 +72,20 @@ struct InvestProposalSheet: View {
     }
 
     private func submit() async {
-        error = nil
+        submitError = nil
+        guard acknowledgesOffPlatform, agreesToTerms else {
+            submitError = "Confirm both acknowledgements to continue."
+            return
+        }
         let cleaned = amountText
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: ",", with: "")
         guard let value = Double(cleaned), value > 0 else {
-            error = "Enter a valid amount."
+            submitError = "Enter a valid amount."
+            return
+        }
+        guard value >= opportunity.minimumInvestment else {
+            submitError = "Amount must be at least LKR \(opportunity.formattedMinimumLKR)."
             return
         }
         isSubmitting = true
@@ -78,16 +96,12 @@ struct InvestProposalSheet: View {
         } catch {
             await MainActor.run {
                 if let le = error as? LocalizedError, let d = le.errorDescription {
-                    error = d
+                    submitError = d
                 } else {
-                    error = (error as NSError).localizedDescription
+                    submitError = (error as NSError).localizedDescription
                 }
             }
         }
     }
 
-    private func formatRate(_ rate: Double) -> String {
-        if rate == floor(rate) { return String(Int(rate)) }
-        return String(rate)
-    }
 }
