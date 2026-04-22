@@ -75,7 +75,7 @@ struct InvestorDashboardView: View {
                     } label: {
                         Label("Explore", systemImage: "safari")
                     }
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                 }
             }
             .task(id: auth.currentUserID) {
@@ -112,7 +112,7 @@ struct InvestorDashboardView: View {
                     .padding(.vertical, 12)
             }
             .buttonStyle(.borderedProminent)
-            .tint(AppTheme.accent)
+            .tint(auth.accentColor)
         }
         .padding(AppTheme.cardPadding)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
@@ -153,7 +153,7 @@ struct InvestorDashboardView: View {
                     .padding(.vertical, 14)
             }
             .buttonStyle(.plain)
-            .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
             .foregroundStyle(.white)
         }
         .padding(AppTheme.cardPadding)
@@ -196,7 +196,7 @@ struct InvestorDashboardView: View {
                     .padding(.vertical, 12)
             }
             .buttonStyle(.bordered)
-            .tint(AppTheme.accent)
+            .tint(auth.accentColor)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -253,7 +253,7 @@ struct InvestorDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundStyle(AppTheme.accent)
+                .foregroundStyle(auth.accentColor)
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -287,7 +287,9 @@ struct InvestorDashboardView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(visible) { inv in
-                    DashboardInvestmentCard(investment: inv)
+                    DashboardInvestmentCard(investment: inv) {
+                        await load()
+                    }
                 }
             }
         }
@@ -416,7 +418,7 @@ struct InvestorDashboardView: View {
                         y: .value("Invested", p.cumulativeInvested)
                     )
                     .interpolationMethod(.monotone)
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(auth.accentColor)
 
                     LineMark(
                         x: .value("Month", p.periodEnd),
@@ -443,7 +445,7 @@ struct InvestorDashboardView: View {
             HStack(spacing: 16) {
                 Label("Invested", systemImage: "circle.fill")
                     .font(.caption2)
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(auth.accentColor)
                 Label("Returned", systemImage: "circle.fill")
                     .font(.caption2)
                     .foregroundStyle(.green)
@@ -500,7 +502,10 @@ struct InvestorDashboardView: View {
 // MARK: - Investment row card
 
 private struct DashboardInvestmentCard: View {
+    @Environment(AuthService.self) private var auth
+
     let investment: InvestmentListing
+    var onRefresh: () async -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -511,7 +516,7 @@ private struct DashboardInvestmentCard: View {
                         .lineLimit(2)
                     Text(investment.investmentType.displayName)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(auth.accentColor)
                 }
                 Spacer(minLength: 0)
                 statusBadge(InvestorPortfolioMetrics.displayStatus(for: investment))
@@ -528,7 +533,7 @@ private struct DashboardInvestmentCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: InvestorPortfolioMetrics.progress01(for: investment))
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                 Text(progressCaption)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -544,7 +549,15 @@ private struct DashboardInvestmentCard: View {
                         .padding(.vertical, 10)
                 }
                 .buttonStyle(.bordered)
-                .tint(AppTheme.accent)
+                .tint(auth.accentColor)
+            }
+
+            if investment.isLoanWithSchedule {
+                LoanInstallmentsSection(
+                    investment: investment,
+                    currentUserId: auth.currentUserID,
+                    onRefresh: { await onRefresh() }
+                )
             }
         }
         .padding(AppTheme.cardPadding)
@@ -555,6 +568,9 @@ private struct DashboardInvestmentCard: View {
     private var progressCaption: String {
         switch investment.investmentType {
         case .loan:
+            if investment.isLoanWithSchedule {
+                return "Progress (confirmed installments)"
+            }
             return "Progress (time-based, projected)"
         case .revenue_share:
             return "Progress vs projected target return"

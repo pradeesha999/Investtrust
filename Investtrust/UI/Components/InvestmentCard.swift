@@ -7,6 +7,8 @@ import SwiftUI
 
 struct InvestmentCard: View {
     let inv: InvestmentListing
+    /// Reload parent list after installment or proof actions (optional).
+    var onRefreshLoan: () async -> Void = {}
 
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter
@@ -30,7 +32,7 @@ struct InvestmentCard: View {
 
                     Text(inv.investmentType.displayName)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(auth.accentColor)
 
                     Text(inv.lifecycleDisplayTitle)
                         .font(.caption)
@@ -56,7 +58,7 @@ struct InvestmentCard: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(AppTheme.accent, in: Capsule())
+                        .background(auth.accentColor, in: Capsule())
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
@@ -75,7 +77,7 @@ struct InvestmentCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                 } else {
                     Button {
                     } label: {
@@ -84,7 +86,7 @@ struct InvestmentCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                     .disabled(true)
                 }
 
@@ -97,7 +99,7 @@ struct InvestmentCard: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                 } else {
                     Button {
                     } label: {
@@ -109,22 +111,42 @@ struct InvestmentCard: View {
                     .disabled(true)
                 }
             }
+
+            if inv.isLoanWithSchedule {
+                LoanInstallmentsSection(
+                    investment: inv,
+                    currentUserId: auth.currentUserID,
+                    onRefresh: { await onRefreshLoan() }
+                )
+            }
         }
         .padding(AppTheme.cardPadding)
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
         .appCardShadow()
         .sheet(item: $agreementToShow) { row in
-            InvestmentAgreementReviewView(
-                investment: row,
-                canSign: row.needsInvestorSignature(currentUserId: auth.currentUserID),
-                onSign: {
-                    guard let uid = auth.currentUserID else {
-                        throw InvestmentService.InvestmentServiceError.notSignedIn
+            NavigationStack {
+                InvestmentAgreementReviewView(
+                    investment: row,
+                    canSign: row.needsInvestorSignature(currentUserId: auth.currentUserID),
+                    onSign: { signaturePNG in
+                        guard let uid = auth.currentUserID else {
+                            throw InvestmentService.InvestmentServiceError.notSignedIn
+                        }
+                        do {
+                            try await investmentService.signAgreement(
+                                investmentId: row.id,
+                                userId: uid,
+                                signaturePNG: signaturePNG
+                            )
+                            await onRefreshLoan()
+                        } catch {
+                            await onRefreshLoan()
+                            throw error
+                        }
                     }
-                    try await investmentService.signAgreement(investmentId: row.id, userId: uid)
-                }
-            )
+                )
+            }
         }
     }
 

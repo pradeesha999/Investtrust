@@ -23,7 +23,13 @@ struct OpportunityDetailView: View {
     @State private var isOpeningChat = false
     @State private var myLatestRequest: InvestmentListing?
     @State private var showInvestSheet = false
-    @State private var showAgreementReview = false
+    @State private var agreementReviewContext: AgreementReviewContext?
+
+    private struct AgreementReviewContext: Identifiable {
+        var id: String { investment.id }
+        let investment: InvestmentListing
+        let opportunity: OpportunityListing
+    }
 
     /// Production path: load from Firestore by id (avoids `NavigationLink(value:)` / `Hashable` mismatches in lists).
     init(opportunityId: String) {
@@ -80,17 +86,26 @@ struct OpportunityDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showAgreementReview) {
-            if let opportunity, let req = myLatestRequest {
+        .sheet(item: $agreementReviewContext) { ctx in
+            NavigationStack {
                 InvestmentAgreementReviewView(
-                    investment: req,
-                    canSign: req.needsInvestorSignature(currentUserId: auth.currentUserID),
-                    onSign: {
+                    investment: ctx.investment,
+                    canSign: ctx.investment.needsInvestorSignature(currentUserId: auth.currentUserID),
+                    onSign: { signaturePNG in
                         guard let uid = auth.currentUserID else {
                             throw InvestmentService.InvestmentServiceError.notSignedIn
                         }
-                        try await investmentService.signAgreement(investmentId: req.id, userId: uid)
-                        await loadMyRequest(for: opportunity)
+                        do {
+                            try await investmentService.signAgreement(
+                                investmentId: ctx.investment.id,
+                                userId: uid,
+                                signaturePNG: signaturePNG
+                            )
+                            await loadMyRequest(for: ctx.opportunity)
+                        } catch {
+                            await loadMyRequest(for: ctx.opportunity)
+                            throw error
+                        }
                     }
                 )
             }
@@ -132,7 +147,7 @@ struct OpportunityDetailView: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            tagPill(text: opportunity.investmentType.displayName, icon: "chart.pie.fill", tint: AppTheme.accent)
+                            tagPill(text: opportunity.investmentType.displayName, icon: "chart.pie.fill", tint: auth.accentColor)
                             tagPill(text: opportunity.riskLevel.displayName + " risk", icon: "exclamationmark.shield.fill", tint: riskAccent(opportunity.riskLevel))
                             tagPill(
                                 text: opportunity.verificationStatus == .verified ? "Verified" : "Unverified",
@@ -204,14 +219,14 @@ struct OpportunityDetailView: View {
                                         HStack(spacing: 10) {
                                             Image(systemName: "doc.richtext")
                                                 .font(.title3)
-                                                .foregroundStyle(AppTheme.accent)
+                                                .foregroundStyle(auth.accentColor)
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(url.lastPathComponent.isEmpty ? "Open document" : url.lastPathComponent)
                                                     .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(.primary)
                                                 Text("View")
                                                     .font(.caption)
-                                                    .foregroundStyle(AppTheme.accent)
+                                                    .foregroundStyle(auth.accentColor)
                                             }
                                             Spacer(minLength: 0)
                                             Image(systemName: "arrow.up.right.square")
@@ -249,13 +264,21 @@ struct OpportunityDetailView: View {
                 VStack(spacing: 12) {
                     investActionBlock(for: opportunity)
 
+                    if let req = myLatestRequest, req.isLoanWithSchedule {
+                        LoanInstallmentsSection(
+                            investment: req,
+                            currentUserId: auth.currentUserID,
+                            onRefresh: { await loadMyRequest(for: opportunity) }
+                        )
+                    }
+
                     Button {
                         Task { await openChatWithSeeker(opportunity: opportunity) }
                     } label: {
                         HStack {
                             if isOpeningChat {
                                 ProgressView()
-                                    .tint(AppTheme.accent)
+                                    .tint(auth.accentColor)
                             }
                             Text("Contact seeker")
                                 .font(.headline.weight(.semibold))
@@ -266,9 +289,9 @@ struct OpportunityDetailView: View {
                     .buttonStyle(.plain)
                     .background(
                         RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                            .stroke(AppTheme.accent, lineWidth: 1.5)
+                            .stroke(auth.accentColor, lineWidth: 1.5)
                     )
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(auth.accentColor)
                     .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
                 }
                 .padding(.horizontal, AppTheme.screenPadding)
@@ -304,7 +327,7 @@ struct OpportunityDetailView: View {
                     value: "LKR \(o.formattedAmountLKR)",
                     caption: nil,
                     icon: "target",
-                    iconTint: AppTheme.accent
+                    iconTint: auth.accentColor
                 )
                 snapshotTile(
                     title: "Min. ticket",
@@ -334,7 +357,7 @@ struct OpportunityDetailView: View {
             if let cap = o.maximumInvestors {
                 HStack(spacing: 10) {
                     Image(systemName: "person.3.fill")
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(auth.accentColor)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Investor cap")
                             .font(.caption)
@@ -399,7 +422,7 @@ struct OpportunityDetailView: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.title2)
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(auth.accentColor)
                     .frame(width: 36, alignment: .leading)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -424,7 +447,7 @@ struct OpportunityDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .foregroundStyle(AppTheme.accent)
+                    .foregroundStyle(auth.accentColor)
                 Text(title)
                     .font(.headline)
             }
@@ -563,7 +586,7 @@ struct OpportunityDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Use of funds", systemImage: "arrow.triangle.branch")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(auth.accentColor)
                     Text(o.useOfFunds)
                         .font(.body)
                         .fixedSize(horizontal: false, vertical: true)
@@ -579,11 +602,11 @@ struct OpportunityDetailView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(spacing: 0) {
                                 Circle()
-                                    .fill(AppTheme.accent)
+                                    .fill(auth.accentColor)
                                     .frame(width: 10, height: 10)
                                 if index < o.milestones.count - 1 {
                                     Rectangle()
-                                        .fill(AppTheme.accent.opacity(0.35))
+                                        .fill(auth.accentColor.opacity(0.35))
                                         .frame(width: 2, height: 36)
                                 }
                             }
@@ -601,7 +624,7 @@ struct OpportunityDetailView: View {
                                 if let d = m.expectedDate {
                                     Text(Self.mediumDate(d))
                                         .font(.caption.weight(.medium))
-                                        .foregroundStyle(AppTheme.accent)
+                                        .foregroundStyle(auth.accentColor)
                                 }
                             }
                             .padding(.bottom, index < o.milestones.count - 1 ? 4 : 0)
@@ -614,7 +637,7 @@ struct OpportunityDetailView: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "mappin.and.ellipse")
                         .font(.title3)
-                        .foregroundStyle(AppTheme.accent)
+                        .foregroundStyle(auth.accentColor)
                         .frame(width: 28)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Location")
@@ -710,7 +733,7 @@ struct OpportunityDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        showAgreementReview = true
+                        agreementReviewContext = AgreementReviewContext(investment: r, opportunity: opportunity)
                     } label: {
                         Text("Review & sign agreement")
                             .font(.headline.weight(.semibold))
@@ -718,14 +741,14 @@ struct OpportunityDetailView: View {
                             .padding(.vertical, 14)
                     }
                     .buttonStyle(.plain)
-                    .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
                 } else {
                     Text("You’ve signed. Waiting for the seeker to sign the agreement.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        showAgreementReview = true
+                        agreementReviewContext = AgreementReviewContext(investment: r, opportunity: opportunity)
                     } label: {
                         Text("View agreement")
                             .font(.subheadline.weight(.semibold))
@@ -733,7 +756,7 @@ struct OpportunityDetailView: View {
                             .padding(.vertical, 12)
                     }
                     .buttonStyle(.bordered)
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -769,7 +792,7 @@ struct OpportunityDetailView: View {
                         .padding(.vertical, 14)
                 }
                 .buttonStyle(.plain)
-                .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                 .foregroundStyle(.white)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -786,7 +809,7 @@ struct OpportunityDetailView: View {
                     .padding(.vertical, 15)
             }
             .buttonStyle(.plain)
-            .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
             .foregroundStyle(.white)
         }
     }
@@ -821,24 +844,40 @@ struct OpportunityDetailView: View {
     }
 
     private func loadOpportunityFromServer() async {
-        loadError = nil
+        let alreadyHaveData = opportunity != nil
+        if !alreadyHaveData { loadError = nil }
+        let idToLoad = opportunityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !idToLoad.isEmpty else {
+            if !alreadyHaveData {
+                await MainActor.run { loadError = "Empty opportunity ID." }
+            }
+            return
+        }
         do {
-            guard let fresh = try await opportunityService.fetchOpportunity(opportunityId: opportunityId) else {
+            if let fresh = try await opportunityService.fetchOpportunity(opportunityId: idToLoad) {
+                await MainActor.run {
+                    opportunity = fresh
+                    loadError = nil
+                }
+                await loadMyRequest(for: fresh)
+                await loadUserProfile()
+            } else if !alreadyHaveData {
                 await MainActor.run {
                     loadError = "This listing may have been removed."
-                    opportunity = nil
                 }
-                return
+            } else if let existing = opportunity {
+                await loadMyRequest(for: existing)
+                await loadUserProfile()
             }
-            await MainActor.run {
-                opportunity = fresh
-            }
-            await loadMyRequest(for: fresh)
-            await loadUserProfile()
         } catch {
-            await MainActor.run {
-                loadError = (error as NSError).localizedDescription
-                opportunity = nil
+            if !alreadyHaveData {
+                let ns = error as NSError
+                await MainActor.run {
+                    loadError = "\(ns.localizedDescription) [code \(ns.code)]"
+                }
+            } else if let existing = opportunity {
+                await loadMyRequest(for: existing)
+                await loadUserProfile()
             }
         }
     }

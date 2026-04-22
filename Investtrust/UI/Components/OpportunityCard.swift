@@ -6,11 +6,13 @@
 import SwiftUI
 
 struct OpportunityCard: View {
+    @Environment(AuthService.self) private var auth
+
     let opp: OpportunityListing
 
     var body: some View {
         NavigationLink {
-            OpportunityDetailView(opportunityId: opp.id)
+            OpportunityDetailView(opportunity: opp)
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 cardMedia
@@ -68,7 +70,7 @@ struct OpportunityCard: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(AppTheme.accent, in: Capsule())
+                    .background(auth.accentColor, in: Capsule())
                     .foregroundStyle(.white)
             }
         }

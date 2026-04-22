@@ -7,6 +7,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.effectiveReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -17,7 +18,7 @@ struct RootView: View {
                     AuthRootView()
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: auth.isSignedIn)
+            .animation(.accessibleContentTransition(reduceMotion: reduceMotion), value: auth.isSignedIn)
 
             if auth.isLoading {
                 SessionLoadingOverlay()
@@ -25,7 +26,7 @@ struct RootView: View {
                     .zIndex(1)
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: auth.isLoading)
+        .animation(.accessibleContentTransition(reduceMotion: reduceMotion), value: auth.isLoading)
         .onReceive(NotificationCenter.default.publisher(for: .investtrustSessionMediaDidReset)) { _ in
             CachedImageLoader.clearMemoryCache()
             StorageBackedVideoPlayer.clearURLCache()
@@ -49,6 +50,7 @@ private struct SessionLoadingOverlay: View {
         .allowsHitTesting(true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Signing you in")
+        .accessibilityHint("Please wait while your session is prepared.")
     }
 }
 

@@ -35,12 +35,14 @@ private struct PickedVideoData: Transferable {
 
 struct CreateOpportunityWizardView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthService.self) private var auth
 
     @State private var draft = OpportunityDraft()
     @State private var currentStep = 0
     @State private var showSavedAlert = false
     @State private var isSubmitting = false
     @State private var submitError: String?
+    @State private var imageScreeningMessage: String?
     @State private var imagePickerItems: [PhotosPickerItem] = []
     @State private var videoPickerItem: PhotosPickerItem?
     @State private var selectedImageDataList: [Data] = []
@@ -55,7 +57,7 @@ struct CreateOpportunityWizardView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ScrollView {
+                ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         progressHeader
 
@@ -99,20 +101,40 @@ struct CreateOpportunityWizardView: View {
             } message: {
                 Text(submitError ?? "")
             }
+            .alert("Image screening", isPresented: Binding(
+                get: { imageScreeningMessage != nil },
+                set: { if !$0 { imageScreeningMessage = nil } }
+            )) {
+                Button("OK") { imageScreeningMessage = nil }
+            } message: {
+                Text(imageScreeningMessage ?? "")
+            }
             .onChange(of: imagePickerItems) { _, newValues in
                 Task {
                     var loadedData: [Data] = []
                     var loadedImages: [Image] = []
                     for item in newValues.prefix(5) {
-                        if let data = try? await item.loadTransferable(type: Data.self),
-                           let uiImage = UIImage(data: data) {
+                        guard let data = try? await item.loadTransferable(type: Data.self),
+                              let uiImage = UIImage(data: data) else { continue }
+                        do {
+                            try await InappropriateImageGate.validateForUpload(uiImage)
                             let jpeg = uiImage.jpegData(compressionQuality: 0.88) ?? data
                             loadedData.append(jpeg)
                             loadedImages.append(Image(uiImage: uiImage))
+                        } catch {
+                            await MainActor.run {
+                                imageScreeningMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                                imagePickerItems = []
+                                selectedImageDataList = []
+                                selectedImages = []
+                            }
+                            return
                         }
                     }
-                    selectedImageDataList = loadedData
-                    selectedImages = loadedImages
+                    await MainActor.run {
+                        selectedImageDataList = loadedData
+                        selectedImages = loadedImages
+                    }
                 }
             }
             .onChange(of: videoPickerItem) { _, newValue in
@@ -148,7 +170,7 @@ struct CreateOpportunityWizardView: View {
                         .frame(height: 8)
 
                     Capsule()
-                        .fill(AppTheme.accent)
+                        .fill(auth.accentColor)
                         .frame(width: max(14, geo.size.width * progress), height: 8)
                 }
             }
@@ -158,6 +180,7 @@ struct CreateOpportunityWizardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
     private var investmentTypeStep: some View {
@@ -186,7 +209,7 @@ struct CreateOpportunityWizardView: View {
                             Spacer()
                             if draft.investmentType == type {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(AppTheme.accent)
+                                    .foregroundStyle(auth.accentColor)
                             }
                         }
                         .padding(14)
@@ -203,6 +226,7 @@ struct CreateOpportunityWizardView: View {
                 RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                     .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
             )
+            .appCardShadow()
         }
     }
 
@@ -224,9 +248,13 @@ struct CreateOpportunityWizardView: View {
     private var overviewStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Overview", "Title, category, and story — plus optional images and video.")
-            field("Opportunity title", text: $draft.title, placeholder: "Ex: Mobile juice cart expansion")
-            field("Category", text: $draft.category, placeholder: "Food / Retail / Freelance")
-            textArea("Description", text: $draft.description, placeholder: "What you’re building and why investors should care.")
+            stepFormCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    field("Opportunity title", text: $draft.title, placeholder: "Ex: Mobile juice cart expansion")
+                    field("Category", text: $draft.category, placeholder: "Food / Retail / Freelance")
+                    textArea("Description", text: $draft.description, placeholder: "What you’re building and why investors should care.")
+                }
+            }
             mediaPickerCard
         }
     }
@@ -234,34 +262,39 @@ struct CreateOpportunityWizardView: View {
     private var fundingStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Funding & risk", "How much you need, ticket size, and where you operate.")
-            field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
-            field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto (1% of goal, capped)")
-            field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
+            stepFormCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
+                    field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto (1% of goal, capped)")
+                    field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Risk level")
-                    .font(.subheadline.weight(.semibold))
-                Picker("Risk", selection: $draft.riskLevel) {
-                    ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
-                        Text(level.displayName).tag(level)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Risk level")
+                            .font(.subheadline.weight(.semibold))
+                        Picker("Risk", selection: $draft.riskLevel) {
+                            ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
+                                Text(level.displayName).tag(level)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                     }
+
+                    field("Location", text: $draft.location, placeholder: "City / region")
+
+                    Text("Verification is set by the platform after review.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .pickerStyle(.segmented)
             }
-
-            field("Location", text: $draft.location, placeholder: "City / region")
-
-            Text("Verification is set by the platform after review.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
     private var termsStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Investment terms", "Details for \(draft.investmentType.displayName.lowercased()).")
-            Group {
-                switch draft.investmentType {
+            stepFormCard {
+                Group {
+                    switch draft.investmentType {
                 case .loan:
                     field("Interest rate (%)", text: $draft.interestRate, placeholder: "12", keyboardType: .decimalPad)
                     field("Repayment timeline (months)", text: $draft.repaymentTimeline, placeholder: "12")
@@ -271,8 +304,9 @@ struct CreateOpportunityWizardView: View {
                         Picker("Frequency", selection: $draft.repaymentFrequency) {
                             Text("Monthly").tag(RepaymentFrequency.monthly)
                             Text("Weekly").tag(RepaymentFrequency.weekly)
+                            Text("One-time at maturity").tag(RepaymentFrequency.one_time)
                         }
-                        .pickerStyle(.segmented)
+                        .pickerStyle(.menu)
                     }
                 case .equity:
                     field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
@@ -310,6 +344,7 @@ struct CreateOpportunityWizardView: View {
                 case .custom:
                     textArea("Custom terms summary", text: $draft.customTermsSummary, placeholder: "Spell out the deal in plain language.")
                 }
+                }
             }
             Text("Tip: specific terms build trust on the marketplace.")
                 .font(.footnote)
@@ -320,57 +355,65 @@ struct CreateOpportunityWizardView: View {
     private var executionStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Execution plan", "What the money buys, milestones, and timing.")
-            textArea("Use of funds", text: $draft.useOfFunds, placeholder: "Exactly what you’ll spend on — inventory, marketing, equipment, etc.")
+            stepFormCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    textArea("Use of funds", text: $draft.useOfFunds, placeholder: "Exactly what you’ll spend on — inventory, marketing, equipment, etc.")
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Milestones")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Button {
-                        draft.milestones.append(MilestoneDraft())
-                    } label: {
-                        Label("Add", systemImage: "plus.circle.fill")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .tint(AppTheme.accent)
-                }
-
-                if draft.milestones.isEmpty {
-                    Text("Add milestones so investors see when to expect progress.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach($draft.milestones) { $m in
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         HStack {
-                            Text("Milestone")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            Text("Milestones")
+                                .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Button(role: .destructive) {
-                                if let idx = draft.milestones.firstIndex(where: { $0.id == m.id }) {
-                                    draft.milestones.remove(at: idx)
-                                }
+                            Button {
+                                draft.milestones.append(MilestoneDraft())
                             } label: {
-                                Image(systemName: "trash")
-                                    .font(.body)
+                                Label("Add", systemImage: "plus.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
                             }
+                            .tint(auth.accentColor)
                         }
-                        field("Title", text: $m.title, placeholder: "e.g. First production batch")
-                        field("Description", text: $m.description, placeholder: "What’s delivered and how success is measured")
-                        DatePicker(
-                            "Expected date (optional)",
-                            selection: Binding(
-                                get: { m.expectedDate ?? Date() },
-                                set: { m.expectedDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
+
+                        if draft.milestones.isEmpty {
+                            Text("Add milestones so investors see when to expect progress.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        ForEach($draft.milestones) { $m in
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("Milestone")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button(role: .destructive) {
+                                        if let idx = draft.milestones.firstIndex(where: { $0.id == m.id }) {
+                                            draft.milestones.remove(at: idx)
+                                        }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.body)
+                                    }
+                                }
+                                field("Title", text: $m.title, placeholder: "e.g. First production batch")
+                                field("Description", text: $m.description, placeholder: "What’s delivered and how success is measured")
+                                DatePicker(
+                                    "Expected date (optional)",
+                                    selection: Binding(
+                                        get: { m.expectedDate ?? Date() },
+                                        set: { m.expectedDate = $0 }
+                                    ),
+                                    displayedComponents: .date
+                                )
+                            }
+                            .padding(12)
+                            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                    .strokeBorder(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
+                            )
+                        }
                     }
-                    .padding(12)
-                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
         }
@@ -457,6 +500,15 @@ struct CreateOpportunityWizardView: View {
         }
     }
 
+    private func stepFormCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(AppTheme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
+    }
+
     private var footerButtons: some View {
         HStack(spacing: 12) {
             if currentStep > 0 {
@@ -487,7 +539,7 @@ struct CreateOpportunityWizardView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(AuthTheme.primaryPink, in: Capsule())
+            .background(auth.accentColor, in: Capsule())
             .foregroundStyle(.white)
             .disabled(!canContinue || isSubmitting)
             .opacity((canContinue && !isSubmitting) ? 1 : 0.45)
@@ -649,16 +701,20 @@ struct CreateOpportunityWizardView: View {
     }
 
     private func reviewCard(title: String, rows: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .foregroundStyle(auth.accentColor)
+                Text(title)
+                    .font(.headline)
+            }
             ForEach(rows.indices, id: \.self) { index in
                 HStack(alignment: .top) {
                     Text(rows[index].0)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(rows[index].1.isEmpty ? "-" : rows[index].1)
+                    Text(rows[index].1.isEmpty ? "—" : rows[index].1)
                         .font(.subheadline)
                         .multilineTextAlignment(.trailing)
                 }
@@ -668,10 +724,9 @@ struct CreateOpportunityWizardView: View {
             }
         }
         .padding(AppTheme.cardPadding)
-        .background(
-            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                .fill(AppTheme.secondaryFill)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
     /// Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
@@ -709,4 +764,5 @@ struct CreateOpportunityWizardView: View {
 
 #Preview {
     CreateOpportunityWizardView { _, _, _ in }
+        .environment(AuthService.previewSignedIn)
 }

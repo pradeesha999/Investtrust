@@ -23,13 +23,15 @@ struct InvesttrustApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(authService)
-                .preferredColorScheme(resolvedColorScheme)
-                .environment(\.locale, resolvedLocale)
-                .onOpenURL { url in
-                    GIDSignIn.sharedInstance.handle(url)
-                }
+            AccessibilityEnvironmentRoot {
+                RootView()
+                    .environment(authService)
+                    .preferredColorScheme(resolvedColorScheme)
+                    .environment(\.locale, resolvedLocale)
+            }
+            .onOpenURL { url in
+                GIDSignIn.sharedInstance.handle(url)
+            }
         }
     }
 

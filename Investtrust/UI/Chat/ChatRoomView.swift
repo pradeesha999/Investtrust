@@ -5,6 +5,7 @@ struct ChatRoomView: View {
     let chatId: String
 
     @Environment(AuthService.self) private var auth
+    @Environment(\.effectiveReduceMotion) private var reduceMotion
     private let chatService = ChatService()
     private let userService = UserService()
 
@@ -33,8 +34,12 @@ struct ChatRoomView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: messages.count) { _, _ in
                     if let last = messages.last?.id {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        if reduceMotion {
                             proxy.scrollTo(last, anchor: .bottom)
+                        } else {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(last, anchor: .bottom)
+                            }
                         }
                     }
                 }
@@ -46,6 +51,7 @@ struct ChatRoomView: View {
                 TextField("Message", text: $inputText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
+                    .accessibilityLabel("Message text")
 
                 Button {
                     Task { await send() }
@@ -53,9 +59,11 @@ struct ChatRoomView: View {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title)
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, AppTheme.accent)
+                        .foregroundStyle(.white, auth.accentColor)
                 }
                 .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Send")
+                .accessibilityHint("Sends your message to the chat.")
             }
             .padding(12)
             .background(Color(.systemBackground))
@@ -155,7 +163,7 @@ struct ChatRoomView: View {
                 .padding(.vertical, 10)
                 .background(
                     isMine
-                        ? AppTheme.accent.opacity(0.2)
+                        ? auth.accentColor.opacity(0.2)
                         : Color(.secondarySystemBackground),
                     in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                 )
@@ -194,6 +202,7 @@ struct ChatRoomView: View {
         inputText = ""
         do {
             try await chatService.sendMessage(chatId: chatId, senderId: uid, text: text)
+            AppHaptics.lightImpact()
         } catch {
             inputText = text
             presentSendError(error.localizedDescription)

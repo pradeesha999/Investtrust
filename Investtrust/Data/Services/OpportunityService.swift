@@ -1,7 +1,6 @@
 import FirebaseFirestore
 import FirebaseStorage
 import Foundation
-import UIKit
 
 /// Writes and reads `opportunities` documents (see `OpportunityListing` + `OpportunityListing+Firestore`).
 final class OpportunityService {
@@ -83,9 +82,10 @@ final class OpportunityService {
         var mediaWarnings: [String] = []
 
         for (index, imageData) in imageDataList.enumerated() {
-            let payload = Self.jpegPayloadForUpload(from: imageData)
+            let payload = ImageJPEGUploadPayload.jpegForUpload(from: imageData)
             let filename = "opportunity-\(opportunityID)-\(index + 1).jpg"
             do {
+                try await InappropriateImageGate.validateImageDataForUpload(payload)
                 let asset = try await withTimeout(seconds: 60) {
                     try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
                 }
@@ -94,7 +94,11 @@ final class OpportunityService {
                     imagePublicIds.append(pid)
                 }
             } catch {
-                mediaWarnings.append("Image \(index + 1) failed to upload.")
+                if let le = error as? LocalizedError, error is InappropriateImageGate.GateError {
+                    mediaWarnings.append("Image \(index + 1): \(le.errorDescription ?? "Couldn’t add this photo.")")
+                } else {
+                    mediaWarnings.append("Image \(index + 1) failed to upload.")
+                }
             }
         }
 
@@ -192,30 +196,107 @@ final class OpportunityService {
     }
 
     /// Latest opportunity document (e.g. refresh `videoURL` after seeker sync).
+    ///
+    /// Uses a **collection query** by document ID first so Firestore `list` rules apply — the same as market browse.
+    /// Many projects allow `list` for open listings but omit `get` for non-owners; a plain `getDocument()` then fails for investors.
     func fetchOpportunity(opportunityId: String) async throws -> OpportunityListing? {
-        let snapshot = try await db.collection("opportunities").document(opportunityId).getDocument()
-        guard let data = snapshot.data() else { return nil }
-        return OpportunityListing(documentID: opportunityId, data: data)
+        let trimmed = opportunityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let col = db.collection("opportunities")
+
+        // Strategy 1: direct document read (fast, uses `get` rule)
+        do {
+            let snapshot = try await col.document(trimmed).getDocument()
+            if snapshot.exists, let data = snapshot.data() {
+                return OpportunityListing(documentID: trimmed, data: data)
+            }
+        } catch {
+            // `get` may be blocked by rules for non-owners — fall through
+        }
+
+        // Strategy 2: collection scan — same query shape as fetchMarketListings, which
+        // is known to pass Firestore `list` rules.  Find our document in the results.
+        do {
+            let snapshot = try await col
+                .order(by: "createdAt", descending: true)
+                .limit(to: 200)
+                .getDocuments()
+            if let doc = snapshot.documents.first(where: { $0.documentID == trimmed }) {
+                return OpportunityListing(document: doc)
+            }
+        } catch {
+            // ordered query may need an index — try unordered fallback
+        }
+
+        // Strategy 3: unordered collection scan (no composite index needed)
+        do {
+            let snapshot = try await col.limit(to: 300).getDocuments()
+            if let doc = snapshot.documents.first(where: { $0.documentID == trimmed }) {
+                return OpportunityListing(document: doc)
+            }
+        } catch {
+            throw error
+        }
+
+        return nil
     }
 
     func fetchMarketListings(limit: Int = 50) async throws -> [OpportunityListing] {
+        // Fetch extra rows, then drop listings that already have enough active/pending investors
+        // (same slot rules as `InvestmentListing.blocksSeekerFromManagingOpportunity` + `maximumInvestors`).
+        let fetchCap = min(max(limit * 5, 100), 250)
         let base = db.collection("opportunities")
-        // Prefer ordered query when index exists; otherwise fetch and sort in memory (no composite index required).
+        let openRows: [OpportunityListing]
         do {
             let snapshot = try await base
                 .order(by: "createdAt", descending: true)
-                .limit(to: limit)
+                .limit(to: fetchCap)
                 .getDocuments()
-            return snapshot.documents
+            openRows = snapshot.documents
                 .map { OpportunityListing(document: $0) }
                 .filter { $0.status == "open" }
         } catch {
-            let snapshot = try await base.limit(to: max(limit * 3, 100)).getDocuments()
-            let rows = snapshot.documents
+            let snapshot = try await base.limit(to: max(fetchCap, 150)).getDocuments()
+            openRows = snapshot.documents
                 .map { OpportunityListing(document: $0) }
                 .filter { $0.status == "open" }
                 .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-            return Array(rows.prefix(limit))
+        }
+        let visible = try await filterOpenListingsStillAcceptingInvestors(openRows)
+        return Array(visible.prefix(limit))
+    }
+
+    /// Per opportunity, counts investments that still occupy an investor slot (not declined / withdrawn / …).
+    private func reservedInvestorSlotCountByOpportunity(opportunityIds: [String]) async throws -> [String: Int] {
+        let unique = Array(Set(opportunityIds)).filter { !$0.isEmpty }
+        guard !unique.isEmpty else { return [:] }
+        var counts: [String: Int] = [:]
+        var i = unique.startIndex
+        while i < unique.endIndex {
+            let j = unique.index(i, offsetBy: 10, limitedBy: unique.endIndex) ?? unique.endIndex
+            let chunk = Array(unique[i..<j])
+            i = j
+            let snap = try await db.collection("investments")
+                .whereField("opportunityId", in: chunk)
+                .getDocuments()
+            for doc in snap.documents {
+                guard let inv = InvestmentListing(id: doc.documentID, data: doc.data()),
+                      let oid = inv.opportunityId, !oid.isEmpty else { continue }
+                if inv.blocksSeekerFromManagingOpportunity {
+                    counts[oid, default: 0] += 1
+                }
+            }
+        }
+        return counts
+    }
+
+    private func filterOpenListingsStillAcceptingInvestors(_ rows: [OpportunityListing]) async throws -> [OpportunityListing] {
+        guard !rows.isEmpty else { return rows }
+        let counts = try await reservedInvestorSlotCountByOpportunity(opportunityIds: rows.map(\.id))
+        return rows.filter { opp in
+            let cap = max(1, opp.maximumInvestors ?? 1)
+            return (counts[opp.id] ?? 0) < cap
         }
     }
 
@@ -460,12 +541,6 @@ final class OpportunityService {
             }
             return o
         }
-    }
-
-    /// Photos picker / camera may supply HEIC/PNG; we always store JPEG bytes so downloads decode reliably as `image/jpeg`.
-    private static func jpegPayloadForUpload(from data: Data) -> Data {
-        guard let image = UIImage(data: data) else { return data }
-        return image.jpegData(compressionQuality: 0.88) ?? data
     }
 
     private static func parseDouble(from text: String) -> Double? {

@@ -7,6 +7,8 @@ import SwiftUI
 
 /// Empty, error, and inline status messaging (aligned across dashboards).
 struct StatusBlock: View {
+    @Environment(AuthService.self) private var auth
+
     let icon: String
     let title: String
     let message: String
@@ -29,11 +31,21 @@ struct StatusBlock: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.accent)
+                    .tint(auth.accentColor)
                     .padding(.top, 4)
             }
         }
         .padding(.top, 24)
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(statusAccessibilityLabel)
+    }
+
+    private var statusAccessibilityLabel: String {
+        var parts = [title, message]
+        if let actionTitle {
+            parts.append("Button: \(actionTitle)")
+        }
+        return parts.joined(separator: ". ")
     }
 }

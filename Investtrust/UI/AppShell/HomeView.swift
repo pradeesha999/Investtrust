@@ -7,6 +7,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.effectiveReduceMotion) private var reduceMotion
     @StateObject private var tabRouter = MainTabRouter()
 
     @State private var lastSyncedSessionEpoch = -1
@@ -37,7 +38,8 @@ struct HomeView: View {
                 }
                 .tag(AppTab.settings)
         }
-        .tint(AuthTheme.primaryPink)
+        .tint(auth.accentColor)
+        .animation(.accessibleEmphasis(reduceMotion: reduceMotion), value: auth.activeProfile)
         .environmentObject(tabRouter)
         .onAppear {
             auth.acknowledgeSessionReady()
@@ -47,9 +49,6 @@ struct HomeView: View {
                     tabRouter.selectedTab = .dashboard
                 }
             }
-        }
-        .onChange(of: auth.dashboardNavigationTrigger) { _, _ in
-            tabRouter.selectedTab = .dashboard
         }
     }
 

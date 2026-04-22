@@ -1,11 +1,28 @@
 import SwiftUI
 
-/// List content for Settings, embeddable inside any `NavigationStack` (e.g. tab root or pushed from Browse).
+/// List content for Settings, embeddable inside any `NavigationStack` (e.g. tab root or pushed from Home).
 struct SettingsContentView: View {
     @Environment(AuthService.self) private var auth
+    @Environment(\.effectiveReduceMotion) private var effectiveReduceMotion
+
+    @State private var userProfile: UserProfile?
+    @State private var activityMetrics: ProfileActivityMetrics?
+    @State private var profileSwitchRotationDegrees: Double = 0
+
+    private let userService = UserService()
 
     var body: some View {
         List {
+            Section {
+                profileHeader
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                    .listRowBackground(Color.clear)
+            } footer: {
+                Text("Investor: blue · Opportunity builder: pink")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Account") {
                 Text(auth.currentUserEmail ?? "No email")
                     .font(.subheadline)
@@ -15,40 +32,6 @@ struct SettingsContentView: View {
                 } label: {
                     Label("Your profile", systemImage: "person.crop.circle")
                 }
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("How you use Investtrust")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 10) {
-                        if auth.roles.investor {
-                            roleCard(
-                                title: "Investor",
-                                subtitle: "Browse & invest",
-                                systemImage: "chart.line.uptrend.xyaxis",
-                                role: .investor
-                            )
-                        }
-                        if auth.roles.seeker {
-                            roleCard(
-                                title: "Opportunity builder",
-                                subtitle: "Create & raise",
-                                systemImage: "building.columns.fill",
-                                role: .seeker
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("Active mode")
-            } footer: {
-                Text("The tab bar highlights Create vs Invest based on this. You can change it anytime.")
-                    .font(.footnote)
             }
 
             Section("Preferences") {
@@ -95,55 +78,179 @@ struct SettingsContentView: View {
                 Button("Sign out", role: .destructive) {
                     auth.signOut()
                 }
+                .accessibilityHint("Signs out of Investtrust on this device.")
             }
         }
         .listStyle(.insetGrouped)
+        .task(id: auth.currentUserID) {
+            await loadProfileData()
+        }
+        .onChange(of: auth.activeProfile) { _, _ in
+            Task { await loadProfileData() }
+        }
+    }
+
+    private var profileHeader: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Group {
+                avatarWithBadge
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+
+                    Text(activeSinceLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(profileHeaderAccessibilitySummary)
+
+            Spacer(minLength: 8)
+
+            profileSwitchButton
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var profileHeaderAccessibilitySummary: String {
+        "\(displayName). \(activeSinceLine). Activity \(activityBadgeText)."
+    }
+
+    private var avatarWithBadge: some View {
+        ZStack(alignment: .bottomTrailing) {
+            avatarImage
+                .frame(width: 64, height: 64)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color(.separator).opacity(0.35), lineWidth: 1))
+
+            Text(activityBadgeText)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(auth.accentColor, in: Capsule())
+                .offset(x: 4, y: 4)
+        }
     }
 
     @ViewBuilder
-    private func roleCard(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        role: UserProfile.ActiveProfile
-    ) -> some View {
-        let selected = auth.activeProfile == role
-        Button {
-            Task {
-                await auth.switchActiveProfile(role)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Image(systemName: systemImage)
-                        .font(.title3)
-                        .foregroundStyle(selected ? AppTheme.accent : .secondary)
-                    Spacer(minLength: 0)
-                    if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(AppTheme.accent)
-                            .font(.body.weight(.semibold))
-                    }
+    private var avatarImage: some View {
+        if let urlString = userProfile?.avatarURL,
+           let url = URL(string: urlString),
+           !urlString.isEmpty {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure, .empty:
+                    avatarPlaceholder
+                @unknown default:
+                    avatarPlaceholder
                 }
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? AppTheme.accent.opacity(0.12) : Color(.secondarySystemGroupedBackground))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(selected ? AppTheme.accent.opacity(0.45) : Color.clear, lineWidth: 1.5)
-            )
+        } else {
+            avatarPlaceholder
+        }
+    }
+
+    private var avatarPlaceholder: some View {
+        ZStack {
+            Circle().fill(Color(.tertiarySystemFill))
+            Image(systemName: "person.fill")
+                .font(.title)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var profileSwitchButton: some View {
+        Button {
+            toggleActiveProfile()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(auth.accentColor)
+                .rotationEffect(.degrees(profileSwitchRotationDegrees))
+                .frame(width: 44, height: 44)
+                .background(Color(.tertiarySystemFill), in: Circle())
         }
         .buttonStyle(.plain)
+        .disabled(!canSwitchProfile)
+        .opacity(canSwitchProfile ? 1 : 0.4)
+        .accessibilityLabel(switchAccessibilityLabel)
+        .accessibilityHint("Double tap to switch between Investor and Opportunity builder.")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var canSwitchProfile: Bool {
+        auth.roles.investor && auth.roles.seeker
+    }
+
+    private var switchAccessibilityLabel: String {
+        if !canSwitchProfile {
+            return "Profile switch unavailable"
+        }
+        return auth.activeProfile == .investor
+            ? "Switch to opportunity builder"
+            : "Switch to investor"
+    }
+
+    private var displayName: String {
+        if let n = userProfile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+            return n
+        }
+        if let email = auth.currentUserEmail, let at = email.firstIndex(of: "@") {
+            return String(email[..<at])
+        }
+        return "Member"
+    }
+
+    private var activeSinceLine: String {
+        guard let created = userProfile?.createdAt else {
+            return "Investtrust member"
+        }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy MMM"
+        return "Active since \(f.string(from: created))"
+    }
+
+    /// Short activity code (listings + completed deals), capped at 999 for the badge.
+    private var activityBadgeText: String {
+        let o = activityMetrics?.opportunitiesCreated ?? 0
+        let d = activityMetrics?.dealsCompletedAsInvestor ?? 0
+        let total = min(999, o + d)
+        return String(format: "%03d", total)
+    }
+
+    private func toggleActiveProfile() {
+        guard canSwitchProfile else { return }
+        let next: UserProfile.ActiveProfile = auth.activeProfile == .investor ? .seeker : .investor
+        Task { @MainActor in
+            await auth.switchActiveProfile(next)
+            guard auth.activeProfile == next else { return }
+            AppHaptics.selection()
+            guard !effectiveReduceMotion else { return }
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
+                profileSwitchRotationDegrees += 360
+            }
+        }
+    }
+
+    private func loadProfileData() async {
+        guard let uid = auth.currentUserID else {
+            userProfile = nil
+            activityMetrics = nil
+            return
+        }
+        async let profileTask = userService.fetchProfile(userID: uid)
+        async let metricsTask = userService.fetchProfileActivityMetrics(userID: uid)
+        userProfile = try? await profileTask
+        activityMetrics = try? await metricsTask
     }
 }

@@ -47,7 +47,9 @@ struct InvestorMarketView: View {
                 } else {
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(filteredInvestments) { inv in
-                            InvestmentCard(inv: inv)
+                            InvestmentCard(inv: inv) {
+                                await load()
+                            }
                         }
                     }
                 }

@@ -24,11 +24,44 @@ enum CloudinaryImageUploadClient {
         let public_id: String?
     }
 
-    /// Uploads JPEG (or other) bytes; returns delivery URL and optional `public_id` (for deletes).
-    static func uploadImageData(_ data: Data, filename: String = "image.jpg") async throws -> CloudinaryUploadedAsset {
+    /// Uploads image bytes; returns delivery URL and optional `public_id` (for deletes).
+    /// - Parameter mimeType: Multipart `Content-Type` for the file part (e.g. `image/jpeg`, `image/png`).
+    static func uploadImageData(
+        _ data: Data,
+        filename: String = "image.jpg",
+        mimeType: String = "image/jpeg"
+    ) async throws -> CloudinaryUploadedAsset {
+        try await uploadData(
+            data,
+            filename: filename,
+            mimeType: mimeType,
+            resourceType: "image"
+        )
+    }
+
+    /// Uploads any file type via Cloudinary `auto` resource detection (useful for PDFs/docs).
+    static func uploadFileData(
+        _ data: Data,
+        filename: String,
+        mimeType: String
+    ) async throws -> CloudinaryUploadedAsset {
+        try await uploadData(
+            data,
+            filename: filename,
+            mimeType: mimeType,
+            resourceType: "auto"
+        )
+    }
+
+    private static func uploadData(
+        _ data: Data,
+        filename: String,
+        mimeType: String,
+        resourceType: String
+    ) async throws -> CloudinaryUploadedAsset {
         let cloud = CloudinaryConfig.cloudName
         let preset = CloudinaryConfig.uploadPreset
-        guard let url = URL(string: "https://api.cloudinary.com/v1_1/\(cloud)/image/upload") else {
+        guard let url = URL(string: "https://api.cloudinary.com/v1_1/\(cloud)/\(resourceType)/upload") else {
             throw UploadError.invalidResponse
         }
 
@@ -47,7 +80,7 @@ enum CloudinaryImageUploadClient {
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         let disposition = "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
         body.append(disposition.data(using: .utf8)!)
-        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)

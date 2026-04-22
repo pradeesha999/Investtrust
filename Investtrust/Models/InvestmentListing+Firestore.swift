@@ -65,6 +65,22 @@ extension InvestmentListing {
 
         let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
 
+        let loanInstallments: [LoanInstallment] = {
+            guard let arr = data["loanInstallments"] as? [[String: Any]] else { return [] }
+            return arr.compactMap { LoanInstallment(firestoreMap: $0) }
+                .sorted { $0.installmentNo < $1.installmentNo }
+        }()
+
+        let moaPdfURL = (data["moaPdfURL"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let moaContentHash = (data["moaContentHash"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let investorSignatureImageURL = (data["investorSignatureImageURL"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let seekerSignatureImageURL = (data["seekerSignatureImageURL"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
         // Title + thumbnail: prefer `thumbnailImageURL` (new), then nested `opportunity`, then legacy `imageURLs` array.
         var opportunityTitle = ""
         var imageURLs: [String] = []
@@ -91,11 +107,12 @@ extension InvestmentListing {
             imageURLs = direct
         }
 
-        var opportunityId = (data["opportunityId"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var opportunityId = Self.parseOpportunityIdField(data["opportunityId"])
         if opportunityId.isEmpty, let opportunity = data["opportunity"] as? [String: Any] {
             if let oid = opportunity["id"] as? String {
                 opportunityId = oid.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let ref = opportunity["id"] as? DocumentReference {
+                opportunityId = ref.documentID
             }
         }
 
@@ -128,8 +145,23 @@ extension InvestmentListing {
             signedByInvestorAt: signedByInvestorAt,
             signedBySeekerAt: signedBySeekerAt,
             agreementGeneratedAt: agreementGeneratedAt,
-            agreement: agreement
+            agreement: agreement,
+            loanInstallments: loanInstallments,
+            moaPdfURL: moaPdfURL?.isEmpty == false ? moaPdfURL : nil,
+            moaContentHash: moaContentHash?.isEmpty == false ? moaContentHash : nil,
+            investorSignatureImageURL: investorSignatureImageURL?.isEmpty == false ? investorSignatureImageURL : nil,
+            seekerSignatureImageURL: seekerSignatureImageURL?.isEmpty == false ? seekerSignatureImageURL : nil
         )
+    }
+
+    private static func parseOpportunityIdField(_ raw: Any?) -> String {
+        if let s = raw as? String {
+            return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let ref = raw as? DocumentReference {
+            return ref.documentID
+        }
+        return ""
     }
 
     private static func parseAgreementMap(_ raw: Any?) -> InvestmentAgreementSnapshot? {

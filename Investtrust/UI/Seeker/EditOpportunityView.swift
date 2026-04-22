@@ -8,6 +8,7 @@ import SwiftUI
 /// Edit text, terms, and execution fields for an existing listing (images and video stay as uploaded).
 struct EditOpportunityView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthService.self) private var auth
 
     let opportunity: OpportunityListing
     @State private var draft: OpportunityDraft
@@ -24,13 +25,16 @@ struct EditOpportunityView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
                     Text("Photos and video can’t be changed here yet. Update everything else below.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .padding(AppTheme.cardPadding)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
 
-                    section("Investment type") {
+                    formSection("Investment type") {
                         Picker("Type", selection: $draft.investmentType) {
                             ForEach(InvestmentType.allCases, id: \.self) { type in
                                 Text(type.displayName).tag(type)
@@ -39,13 +43,13 @@ struct EditOpportunityView: View {
                         .pickerStyle(.menu)
                     }
 
-                    section("Basics") {
+                    formSection("Basics") {
                         field("Opportunity title", text: $draft.title, placeholder: "Title")
                         field("Category", text: $draft.category, placeholder: "Category")
                         textArea("Description", text: $draft.description, placeholder: "Describe the opportunity.")
                     }
 
-                    section("Funding & risk") {
+                    formSection("Funding & risk") {
                         field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
                         field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto")
                         field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
@@ -62,7 +66,7 @@ struct EditOpportunityView: View {
                         field("Location", text: $draft.location, placeholder: "City / region")
                     }
 
-                    section("Terms — \(draft.investmentType.displayName)") {
+                    formSection("Terms — \(draft.investmentType.displayName)") {
                         Group {
                             switch draft.investmentType {
                             case .loan:
@@ -74,8 +78,9 @@ struct EditOpportunityView: View {
                                     Picker("Frequency", selection: $draft.repaymentFrequency) {
                                         Text("Monthly").tag(RepaymentFrequency.monthly)
                                         Text("Weekly").tag(RepaymentFrequency.weekly)
+                                        Text("One-time at maturity").tag(RepaymentFrequency.one_time)
                                     }
-                                    .pickerStyle(.segmented)
+                                    .pickerStyle(.menu)
                                 }
                             case .equity:
                                 field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
@@ -111,7 +116,7 @@ struct EditOpportunityView: View {
                         }
                     }
 
-                    section("Execution plan") {
+                    formSection("Execution plan") {
                         textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
 
                         HStack {
@@ -123,7 +128,7 @@ struct EditOpportunityView: View {
                             } label: {
                                 Label("Add", systemImage: "plus.circle.fill")
                             }
-                            .tint(AuthTheme.primaryPink)
+                            .tint(auth.accentColor)
                         }
 
                         ForEach($draft.milestones) { $m in
@@ -153,7 +158,11 @@ struct EditOpportunityView: View {
                                 )
                             }
                             .padding(12)
-                            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                    .strokeBorder(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
+                            )
                         }
                     }
 
@@ -161,23 +170,28 @@ struct EditOpportunityView: View {
                         Text(errorMessage)
                             .font(.footnote)
                             .foregroundStyle(.red)
+                            .padding(AppTheme.cardPadding)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     }
 
                     Button {
                         Task { await save() }
                     } label: {
                         Text(isSaving ? "Saving…" : "Save changes")
-                            .font(.headline)
+                            .font(.headline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                     }
                     .buttonStyle(.plain)
-                    .background(AuthTheme.primaryPink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
                     .disabled(!canSave || isSaving)
                     .opacity(canSave && !isSaving ? 1 : 0.45)
                 }
-                .padding(20)
+                .padding(.horizontal, AppTheme.screenPadding)
+                .padding(.vertical, 8)
+                .padding(.bottom, 24)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Edit listing")
@@ -190,12 +204,16 @@ struct EditOpportunityView: View {
         }
     }
 
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func formSection(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.headline)
             content()
         }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
     private var canSave: Bool {
@@ -302,9 +320,11 @@ struct EditOpportunityView: View {
                 .autocorrectionDisabled()
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+                .background(AuthTheme.fieldBackground)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                        .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
                 )
         }
     }
@@ -325,9 +345,11 @@ struct EditOpportunityView: View {
                         .padding(.vertical, 16)
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1.5)
+            .background(AuthTheme.fieldBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
             )
         }
     }

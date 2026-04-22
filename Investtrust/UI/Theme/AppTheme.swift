@@ -7,7 +7,8 @@ import SwiftUI
 
 /// Shared tokens for non-auth surfaces (cards, spacing, elevation).
 enum AppTheme {
-    static var accent: Color { AuthTheme.primaryPink }
+    /// Seeker default when `AuthService` is unavailable (e.g. some previews). Prefer `auth.accentColor`.
+    static var accentFallback: Color { ProfileTheme.seekerPink }
 
     /// Elevated cards on `systemGroupedBackground`.
     static var cardBackground: Color {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First tab: investor portfolio home, or seeker market browse (seeker-specific home TBD).
+/// First tab: investor portfolio home, or seeker owner home (capital + activity).
 struct DashboardView: View {
     @Environment(AuthService.self) private var auth
 
@@ -9,9 +9,7 @@ struct DashboardView: View {
             if auth.activeProfile == .investor {
                 InvestorDashboardView()
             } else {
-                NavigationStack {
-                    MarketBrowseView()
-                }
+                SeekerHomeDashboardView()
             }
         }
     }

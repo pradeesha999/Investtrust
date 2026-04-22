@@ -16,4 +16,10 @@ struct InvestmentAgreementSnapshot: Equatable, Hashable, Sendable {
     var investmentType: InvestmentType
     var termsSnapshot: OpportunityTerms
     var createdAt: Date
+
+    /// Loan repayment cadence from frozen terms (defaults to monthly if unset).
+    var loanRepaymentPlan: LoanRepaymentPlan {
+        guard investmentType == .loan else { return .monthly }
+        return LoanRepaymentPlan.from(termsSnapshot.repaymentFrequency)
+    }
 }

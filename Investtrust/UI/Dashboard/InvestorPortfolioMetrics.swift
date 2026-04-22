@@ -50,7 +50,17 @@ enum InvestorPortfolioMetrics {
     }
 
     static func receivedTotal(_ rows: [InvestmentListing]) -> Double {
-        rows.reduce(0) { $0 + $1.receivedAmount }
+        rows.reduce(0) { sum, r in
+            sum + returnedValue(for: r)
+        }
+    }
+
+    /// Repayments counted in portfolio summaries: confirmed loan installments when a schedule exists, else Firestore `receivedAmount`.
+    static func returnedValue(for r: InvestmentListing) -> Double {
+        if r.isLoanWithSchedule {
+            return r.confirmedLoanRepaymentTotal
+        }
+        return r.receivedAmount
     }
 
     static func activeDealsCount(_ rows: [InvestmentListing]) -> Int {
@@ -98,6 +108,12 @@ enum InvestorPortfolioMetrics {
     }
 
     private static func loanProgress(_ row: InvestmentListing) -> Double {
+        if row.isLoanWithSchedule {
+            let n = row.loanInstallments.count
+            guard n > 0 else { return 0.35 }
+            let done = row.loanInstallments.filter { $0.status == .confirmed_paid }.count
+            return min(1, max(0, Double(done) / Double(n)))
+        }
         guard let start = row.acceptedAt ?? row.createdAt,
               let months = row.finalTimelineMonths, months > 0 else { return 0.35 }
         let end = Calendar.current.date(byAdding: .month, value: months, to: start) ?? start
@@ -140,6 +156,22 @@ enum InvestorPortfolioMetrics {
     }
 
     private static func loanSchedule(_ r: InvestmentListing, horizon: Date) -> [UpcomingPayment] {
+        if r.isLoanWithSchedule {
+            let nowFloor = Date().addingTimeInterval(-86400)
+            return r.loanInstallments
+                .filter { $0.status != .confirmed_paid }
+                .filter { $0.dueDate <= horizon && $0.dueDate >= nowFloor }
+                .sorted { $0.dueDate < $1.dueDate }
+                .prefix(6)
+                .map { inst in
+                    UpcomingPayment(
+                        date: inst.dueDate,
+                        amount: inst.totalDue,
+                        title: r.opportunityTitle.isEmpty ? "Loan installment" : r.opportunityTitle,
+                        isProjected: false
+                    )
+                }
+        }
         guard let start = r.acceptedAt ?? r.createdAt,
               let months = r.finalTimelineMonths, months > 0 else { return [] }
         let principal = r.investmentAmount
@@ -194,7 +226,7 @@ enum InvestorPortfolioMetrics {
             }
             let returned = rows.reduce(0.0) { sum, r in
                 guard (r.createdAt ?? now) <= monthEnd else { return sum }
-                return sum + r.receivedAmount
+                return sum + returnedValue(for: r)
             }
             points.append(ChartPoint(periodEnd: monthEnd, cumulativeInvested: invested, cumulativeReturned: returned))
         }

@@ -3,7 +3,7 @@ import SwiftUI
 /// Identity for `.task(id:)` — tuples of `[String]` are not `Hashable` in Swift.
 private struct CarouselAutoAdvanceTaskID: Hashable {
     let references: [String]
-    let reduceMotion: Bool
+    let reduceMotionEffective: Bool
 }
 
 /// Horizontally paged images with automatic advance (and manual swipe). Use only when `references` is non-empty.
@@ -15,7 +15,7 @@ struct AutoPagingImageCarousel: View {
     var autoAdvanceInterval: TimeInterval = 4
 
     @State private var selection = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.effectiveReduceMotion) private var effectiveReduceMotion
 
     var body: some View {
         Group {
@@ -38,17 +38,22 @@ struct AutoPagingImageCarousel: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .automatic))
                 .frame(height: height)
-                .task(id: CarouselAutoAdvanceTaskID(references: references, reduceMotion: reduceMotion)) {
+                .task(id: CarouselAutoAdvanceTaskID(references: references, reduceMotionEffective: effectiveReduceMotion)) {
                     // Preload a few neighbors first; avoid pulling every full-size image at once on slow links.
                     await CachedImageLoader.preload(references: Array(references.prefix(4)))
                     guard references.count > 1 else { return }
                     selection = 0
-                    guard !reduceMotion else { return }
+                    guard !effectiveReduceMotion else { return }
                     while !Task.isCancelled {
                         try? await Task.sleep(nanoseconds: UInt64(autoAdvanceInterval * 1_000_000_000))
                         await MainActor.run {
-                            withAnimation(.easeInOut(duration: 0.45)) {
-                                selection = (selection + 1) % references.count
+                            let next = (selection + 1) % references.count
+                            if effectiveReduceMotion {
+                                selection = next
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.45)) {
+                                    selection = next
+                                }
                             }
                         }
                     }

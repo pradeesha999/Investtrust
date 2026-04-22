@@ -19,6 +19,9 @@ struct ProfileEditView: View {
     @State private var isSaving = false
     @State private var loadError: String?
     @State private var saveError: String?
+    @State private var saveAlertTitle = ""
+    @State private var saveAlertMessage = ""
+    @State private var showSaveAlert = false
 
     var body: some View {
         Form {
@@ -85,16 +88,24 @@ struct ProfileEditView: View {
                     ProgressView()
                 } else {
                     Button("Save") {
-                        Task { await save() }
+                        Task { @MainActor in
+                            await save()
+                        }
                     }
                 }
             }
+        }
+        .alert(saveAlertTitle, isPresented: $showSaveAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveAlertMessage)
         }
         .task(id: auth.currentUserID) {
             await load()
         }
     }
 
+    @MainActor
     private func load() async {
         guard let uid = auth.currentUserID else {
             loadError = "Please sign in."
@@ -118,9 +129,17 @@ struct ProfileEditView: View {
         }
     }
 
+    @MainActor
     private func save() async {
-        guard let uid = auth.currentUserID else { return }
+        guard let uid = auth.currentUserID else {
+            saveError = "Please sign in to save your profile."
+            saveAlertTitle = "Sign in required"
+            saveAlertMessage = saveError ?? ""
+            showSaveAlert = true
+            return
+        }
         saveError = nil
+        showSaveAlert = false
 
         let existing = try? await userService.fetchProfile(userID: uid)
         let trimmedPast = pastWorkProjects.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -131,12 +150,15 @@ struct ProfileEditView: View {
             city: city,
             shortBio: shortBio,
             experienceLevel: experienceLevel,
-            pastWorkProjects: trimmedPast.isEmpty ? nil : pastWorkProjects,
+            pastWorkProjects: trimmedPast.isEmpty ? nil : trimmedPast,
             verificationStatus: existing?.profileDetails?.verificationStatus ?? .unverified
         )
 
         guard next.isCompleteForInvesting else {
             saveError = "Still missing: \(next.missingProfileHints.joined(separator: ", "))."
+            saveAlertTitle = "Profile incomplete"
+            saveAlertMessage = saveError ?? ""
+            showSaveAlert = true
             return
         }
 
@@ -146,11 +168,12 @@ struct ProfileEditView: View {
             try await userService.saveProfileDetails(userID: uid, details: next)
             let trimmedAvatar = avatarURL.trimmingCharacters(in: .whitespacesAndNewlines)
             try await userService.updateAvatarURL(userID: uid, url: trimmedAvatar.isEmpty ? nil : trimmedAvatar)
-            await MainActor.run { dismiss() }
+            dismiss()
         } catch {
-            await MainActor.run {
-                saveError = (error as NSError).localizedDescription
-            }
+            saveError = (error as NSError).localizedDescription
+            saveAlertTitle = "Couldn't save"
+            saveAlertMessage = saveError ?? ""
+            showSaveAlert = true
         }
     }
 }

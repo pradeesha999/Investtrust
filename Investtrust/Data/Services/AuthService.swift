@@ -18,14 +18,11 @@ final class AuthService {
     /// True during sign-in / sign-up / Google flows. Cleared on success or cancel via `acknowledgeSessionReady()` (also invoked from `HomeView.onAppear` as a no-op when already false).
     var isLoading = false
 
-    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Browse tab.
+    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Home tab.
     private(set) var sessionEpoch = 0
 
     var activeProfile: UserProfile.ActiveProfile = .investor
     var roles: UserProfile.Roles = .init(investor: true, seeker: true)
-
-    /// Incremented after a successful profile switch so `HomeView` can jump to the Browse tab.
-    private(set) var dashboardNavigationTrigger: Int = 0
 
     var isSignedIn: Bool { currentUserID != nil }
 
@@ -223,9 +220,6 @@ final class AuthService {
         activeProfile = profile
         do {
             try await userService.updateActiveProfile(userID: userID, activeProfile: profile)
-            if previous != profile {
-                dashboardNavigationTrigger += 1
-            }
         } catch {
             activeProfile = previous
             errorMessage = (error as NSError).localizedDescription
@@ -241,6 +235,13 @@ final class AuthService {
         service.currentUserID = "preview"
         service.currentUserEmail = "preview@investtrust.app"
         return service
+    }
+}
+
+extension AuthService {
+    /// App-wide accent for controls, tab bar, and highlights (depends on `activeProfile`).
+    var accentColor: Color {
+        ProfileTheme.accent(for: activeProfile)
     }
 }
 

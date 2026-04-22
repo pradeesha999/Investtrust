@@ -26,7 +26,14 @@ extension OpportunityListing {
 
         let maximumInvestors: Int? = {
             if let v = data["maximumInvestors"] as? Int { return v > 0 ? v : nil }
-            if let n = data["maximumInvestors"] as? NSNumber { let i = n.intValue; return i > 0 ? i : nil }
+            if let n = data["maximumInvestors"] as? NSNumber {
+                let i = n.intValue
+                return i > 0 ? i : nil
+            }
+            if let v = data["maximumInvestors"] as? Int64 {
+                let i = Int(v)
+                return i > 0 ? i : nil
+            }
             return nil
         }()
 
@@ -137,42 +144,38 @@ extension OpportunityListing {
     }
 
     private static func parseMinimumInvestment(from data: [String: Any], fallbackTotal: Double) -> Double {
-        if let v = data["minimumInvestment"] as? Double, v > 0 { return v }
-        if let n = data["minimumInvestment"] as? NSNumber, n.doubleValue > 0 { return n.doubleValue }
-        if let s = data["minimumInvestment"] as? String {
-            let cleaned = s.replacingOccurrences(of: ",", with: "")
-            if let d = Double(cleaned), d > 0 { return d }
-        }
+        if let d = numberToDouble(data["minimumInvestment"]), d > 0 { return d }
         return min(fallbackTotal, max(1, fallbackTotal * 0.01))
     }
 
     private static func parseAmount(from data: [String: Any]) -> Double {
-        if let v = data["amountRequested"] as? Double { return v }
-        if let n = data["amountRequested"] as? NSNumber { return n.doubleValue }
-        if let v = data["amount"] as? Double { return v }
-        if let n = data["amount"] as? NSNumber { return n.doubleValue }
-        if let s = data["amount"] as? String {
-            let cleaned = s.replacingOccurrences(of: ",", with: "")
-            return Double(cleaned) ?? 0
+        numberToDouble(data["amountRequested"])
+            ?? numberToDouble(data["amount"])
+            ?? 0
+    }
+
+    /// Firestore may store numbers as `Double`, `Int`, `Int64`, or `NSNumber`.
+    private static func numberToDouble(_ value: Any?) -> Double? {
+        guard let value else { return nil }
+        if let d = value as? Double { return d }
+        if let n = value as? NSNumber { return n.doubleValue }
+        if let i = value as? Int { return Double(i) }
+        if let i = value as? Int64 { return Double(i) }
+        if let s = value as? String {
+            return Double(s.replacingOccurrences(of: ",", with: ""))
         }
-        return 0
+        return nil
     }
 
     private static func parseInterest(from data: [String: Any]) -> Double {
-        if let v = data["interestRate"] as? Double { return v }
-        if let n = data["interestRate"] as? NSNumber { return n.doubleValue }
-        if let s = data["interestRate"] as? String {
-            return Double(s.replacingOccurrences(of: ",", with: "")) ?? 0
-        }
-        return 0
+        numberToDouble(data["interestRate"]) ?? 0
     }
 
     private static func collectImageReferences(from data: [String: Any]) -> [String] {
         var out: [String] = []
         var seen = Set<String>()
-        func appendStrings(_ arr: [String]?) {
-            guard let arr else { return }
-            for s in arr {
+        func appendParsedArray(_ key: String) {
+            for s in parseStringArray(data[key]) {
                 let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty, !seen.contains(t) {
                     seen.insert(t)
@@ -180,9 +183,9 @@ extension OpportunityListing {
                 }
             }
         }
-        appendStrings(data["imageURLs"] as? [String])
-        appendStrings(data["imageStoragePaths"] as? [String])
-        if out.isEmpty { appendStrings(data["images"] as? [String]) }
+        appendParsedArray("imageURLs")
+        appendParsedArray("imageStoragePaths")
+        if out.isEmpty { appendParsedArray("images") }
         if out.isEmpty, let s = data["imageStoragePath"] as? String {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
             if !t.isEmpty, !seen.contains(t) { seen.insert(t); out.append(t) }
@@ -217,6 +220,7 @@ extension OpportunityListing {
     private static func parseTimelineMonths(from data: [String: Any]) -> Int {
         if let v = data["repaymentTimelineMonths"] as? Int { return max(1, v) }
         if let n = data["repaymentTimelineMonths"] as? NSNumber { return max(1, n.intValue) }
+        if let v = data["repaymentTimelineMonths"] as? Int64 { return max(1, Int(v)) }
         if let s = data["repaymentTimeline"] as? String {
             let digits = s.filter(\.isNumber)
             if let m = Int(digits), m > 0 { return m }

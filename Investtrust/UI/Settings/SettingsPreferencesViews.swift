@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 // MARK: - Appearance
 
@@ -101,53 +100,27 @@ struct SettingsLanguageView: View {
 // MARK: - Accessibility
 
 struct SettingsAccessibilityView: View {
+    @AppStorage(AppAccessibilityPreferences.hapticsKey) private var hapticsEnabled = true
+    @AppStorage(AppAccessibilityPreferences.reduceMotionInAppKey) private var reduceMotionInApp = false
+    @AppStorage(AppAccessibilityPreferences.highContrastKey) private var highContrastInApp = false
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Investtrust respects your system settings: Dynamic Type, Bold Text, Reduce Motion, and other iOS accessibility features apply throughout the app.")
-                    .font(.body)
-                    .foregroundStyle(.primary)
+        Form {
+            Section {
+                Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+                    .accessibilityHint("Vibration on actions like sending a message or switching profile.")
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Tips")
-                        .font(.headline)
-                    bullet("Use Settings → Display & Brightness → Text Size to change text size globally.")
-                    bullet("Use Settings → Accessibility for VoiceOver, contrast, and more.")
-                }
+                Toggle("Reduce Motion", isOn: $reduceMotionInApp)
+                    .accessibilityHint("Less animation in Investtrust. System Reduce Motion in Settings still applies.")
 
-                Link(destination: URL(string: "https://support.apple.com/accessibility")!) {
-                    Label("Apple Accessibility overview", systemImage: "arrow.up.right.square")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .tint(AppTheme.accent)
-
-                Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                } label: {
-                    Label("Open app settings", systemImage: "gearshape")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
-                .buttonStyle(.bordered)
-                .tint(AppTheme.accent)
+                Toggle("Increase Contrast", isOn: $highContrastInApp)
+                    .accessibilityHint("Stronger contrast for text and controls in this app only.")
+            } footer: {
+                Text("These options apply only to Investtrust.")
             }
-            .padding(20)
         }
-        .background(Color(.systemGroupedBackground))
+        .listStyle(.insetGrouped)
         .navigationTitle("Accessibility")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func bullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("•")
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
     }
 }

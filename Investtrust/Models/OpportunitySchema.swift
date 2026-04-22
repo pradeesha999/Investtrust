@@ -31,6 +31,16 @@ enum InvestmentType: String, CaseIterable, Codable, Sendable {
 enum RepaymentFrequency: String, CaseIterable, Codable, Sendable {
     case monthly
     case weekly
+    /// Single payment at end of term (full principal + simple interest).
+    case one_time
+
+    var displayName: String {
+        switch self {
+        case .monthly: return "Monthly"
+        case .weekly: return "Weekly"
+        case .one_time: return "One-time at maturity"
+        }
+    }
 }
 
 enum RiskLevel: String, CaseIterable, Codable, Sendable {
@@ -136,15 +146,21 @@ enum OpportunityFirestoreCoding {
         func dbl(_ key: String) -> Double? {
             if let v = nested[key] as? Double { return v }
             if let n = nested[key] as? NSNumber { return n.doubleValue }
+            if let i = nested[key] as? Int { return Double(i) }
+            if let i = nested[key] as? Int64 { return Double(i) }
             if let v = data[key] as? Double { return v }
             if let n = data[key] as? NSNumber { return n.doubleValue }
+            if let i = data[key] as? Int { return Double(i) }
+            if let i = data[key] as? Int64 { return Double(i) }
             return nil
         }
         func intg(_ key: String) -> Int? {
             if let v = nested[key] as? Int { return v }
             if let n = nested[key] as? NSNumber { return n.intValue }
+            if let v = nested[key] as? Int64 { return Int(v) }
             if let v = data[key] as? Int { return v }
             if let n = data[key] as? NSNumber { return n.intValue }
+            if let v = data[key] as? Int64 { return Int(v) }
             return nil
         }
         func str(_ key: String) -> String? {

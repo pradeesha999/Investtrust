@@ -37,6 +37,19 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     /// Snapshot created when the seeker accepts (terms frozen for this deal).
     let agreement: InvestmentAgreementSnapshot?
 
+    /// Generated when a **loan** agreement becomes fully signed (`agreementStatus == active`).
+    let loanInstallments: [LoanInstallment]
+
+    /// Final MOA PDF download URL after both parties sign (Cloudinary/Firebase).
+    let moaPdfURL: String?
+
+    /// SHA-256 hex of final signed PDF bytes (integrity).
+    let moaContentHash: String?
+
+    /// Signature PNG delivery URLs (Cloudinary HTTPS) after each party signs.
+    let investorSignatureImageURL: String?
+    let seekerSignatureImageURL: String?
+
     /// Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
     var blocksSeekerFromManagingOpportunity: Bool {
         let s = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -96,5 +109,24 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         guard signedBySeekerAt == nil else { return false }
         guard let currentUserId, let sid = seekerId else { return false }
         return currentUserId == sid
+    }
+
+    /// Sum of installments marked `confirmed_paid` (authoritative for loan repayments when present).
+    var confirmedLoanRepaymentTotal: Double {
+        loanInstallments
+            .filter { $0.status == .confirmed_paid }
+            .reduce(0) { $0 + $1.totalDue }
+    }
+
+    var isLoanWithSchedule: Bool {
+        investmentType == .loan && !loanInstallments.isEmpty
+    }
+
+    /// Next installment that still needs action (by due date).
+    var nextOpenLoanInstallment: LoanInstallment? {
+        loanInstallments
+            .filter { $0.status != .confirmed_paid }
+            .sorted { $0.dueDate < $1.dueDate }
+            .first
     }
 }

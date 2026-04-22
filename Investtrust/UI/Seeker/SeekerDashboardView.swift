@@ -2,6 +2,8 @@
 //  SeekerDashboardView.swift
 //  Investtrust
 //
+//  Seeker **Create** tab: guided listing creation and “my opportunities” management.
+//
 
 import SwiftUI
 
@@ -108,7 +110,7 @@ struct SeekerDashboardView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(AppTheme.accent, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
@@ -122,47 +124,90 @@ struct SeekerDashboardView: View {
     }
 
     private func seekerListingRow(_ item: OpportunityListing) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(item.title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Text(item.category)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            HStack {
-                Text("LKR \(item.formattedAmountLKR)")
-                Spacer()
-                Text("\(item.interestRate)%")
-                Text("•")
-                Text(item.repaymentLabel)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            seekerRowMedia(item)
 
-            HStack(spacing: 12) {
-                if !item.imageStoragePaths.isEmpty {
-                    Label("\(item.imageStoragePaths.count) image\(item.imageStoragePaths.count > 1 ? "s" : "")", systemImage: "photo.fill")
-                }
-                if item.effectiveVideoReference != nil {
-                    Label("Video", systemImage: "video.fill")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .foregroundStyle(.primary)
+                if !item.category.isEmpty {
+                    Text(item.category)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Amount")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("LKR \(item.formattedAmountLKR)")
+                        .font(.subheadline.weight(.semibold))
+                }
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Type")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(item.investmentType.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Key terms")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(item.termsSummaryLine)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                }
+            }
+
+            if !item.description.isEmpty {
+                Text(item.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
 
             Text("Manage listing")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppTheme.accent)
-                .padding(.top, 4)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(auth.accentColor, in: Capsule())
+                .foregroundStyle(.white)
         }
         .padding(AppTheme.cardPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                .strokeBorder(Color(uiColor: .separator).opacity(0.5), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
+    }
+
+    @ViewBuilder
+    private func seekerRowMedia(_ item: OpportunityListing) -> some View {
+        if let first = item.imageStoragePaths.first {
+            StorageBackedAsyncImage(
+                reference: first,
+                height: 190,
+                cornerRadius: 16,
+                feedThumbnail: true
+            )
+        } else {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.systemGray5))
+                .frame(height: 190)
+                .overlay {
+                    Image(systemName: item.effectiveVideoReference != nil ? "play.rectangle.fill" : "photo")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+        }
     }
 }
 
