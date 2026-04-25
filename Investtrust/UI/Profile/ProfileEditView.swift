@@ -1,4 +1,5 @@
 import SwiftUI
+import FirebaseAuth
 
 /// Shared profile form for investors and opportunity builders (stored in `users.profile`).
 struct ProfileEditView: View {
@@ -15,6 +16,7 @@ struct ProfileEditView: View {
     @State private var experienceLevel: ProfileExperienceLevel = .beginner
     @State private var pastWorkProjects = ""
     @State private var avatarURL = ""
+    @State private var authPhotoURL = ""
 
     @State private var isSaving = false
     @State private var loadError: String?
@@ -26,7 +28,7 @@ struct ProfileEditView: View {
     var body: some View {
         Form {
             Section {
-                Text("This information is shared across your account. Investors need it complete before sending investment requests. Email comes from your sign-in.")
+                Text("Shared across your account. Investors must complete required fields before sending requests.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -51,6 +53,21 @@ struct ProfileEditView: View {
                     .textContentType(.URL)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
+                if !authPhotoURL.isEmpty {
+                    Button {
+                        avatarURL = authPhotoURL
+                    } label: {
+                        Label("Use Google profile photo", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                }
+                if !avatarURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button("Remove profile photo", role: .destructive) {
+                        avatarURL = ""
+                    }
+                }
+                Text("Use a full URL like https://example.com/photo.jpg")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("About you") {
@@ -113,6 +130,13 @@ struct ProfileEditView: View {
         }
         loadError = nil
         do {
+            if let authUser = Auth.auth().currentUser,
+               let s = authUser.photoURL?.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines),
+               !s.isEmpty {
+                authPhotoURL = s
+            } else {
+                authPhotoURL = ""
+            }
             if let p = try await userService.fetchProfile(userID: uid) {
                 let d = p.profileDetails
                 legalFullName = d?.legalFullName ?? p.displayName ?? ""
@@ -123,6 +147,9 @@ struct ProfileEditView: View {
                 experienceLevel = d?.experienceLevel ?? .beginner
                 pastWorkProjects = d?.pastWorkProjects ?? ""
                 avatarURL = p.avatarURL ?? ""
+                if avatarURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    avatarURL = authPhotoURL
+                }
             }
         } catch {
             loadError = (error as NSError).localizedDescription

@@ -11,6 +11,7 @@ final class InvestmentService {
 
     private static let maxSignatureBytes: Int = 4 * 1024 * 1024
     private static let maxProofBytes: Int = 8 * 1024 * 1024
+    private static let overdueGraceDays: Int = 7
 
     enum InvestmentServiceError: LocalizedError {
         case notSignedIn
@@ -32,6 +33,9 @@ final class InvestmentService {
         case wrongPartyForInstallmentAction
         case installmentAlreadyComplete
         case missingSignatureImages
+        case principalDisbursementNotReady
+        case fundingStatusNotAwaitingDisbursement
+        case fundingStatusNotDisbursed
 
         var errorDescription: String? {
             switch self {
@@ -73,6 +77,12 @@ final class InvestmentService {
                 return "This installment is already confirmed."
             case .missingSignatureImages:
                 return "Signature images could not be loaded. Please try again or contact support."
+            case .principalDisbursementNotReady:
+                return "Repayment actions unlock after the principal disbursement is confirmed."
+            case .fundingStatusNotAwaitingDisbursement:
+                return "This deal is not awaiting principal disbursement."
+            case .fundingStatusNotDisbursed:
+                return "Principal funding has not been fully confirmed yet."
             }
         }
     }
@@ -283,6 +293,7 @@ final class InvestmentService {
             "seekerId": opportunity.ownerId,
             "status": "pending",
             "agreementStatus": AgreementStatus.none.rawValue,
+            "fundingStatus": FundingStatus.none.rawValue,
             "investmentAmount": proposedAmount,
             "finalInterestRate": opportunity.interestRate,
             "finalTimelineMonths": opportunity.repaymentTimelineMonths,
@@ -531,6 +542,9 @@ final class InvestmentService {
         }
 
         if inv.investmentType == .loan {
+            updates["fundingStatus"] = FundingStatus.awaiting_disbursement.rawValue
+            updates["principalSentByInvestorAt"] = FieldValue.delete()
+            updates["principalReceivedBySeekerAt"] = FieldValue.delete()
             let months = max(1, inv.finalTimelineMonths ?? agreement.termsSnapshot.repaymentTimelineMonths ?? 1)
             let rate = inv.finalInterestRate ?? agreement.termsSnapshot.interestRate ?? 0
             let plan = agreement.loanRepaymentPlan
@@ -565,6 +579,61 @@ final class InvestmentService {
     }
 
     // MARK: - Loan installments
+
+    /// Investor marks that the principal has been sent after agreement activation.
+    func markPrincipalSentByInvestor(investmentId: String, userId: String) async throws {
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .loan else {
+            throw InvestmentServiceError.notLoanOrNoSchedule
+        }
+        guard inv.agreementStatus == .active else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
+        guard userId == inv.investorId else {
+            throw InvestmentServiceError.wrongPartyForInstallmentAction
+        }
+        guard inv.fundingStatus == .awaiting_disbursement else {
+            throw InvestmentServiceError.fundingStatusNotAwaitingDisbursement
+        }
+
+        let now = Date()
+        try await invRef.updateData([
+            "principalSentByInvestorAt": Timestamp(date: now),
+            "updatedAt": Timestamp(date: now)
+        ])
+    }
+
+    /// Seeker confirms principal receipt; this unlocks loan installment actions.
+    func confirmPrincipalReceivedBySeeker(investmentId: String, userId: String) async throws {
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .loan else {
+            throw InvestmentServiceError.notLoanOrNoSchedule
+        }
+        guard userId == inv.seekerId else {
+            throw InvestmentServiceError.wrongPartyForInstallmentAction
+        }
+        guard inv.fundingStatus == .awaiting_disbursement else {
+            throw InvestmentServiceError.fundingStatusNotAwaitingDisbursement
+        }
+        guard inv.principalSentByInvestorAt != nil else {
+            throw InvestmentServiceError.fundingStatusNotDisbursed
+        }
+
+        let now = Date()
+        try await invRef.updateData([
+            "fundingStatus": FundingStatus.disbursed.rawValue,
+            "principalReceivedBySeekerAt": Timestamp(date: now),
+            "updatedAt": Timestamp(date: now)
+        ])
+    }
 
     /// Investor marks that they sent payment for an installment (dual-confirmation).
     func markLoanInstallmentPaidByInvestor(investmentId: String, installmentNo: Int, userId: String) async throws {
@@ -622,6 +691,9 @@ final class InvestmentService {
         guard inv.investmentType == .loan, !inv.loanInstallments.isEmpty else {
             throw InvestmentServiceError.notLoanOrNoSchedule
         }
+        guard inv.fundingStatus == .disbursed else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
         guard userId == inv.investorId || userId == inv.seekerId else {
             throw InvestmentServiceError.wrongPartyForInstallmentAction
         }
@@ -664,6 +736,9 @@ final class InvestmentService {
         guard inv.investmentType == .loan, !inv.loanInstallments.isEmpty else {
             throw InvestmentServiceError.notLoanOrNoSchedule
         }
+        guard inv.fundingStatus == .disbursed else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
         var rows = inv.loanInstallments.sorted { $0.installmentNo < $1.installmentNo }
         guard let idx = rows.firstIndex(where: { $0.installmentNo == installmentNo }) else {
             throw InvestmentServiceError.installmentNotFound
@@ -679,12 +754,38 @@ final class InvestmentService {
         ]
         if rows.allSatisfy({ $0.status == .confirmed_paid }) {
             updates["status"] = "completed"
+            updates["fundingStatus"] = FundingStatus.closed.rawValue
+        } else {
+            let nextFundingStatus = Self.computeFundingStatus(
+                previous: inv.fundingStatus,
+                rows: rows,
+                now: Date()
+            )
+            if nextFundingStatus != inv.fundingStatus {
+                updates["fundingStatus"] = nextFundingStatus.rawValue
+                if nextFundingStatus == .defaulted {
+                    updates["status"] = "defaulted"
+                }
+            }
         }
         try await invRef.updateData(updates)
     }
 
     private static func sumConfirmedReceived(rows: [LoanInstallment]) -> Double {
         rows.filter { $0.status == .confirmed_paid }.reduce(0) { $0 + $1.totalDue }
+    }
+
+    private static func computeFundingStatus(previous: FundingStatus, rows: [LoanInstallment], now: Date) -> FundingStatus {
+        if rows.isEmpty { return previous }
+        if rows.allSatisfy({ $0.status == .confirmed_paid }) { return .closed }
+        guard previous == .disbursed else { return previous }
+
+        let cal = Calendar.current
+        let graceBoundary = cal.date(byAdding: .day, value: -overdueGraceDays, to: now) ?? now
+        let hasDefaultedInstallment = rows.contains { row in
+            row.status != .confirmed_paid && row.dueDate < graceBoundary
+        }
+        return hasDefaultedInstallment ? .defaulted : previous
     }
 
     private static func displayName(userService: UserService, userId: String, fallback: String) async -> String {

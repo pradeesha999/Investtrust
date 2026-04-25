@@ -86,11 +86,26 @@ struct MarketBrowseView: View {
                     .font(.headline)
                 Spacer()
             }
-            Text("From other seekers on the market")
+            Text(embeddedInInvestTab ? "Explore opportunities from other seekers" : "From other seekers on the market")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            if embeddedInInvestTab && hasActiveExploreConstraints {
+                Text(activeFilterSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.top, 6)
+    }
+
+    private var activeFilterSummary: String {
+        var count = 0
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { count += 1 }
+        if selectedInvestmentType != nil { count += 1 }
+        if selectedRisk != nil { count += 1 }
+        if verifiedOnly { count += 1 }
+        if sortOption != .newest { count += 1 }
+        return "\(count) active \(count == 1 ? "filter" : "filters")"
     }
 
     /// Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.

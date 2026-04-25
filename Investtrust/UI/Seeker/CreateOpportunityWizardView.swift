@@ -38,6 +38,7 @@ struct CreateOpportunityWizardView: View {
     @Environment(AuthService.self) private var auth
 
     @State private var draft = OpportunityDraft()
+    @State private var allowsMultipleInvestors = true
     @State private var currentStep = 0
     @State private var showSavedAlert = false
     @State private var isSubmitting = false
@@ -49,8 +50,10 @@ struct CreateOpportunityWizardView: View {
     @State private var selectedVideoData: Data?
     @State private var videoPickerError: String?
     @State private var selectedImages: [Image] = []
+    @State private var didPrefillLocation = false
 
     private let steps = ["Type", "Overview", "Funding", "Terms", "Execution", "Review"]
+    private let userService = UserService()
 
     var onSubmit: (OpportunityDraft, [Data], Data?) async throws -> Void
 
@@ -154,6 +157,18 @@ struct CreateOpportunityWizardView: View {
                     }
                 }
             }
+            .task {
+                await prefillLocationFromProfileIfNeeded()
+                syncFundingModeFromDraft()
+            }
+            .onChange(of: allowsMultipleInvestors) { _, allowsMultiple in
+                applyFundingMode(allowsMultiple)
+            }
+            .onChange(of: currentStep) { _, newStep in
+                if newStep == 4 {
+                    seedDefaultMilestonesIfNeeded()
+                }
+            }
         }
     }
 
@@ -191,12 +206,20 @@ struct CreateOpportunityWizardView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            VStack(spacing: 0) {
+            VStack(spacing: 10) {
                 ForEach(InvestmentType.allCases, id: \.self) { type in
                     Button {
                         draft.investmentType = type
                     } label: {
                         HStack {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(typeIconTint(type).opacity(0.14))
+                                    .frame(width: 38, height: 38)
+                                Image(systemName: typeIcon(type))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(typeIconTint(type))
+                            }
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(type.displayName)
                                     .font(.body.weight(.semibold))
@@ -213,20 +236,21 @@ struct CreateOpportunityWizardView: View {
                             }
                         }
                         .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                .fill(draft.investmentType == type ? auth.accentColor.opacity(0.08) : AppTheme.cardBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                .strokeBorder(
+                                    draft.investmentType == type ? auth.accentColor.opacity(0.55) : AuthTheme.fieldBorder,
+                                    lineWidth: draft.investmentType == type ? 1.5 : 1
+                                )
+                        )
                     }
                     .buttonStyle(.plain)
-                    if type != InvestmentType.allCases.last {
-                        Divider()
-                    }
                 }
             }
-            .background(AppTheme.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                    .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
-            )
-            .appCardShadow()
         }
     }
 
@@ -242,6 +266,36 @@ struct CreateOpportunityWizardView: View {
             return "Deliverable-based with expected return and completion."
         case .custom:
             return "Describe bespoke terms in your own words."
+        }
+    }
+
+    private func typeIcon(_ type: InvestmentType) -> String {
+        switch type {
+        case .loan:
+            return "banknote.fill"
+        case .equity:
+            return "chart.pie.fill"
+        case .revenue_share:
+            return "arrow.trianglehead.2.clockwise.rotate.90"
+        case .project:
+            return "hammer.fill"
+        case .custom:
+            return "slider.horizontal.3"
+        }
+    }
+
+    private func typeIconTint(_ type: InvestmentType) -> Color {
+        switch type {
+        case .loan:
+            return .green
+        case .equity:
+            return .blue
+        case .revenue_share:
+            return .orange
+        case .project:
+            return .purple
+        case .custom:
+            return auth.accentColor
         }
     }
 
@@ -261,29 +315,40 @@ struct CreateOpportunityWizardView: View {
 
     private var fundingStep: some View {
         VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("Funding & risk", "How much you need, ticket size, and where you operate.")
+            sectionHeader("Funding setup", "Set amount and choose whether one investor or multiple investors can join.")
             stepFormCard {
                 VStack(alignment: .leading, spacing: 16) {
                     field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
-                    field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto (1% of goal, capped)")
-                    field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
+                    textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What exactly will this funding be used for?")
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Risk level")
+                        Text("Investor setup")
                             .font(.subheadline.weight(.semibold))
-                        Picker("Risk", selection: $draft.riskLevel) {
-                            ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
-                                Text(level.displayName).tag(level)
-                            }
+                        Picker("Investor setup", selection: $allowsMultipleInvestors) {
+                            Text("Single investor").tag(false)
+                            Text("Multiple investors").tag(true)
                         }
                         .pickerStyle(.segmented)
                     }
 
-                    field("Location", text: $draft.location, placeholder: "City / region")
-
-                    Text("Verification is set by the platform after review.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if allowsMultipleInvestors {
+                        field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto (1% of goal, capped)")
+                        field("Maximum investors", text: $draft.maximumInvestors, placeholder: "e.g. 10")
+                        Text("Minimum investment helps smaller investors join. Maximum investors sets the cap for this listing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Single investor mode")
+                                .font(.subheadline.weight(.semibold))
+                            Text("This listing will be filled by one investor. Minimum investment is automatically the full funding goal.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    }
                 }
             }
         }
@@ -296,8 +361,6 @@ struct CreateOpportunityWizardView: View {
                 Group {
                     switch draft.investmentType {
                 case .loan:
-                    field("Interest rate (%)", text: $draft.interestRate, placeholder: "12", keyboardType: .decimalPad)
-                    field("Repayment timeline (months)", text: $draft.repaymentTimeline, placeholder: "12")
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Repayment frequency")
                             .font(.subheadline.weight(.semibold))
@@ -308,6 +371,11 @@ struct CreateOpportunityWizardView: View {
                         }
                         .pickerStyle(.menu)
                     }
+                    field("Interest rate (%)", text: $draft.interestRate, placeholder: "12", keyboardType: .decimalPad)
+                    field(loanTimelineFieldTitle, text: $draft.repaymentTimeline, placeholder: loanTimelinePlaceholder)
+                    Text(loanTimelineHelperText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 case .equity:
                     field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
                     field("Business valuation (LKR, optional)", text: $draft.businessValuation, placeholder: "5000000", keyboardType: .numberPad)
@@ -354,10 +422,41 @@ struct CreateOpportunityWizardView: View {
 
     private var executionStep: some View {
         VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("Execution plan", "What the money buys, milestones, and timing.")
+            sectionHeader("Milestones", "Plan your progress updates. We prefilled suggested milestones you can edit.")
             stepFormCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    textArea("Use of funds", text: $draft.useOfFunds, placeholder: "Exactly what you’ll spend on — inventory, marketing, equipment, etc.")
+                    if let end = inferredTimelineEndDate() {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "calendar.badge.clock")
+                                    .foregroundStyle(auth.accentColor)
+                                Text("Estimated finishing date")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(shortDate(end))
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.primary)
+                            Text(estimatedCompletionHint(end))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            LinearGradient(
+                                colors: [auth.accentColor.opacity(0.14), AppTheme.secondaryFill],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                .strokeBorder(auth.accentColor.opacity(0.25), lineWidth: 1)
+                        )
+                    }
 
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
@@ -382,9 +481,12 @@ struct CreateOpportunityWizardView: View {
                         ForEach($draft.milestones) { $m in
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
-                                    Text("Milestone")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 8) {
+                                        milestoneNumberBadge(for: m)
+                                        Text(m.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled milestone" : m.title)
+                                            .font(.subheadline.weight(.semibold))
+                                            .lineLimit(1)
+                                    }
                                     Spacer()
                                     Button(role: .destructive) {
                                         if let idx = draft.milestones.firstIndex(where: { $0.id == m.id }) {
@@ -407,16 +509,48 @@ struct CreateOpportunityWizardView: View {
                                 )
                             }
                             .padding(12)
-                            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                            .background(
+                                milestoneCardBackground(for: m),
+                                in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                            )
                             .overlay(
                                 RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                                    .strokeBorder(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
+                                    .strokeBorder(milestoneCardBorder(for: m), lineWidth: 1)
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    private func milestoneNumberBadge(for milestone: MilestoneDraft) -> some View {
+        let idx = (draft.milestones.firstIndex(where: { $0.id == milestone.id }) ?? 0) + 1
+        return Text("\(idx)")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(auth.accentColor, in: Circle())
+    }
+
+    private func milestoneCardBackground(for milestone: MilestoneDraft) -> Color {
+        let idx = draft.milestones.firstIndex(where: { $0.id == milestone.id }) ?? 0
+        return idx.isMultiple(of: 2) ? AppTheme.cardBackground : AppTheme.secondaryFill.opacity(0.65)
+    }
+
+    private func milestoneCardBorder(for milestone: MilestoneDraft) -> Color {
+        if milestone.expectedDate != nil {
+            return auth.accentColor.opacity(0.28)
+        }
+        return Color(uiColor: .separator).opacity(0.35)
+    }
+
+    private func estimatedCompletionHint(_ endDate: Date) -> String {
+        let days = Calendar.current.dateComponents([.day], from: Date(), to: endDate).day ?? 0
+        if days <= 0 {
+            return "Timeline ends today."
+        }
+        return days == 1 ? "About 1 day from now." : "About \(days) days from now."
     }
 
     private var reviewStep: some View {
@@ -444,17 +578,16 @@ struct CreateOpportunityWizardView: View {
                 title: "Funding",
                 rows: [
                     ("Amount", "LKR \(draft.amount)"),
-                    ("Minimum", draft.minimumInvestment.isEmpty ? "(auto)" : "LKR \(draft.minimumInvestment)"),
-                    ("Max investors", draft.maximumInvestors.isEmpty ? "—" : draft.maximumInvestors),
-                    ("Risk", draft.riskLevel.displayName),
-                    ("Location", draft.location)
+                    ("Investor setup", allowsMultipleInvestors ? "Multiple investors" : "Single investor"),
+                    ("Minimum", allowsMultipleInvestors ? (draft.minimumInvestment.isEmpty ? "(auto)" : "LKR \(draft.minimumInvestment)") : "Full amount"),
+                    ("Max investors", allowsMultipleInvestors ? (draft.maximumInvestors.isEmpty ? "—" : draft.maximumInvestors) : "1"),
+                    ("Use of funds", draft.useOfFunds)
                 ]
             )
             reviewCard(title: "Terms", rows: termsReviewRows)
             reviewCard(
                 title: "Execution",
                 rows: [
-                    ("Use of funds", draft.useOfFunds),
                     ("Milestones", "\(draft.milestones.count) added")
                 ]
             )
@@ -466,7 +599,7 @@ struct CreateOpportunityWizardView: View {
         switch draft.investmentType {
         case .loan:
             rows.append(("Interest", draft.interestRate.isEmpty ? "—" : "\(draft.interestRate)%"))
-            rows.append(("Timeline", draft.repaymentTimeline.isEmpty ? "—" : "\(draft.repaymentTimeline) mo"))
+            rows.append(("Timeline", reviewLoanTimelineText))
             rows.append(("Frequency", draft.repaymentFrequency.rawValue.capitalized))
         case .equity:
             rows.append(("Equity %", draft.equityPercentage))
@@ -526,6 +659,8 @@ struct CreateOpportunityWizardView: View {
                         isSubmitting = true
                         defer { isSubmitting = false }
                         do {
+                            normalizeFundingDraftBeforeSubmit()
+                            normalizeLoanTermsBeforeSubmit()
                             try await onSubmit(draft, selectedImageDataList, selectedVideoData)
                             showSavedAlert = true
                         } catch {
@@ -561,16 +696,19 @@ struct CreateOpportunityWizardView: View {
             return !t.isEmpty && !c.isEmpty && !d.isEmpty
         case 2:
             guard parsePositiveAmount(draft.amount) != nil else { return false }
-            let loc = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !loc.isEmpty else { return false }
-            if let minStr = optionalDoubleString(draft.minimumInvestment), let goal = parsePositiveAmount(draft.amount) {
-                if minStr > goal { return false }
+            guard let goal = parsePositiveAmount(draft.amount) else { return false }
+            guard !draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+            if allowsMultipleInvestors {
+                guard let cap = parseInvestorCap(draft.maximumInvestors), cap >= 2 else { return false }
+                if let minStr = optionalDoubleString(draft.minimumInvestment) {
+                    if minStr > goal { return false }
+                }
             }
             return true
         case 3:
-            return (try? OpportunityService.validateDraftTerms(draft)) != nil
+            return (try? OpportunityService.validateDraftTerms(normalizedDraftForTermsValidation())) != nil
         case 4:
-            return !draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return true
         default:
             return true
         }
@@ -586,6 +724,199 @@ struct CreateOpportunityWizardView: View {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return nil }
         return parsePositiveAmount(t)
+    }
+
+    private func parseInvestorCap(_ s: String) -> Int? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        let digits = t.filter(\.isNumber)
+        return Int(digits)
+    }
+
+    private func normalizeFundingDraftBeforeSubmit() {
+        if allowsMultipleInvestors {
+            if let cap = parseInvestorCap(draft.maximumInvestors), cap >= 2 {
+                draft.maximumInvestors = "\(cap)"
+            } else {
+                draft.maximumInvestors = ""
+            }
+            return
+        }
+
+        let amount = parsePositiveAmount(draft.amount)
+        draft.maximumInvestors = "1"
+        if let amount {
+            let n = NSNumber(value: amount)
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            draft.minimumInvestment = f.string(from: n) ?? String(format: "%.0f", amount)
+        } else {
+            draft.minimumInvestment = ""
+        }
+    }
+
+    private func normalizeLoanTermsBeforeSubmit() {
+        guard draft.investmentType == .loan else { return }
+        guard draft.repaymentFrequency == .weekly else { return }
+        let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        guard let weeks = Int(digits), weeks > 0 else { return }
+        let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+        draft.repaymentTimeline = "\(months)"
+    }
+
+    private func normalizedDraftForTermsValidation() -> OpportunityDraft {
+        guard draft.investmentType == .loan, draft.repaymentFrequency == .weekly else {
+            return draft
+        }
+        var copy = draft
+        let digits = copy.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        if let weeks = Int(digits), weeks > 0 {
+            let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+            copy.repaymentTimeline = "\(months)"
+        }
+        return copy
+    }
+
+    private func applyFundingMode(_ allowsMultiple: Bool) {
+        if allowsMultiple {
+            if draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines) == "1" {
+                draft.maximumInvestors = ""
+            }
+            return
+        }
+        draft.maximumInvestors = "1"
+        if let amount = parsePositiveAmount(draft.amount) {
+            let n = NSNumber(value: amount)
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            draft.minimumInvestment = f.string(from: n) ?? String(format: "%.0f", amount)
+        }
+    }
+
+    private func syncFundingModeFromDraft() {
+        let cap = parseInvestorCap(draft.maximumInvestors) ?? 0
+        allowsMultipleInvestors = cap != 1
+    }
+
+    private func prefillLocationFromProfileIfNeeded() async {
+        if didPrefillLocation { return }
+        didPrefillLocation = true
+        guard draft.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let uid = auth.currentUserID else { return }
+        guard let profile = try? await userService.fetchProfile(userID: uid) else { return }
+        let city = profile.profileDetails?.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let country = profile.profileDetails?.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let location: String
+        if !city.isEmpty, !country.isEmpty {
+            location = "\(city), \(country)"
+        } else if !city.isEmpty {
+            location = city
+        } else if !country.isEmpty {
+            location = country
+        } else {
+            location = ""
+        }
+        if !location.isEmpty {
+            await MainActor.run {
+                draft.location = location
+            }
+        }
+    }
+
+    private func seedDefaultMilestonesIfNeeded() {
+        if !draft.milestones.isEmpty { return }
+        let start = Date()
+        guard let end = inferredTimelineEndDate(), end > start else { return }
+        let midpoint = Date(timeIntervalSince1970: (start.timeIntervalSince1970 + end.timeIntervalSince1970) / 2)
+        draft.milestones = [
+            MilestoneDraft(
+                title: "Midpoint progress update",
+                description: "Share progress at roughly 50% of the project timeline, including completed work and next steps.",
+                expectedDate: midpoint
+            ),
+            MilestoneDraft(
+                title: "Final delivery / completion",
+                description: "Confirm delivery, outcomes, and closeout details by the end of the planned timeline.",
+                expectedDate: end
+            )
+        ]
+    }
+
+    private func inferredTimelineEndDate() -> Date? {
+        let calendar = Calendar.current
+        switch draft.investmentType {
+        case .loan:
+            let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            guard let timeline = Int(digits), timeline > 0 else { return nil }
+            switch draft.repaymentFrequency {
+            case .weekly:
+                return calendar.date(byAdding: .weekOfYear, value: timeline, to: Date())
+            case .monthly, .one_time:
+                return calendar.date(byAdding: .month, value: timeline, to: Date())
+            }
+        case .revenue_share:
+            let digits = draft.maxDurationMonths.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            guard let months = Int(digits), months > 0 else { return nil }
+            return calendar.date(byAdding: .month, value: months, to: Date())
+        case .project:
+            return draft.completionDate
+        case .equity, .custom:
+            return calendar.date(byAdding: .month, value: 6, to: Date())
+        }
+    }
+
+    private func shortDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f.string(from: d)
+    }
+
+    private var loanTimelineFieldTitle: String {
+        switch draft.repaymentFrequency {
+        case .weekly:
+            return "Repayment timeline (weeks)"
+        case .monthly:
+            return "Repayment timeline (months)"
+        case .one_time:
+            return "Maturity timeline (months)"
+        }
+    }
+
+    private var loanTimelinePlaceholder: String {
+        switch draft.repaymentFrequency {
+        case .weekly:
+            return "24"
+        case .monthly:
+            return "12"
+        case .one_time:
+            return "6"
+        }
+    }
+
+    private var loanTimelineHelperText: String {
+        switch draft.repaymentFrequency {
+        case .weekly:
+            return "Enter the number of weeks. We convert this to the equivalent loan term for scheduling."
+        case .monthly:
+            return "Enter total repayment duration in months."
+        case .one_time:
+            return "Enter months until one-time repayment at maturity."
+        }
+    }
+
+    private var reviewLoanTimelineText: String {
+        let value = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "—" }
+        switch draft.repaymentFrequency {
+        case .weekly:
+            return "\(value) weeks"
+        case .monthly:
+            return "\(value) months"
+        case .one_time:
+            return "\(value) months (maturity)"
+        }
     }
 
     private func field(
@@ -648,39 +979,64 @@ struct CreateOpportunityWizardView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Media")
                 .font(.subheadline.weight(.semibold))
+            Text("Add up to 5 photos and one video. Good media helps investors evaluate faster.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
+            VStack(spacing: 0) {
                 PhotosPicker(selection: $imagePickerItems, maxSelectionCount: 5, matching: .images) {
-                    Label(selectedImageDataList.isEmpty ? "Upload images (max 5)" : "Change images (\(selectedImageDataList.count)/5)", systemImage: "photo")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    mediaPickerRow(
+                        title: "Photos",
+                        subtitle: selectedImageDataList.isEmpty
+                            ? "Upload up to 5 images"
+                            : "\(selectedImageDataList.count) selected"
+                    )
                 }
+                .buttonStyle(.plain)
+
+                Divider()
+                    .padding(.leading, 14)
 
                 PhotosPicker(selection: $videoPickerItem, matching: .videos) {
-                    Label(selectedVideoData == nil ? "Upload video (max 1)" : "Change video", systemImage: "video")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    mediaPickerRow(
+                        title: "Video",
+                        subtitle: selectedVideoData == nil
+                            ? "Upload one video (optional)"
+                            : "Video attached"
+                    )
                 }
+                .buttonStyle(.plain)
             }
+            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    .strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+            )
 
             if !selectedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { _, image in
+                    HStack(spacing: 10) {
+                        ForEach(Array(selectedImages.enumerated()), id: \.offset) { index, image in
                             image
                                 .resizable()
                                 .scaledToFill()
-                                .frame(width: 110, height: 110)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .frame(width: 120, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .overlay(alignment: .topLeading) {
+                                    Text("\(index + 1)")
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .padding(6)
+                                }
                         }
                     }
                 }
             }
 
             if let selectedVideoData {
-                Label("Video attached (\(ByteCountFormatter.string(fromByteCount: Int64(selectedVideoData.count), countStyle: .file)))", systemImage: "video.fill")
+                Text("Video attached · \(ByteCountFormatter.string(fromByteCount: Int64(selectedVideoData.count), countStyle: .file))")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -698,6 +1054,29 @@ struct CreateOpportunityWizardView: View {
             RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                 .strokeBorder(AuthTheme.fieldBorder, lineWidth: 1)
         )
+    }
+
+    private func mediaPickerRow(title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("Choose")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     private func reviewCard(title: String, rows: [(String, String)]) -> some View {

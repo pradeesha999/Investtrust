@@ -56,6 +56,11 @@ struct SignUpView: View {
                         }
                         .padding(.top, 24)
 
+                        Text(passwordMatchHint)
+                            .font(.caption)
+                            .foregroundStyle(passwordsMatch ? Color.secondary : Color.orange)
+                            .padding(.top, 8)
+
                         if let message = auth.errorMessage {
                             Text(message)
                                 .font(.footnote)
@@ -184,6 +189,7 @@ struct SignUpView: View {
         }
         .buttonStyle(.plain)
         .disabled(auth.isLoading)
+        .accessibilityLabel("Continue with Google")
     }
 
     private var isFormValid: Bool {
@@ -191,6 +197,17 @@ struct SignUpView: View {
         return !trimmed.isEmpty
             && password.count >= 6
             && password == confirmPassword
+    }
+
+    private var passwordsMatch: Bool {
+        !confirmPassword.isEmpty && password == confirmPassword
+    }
+
+    private var passwordMatchHint: String {
+        if confirmPassword.isEmpty {
+            return "Use at least 6 characters."
+        }
+        return passwordsMatch ? "Passwords match." : "Passwords do not match yet."
     }
 
     private func signUp() async {

@@ -12,6 +12,11 @@ struct DashboardView: View {
                 SeekerHomeDashboardView()
             }
         }
+        .accessibilityHint(
+            auth.activeProfile == .investor
+                ? "Showing the investor dashboard."
+                : "Showing the opportunity builder dashboard."
+        )
     }
 }
 

@@ -17,9 +17,25 @@ struct ChatThread: Identifiable, Equatable {
     }
 }
 
+struct OpportunityInquirySnapshot: Equatable, Hashable {
+    let opportunityId: String
+    let title: String
+    let investmentTypeLabel: String
+    let fundingGoalText: String
+    let minTicketText: String
+    let termsSummary: String
+    let timelineText: String
+}
+
 struct ChatMessage: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case text
+        case opportunityInquiry(snapshot: OpportunityInquirySnapshot)
+    }
+
     let id: String
     let senderId: String
     let text: String
     let createdAt: Date?
+    let kind: Kind
 }

@@ -27,7 +27,7 @@ struct PublicProfileView: View {
                     avatar
                     Text(displayName)
                         .font(.title2.bold())
-                    Text("Member")
+                    Text(metrics == nil ? "Community member" : "Active member")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
@@ -154,11 +154,10 @@ struct PublicProfileView: View {
     }
 
     private func labeledRow(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .frame(width: 120, alignment: .leading)
             Text(value)
                 .font(.subheadline)
                 .frame(maxWidth: .infinity, alignment: .leading)

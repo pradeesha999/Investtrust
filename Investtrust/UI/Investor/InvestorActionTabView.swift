@@ -23,6 +23,13 @@ struct InvestorActionTabView: View {
                 .padding(.horizontal, AppTheme.screenPadding)
                 .padding(.vertical, 10)
 
+                Text(tabRouter.investorInvestSegment == .myRequests ? "Your submitted requests and agreement status." : "Explore market listings and filters.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, AppTheme.screenPadding)
+                    .padding(.bottom, 8)
+
                 Group {
                     switch tabRouter.investorInvestSegment {
                     case .myRequests:

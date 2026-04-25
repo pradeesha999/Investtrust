@@ -37,7 +37,7 @@ struct RootView: View {
 private struct SessionLoadingOverlay: View {
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            Color(uiColor: .systemBackground).ignoresSafeArea()
             VStack(spacing: 20) {
                 ProgressView()
                     .controlSize(.large)

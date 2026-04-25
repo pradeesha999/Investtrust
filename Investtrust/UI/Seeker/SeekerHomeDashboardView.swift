@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SeekerHomeDashboardView: View {
     @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
     @State private var myOpportunities: [OpportunityListing] = []
     @State private var seekerInvestments: [InvestmentListing] = []
     @State private var isLoading = false
@@ -26,24 +27,6 @@ struct SeekerHomeDashboardView: View {
         return InvestmentListing.nonBlockingStatusesForSeeker.contains(s)
     }
 
-    private var activeInvestments: [InvestmentListing] {
-        seekerInvestments.filter { !isDeclinedLike($0) }
-    }
-
-    private var totalCommittedPrincipal: Double {
-        activeInvestments.reduce(0) { $0 + $1.investmentAmount }
-    }
-
-    private var totalPendingLKR: Double {
-        seekerInvestments
-            .filter { $0.status.lowercased() == "pending" }
-            .reduce(0) { $0 + $1.investmentAmount }
-    }
-
-    private var totalReceivedLKR: Double {
-        activeInvestments.reduce(0) { $0 + $1.receivedAmount }
-    }
-
     private var openListingsCount: Int {
         myOpportunities.filter { $0.status.lowercased() == "open" }.count
     }
@@ -55,6 +38,22 @@ struct SeekerHomeDashboardView: View {
     private var liveDealsCount: Int {
         seekerInvestments.filter {
             $0.agreementStatus == .active || $0.status.lowercased() == "active"
+        }.count
+    }
+
+    private var awaitingSignaturesCount: Int {
+        seekerInvestments.filter { $0.agreementStatus == .pending_signatures }.count
+    }
+
+    private var completedDealsCount: Int {
+        seekerInvestments.filter { $0.status.lowercased() == "completed" }.count
+    }
+
+    private var principalConfirmationNeededCount: Int {
+        seekerInvestments.filter {
+            $0.investmentType == .loan
+                && $0.agreementStatus == .active
+                && $0.fundingStatus == .awaiting_disbursement
         }.count
     }
 
@@ -85,8 +84,6 @@ struct SeekerHomeDashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                    moneyOverviewCard
-
                     if let loadError {
                         Text(loadError)
                             .font(.subheadline)
@@ -101,12 +98,14 @@ struct SeekerHomeDashboardView: View {
                             .frame(maxWidth: .infinity)
                             .padding(24)
                     } else if myOpportunities.isEmpty && seekerInvestments.isEmpty {
-                        StatusBlock(
-                            icon: "sparkles",
-                            title: "Welcome",
-                            message: "Use the Create tab to publish a listing. Your capital overview and investor activity will appear here."
-                        )
+                        emptyStateCreateCard
                     } else {
+                        pipelineOverviewCard
+
+                        if !homeInsightLines.isEmpty {
+                            insightsCard
+                        }
+
                         if !opportunitiesNeedingAttention.isEmpty {
                             attentionSection
                         }
@@ -151,39 +150,15 @@ struct SeekerHomeDashboardView: View {
 
     // MARK: - Overview
 
-    private var moneyOverviewCard: some View {
+    private var pipelineOverviewCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Overview")
+            Text("Pipeline overview")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-
-            Text(formatLKR(totalCommittedPrincipal))
-                .font(.system(size: 36, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
-
-            Text(activeInvestments.isEmpty
-                ? "No active investor commitments yet"
-                : "Committed principal across \(activeInvestments.count) investor \(activeInvestments.count == 1 ? "relationship" : "relationships")")
+            Text("Track listing momentum and deal progress.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 12) {
-                moneySubTile(
-                    title: "Pending review",
-                    amount: formatLKR(totalPendingLKR),
-                    caption: pendingReviewCount == 1 ? "1 request" : "\(pendingReviewCount) requests",
-                    tint: .orange
-                )
-                moneySubTile(
-                    title: "Repayments in",
-                    amount: formatLKR(totalReceivedLKR),
-                    caption: "Recorded on loans",
-                    tint: .green
-                )
-            }
 
             HStack(spacing: 10) {
                 metricTile(
@@ -194,14 +169,35 @@ struct SeekerHomeDashboardView: View {
                 )
                 metricTile(
                     value: "\(pendingReviewCount)",
-                    label: "To review",
+                    label: "Pending requests",
                     icon: "tray.full.fill",
                     tint: .orange
                 )
                 metricTile(
+                    value: "\(awaitingSignaturesCount)",
+                    label: "Awaiting signatures",
+                    icon: "signature",
+                    tint: .blue
+                )
+            }
+
+            HStack(spacing: 10) {
+                metricTile(
                     value: "\(liveDealsCount)",
-                    label: "Live deals",
-                    icon: "chart.line.uptrend.xyaxis",
+                    label: "Active agreements",
+                    icon: "checkmark.shield.fill",
+                    tint: .green
+                )
+                metricTile(
+                    value: "\(principalConfirmationNeededCount)",
+                    label: "Need principal confirm",
+                    icon: "banknote.fill",
+                    tint: .orange
+                )
+                metricTile(
+                    value: "\(completedDealsCount)",
+                    label: "Completed deals",
+                    icon: "flag.checkered",
                     tint: auth.accentColor
                 )
             }
@@ -223,21 +219,61 @@ struct SeekerHomeDashboardView: View {
         .appCardShadow()
     }
 
-    private func moneySubTile(title: String, amount: String, caption: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(amount)
-                .font(.title3.weight(.bold))
-                .foregroundStyle(tint)
-            Text(caption)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+    private var insightsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Insights", systemImage: "lightbulb.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(auth.accentColor)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(homeInsightLines, id: \.self) { line in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text(line)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
+    }
+
+    private var emptyStateCreateCard: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "tray.fill")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("No opportunities yet")
+                .font(.title3.weight(.bold))
+            Text("Create your first opportunity to start receiving investor requests.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                tabRouter.selectedTab = .action
+                tabRouter.openSeekerCreateWizard = true
+            } label: {
+                Text("Create opportunity")
+                    .font(.headline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: AppTheme.minTapTarget)
+            }
+            .buttonStyle(.plain)
+            .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .foregroundStyle(.white)
+            .padding(.top, 4)
+        }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 280, alignment: .center)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
     private func metricTile(value: String, label: String, icon: String, tint: Color) -> some View {
@@ -263,6 +299,26 @@ struct SeekerHomeDashboardView: View {
         )
     }
 
+    private var homeInsightLines: [String] {
+        var lines: [String] = []
+        if openListingsCount == 0, !myOpportunities.isEmpty {
+            lines.append("All your listings are currently closed. Open a new listing to attract fresh requests.")
+        }
+        if pendingReviewCount > 0 {
+            lines.append("You have \(pendingReviewCount) pending \(pendingReviewCount == 1 ? "request" : "requests") waiting for your response.")
+        }
+        if awaitingSignaturesCount > 0 {
+            lines.append("\(awaitingSignaturesCount) \(awaitingSignaturesCount == 1 ? "deal is" : "deals are") waiting on signatures to go live.")
+        }
+        if principalConfirmationNeededCount > 0 {
+            lines.append("\(principalConfirmationNeededCount) loan \(principalConfirmationNeededCount == 1 ? "deal needs" : "deals need") principal confirmation before repayments start.")
+        }
+        if lines.isEmpty, liveDealsCount > 0 {
+            lines.append("Your active agreements are healthy. Keep tracking milestones and investor communication.")
+        }
+        return Array(lines.prefix(3))
+    }
+
     // MARK: - Investor activity
 
     private var investorActivitySection: some View {
@@ -276,11 +332,11 @@ struct SeekerHomeDashboardView: View {
                     .foregroundStyle(.secondary)
             }
             Text("Every request and deal with amounts and current status.")
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
 
             if sortedInvestments.isEmpty {
-                Text("When investors send requests, they’ll show up here with LKR amounts and progress.")
+                Text("Investor requests and deal progress will appear here.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(AppTheme.cardPadding)
@@ -544,32 +600,31 @@ struct SeekerHomeDashboardView: View {
                 }
             }
 
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("LKR \(item.formattedAmountLKR)")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Investor interest")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(committed > 0 ? formatLKR(committed) : "—")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(committed > 0 ? auth.accentColor : .secondary)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Type")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(item.investmentType.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
                 }
             }
 

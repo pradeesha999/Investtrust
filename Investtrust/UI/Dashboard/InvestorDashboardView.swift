@@ -89,7 +89,7 @@ struct InvestorDashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greetingLine)
                 .font(.title2.bold())
-            Text("Track what’s happening with your money — at a glance.")
+            Text("Track your portfolio at a glance.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -99,7 +99,7 @@ struct InvestorDashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Complete your profile")
                 .font(.headline)
-            Text("Add your legal name, phone, location, bio, and experience so you can send investment requests.")
+            Text("Add required profile details before sending investment requests.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -109,7 +109,7 @@ struct InvestorDashboardView: View {
                 Text("Open profile form")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .frame(minHeight: AppTheme.minTapTarget)
             }
             .buttonStyle(.borderedProminent)
             .tint(auth.accentColor)
@@ -138,7 +138,7 @@ struct InvestorDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("You haven’t invested yet")
                 .font(.headline)
-            Text("Browse open listings and send your first request. This dashboard will show totals, timelines, and projected cash flows once you’re in a deal.")
+            Text("Browse open listings and send your first request.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -150,7 +150,7 @@ struct InvestorDashboardView: View {
                 Text("Explore opportunities")
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(minHeight: AppTheme.minTapTarget)
             }
             .buttonStyle(.plain)
             .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
@@ -168,8 +168,8 @@ struct InvestorDashboardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Waiting for approval")
                     .font(.subheadline.weight(.semibold))
-                Text("You have requests pending seeker review. Funds aren’t committed until accepted.")
-                    .font(.caption)
+                Text("You have requests pending seeker review.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -193,7 +193,7 @@ struct InvestorDashboardView: View {
                 Text("Reinvest — explore opportunities")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .frame(minHeight: AppTheme.minTapTarget)
             }
             .buttonStyle(.bordered)
             .tint(auth.accentColor)
@@ -205,7 +205,7 @@ struct InvestorDashboardView: View {
 
     private var portfolioSummarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Portfolio summary", subtitle: "Key numbers (some values are projected)")
+            sectionTitle("Portfolio summary", subtitle: "Key numbers")
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
@@ -300,7 +300,7 @@ struct InvestorDashboardView: View {
         return Group {
             if !itemArray.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Upcoming payments & events", subtitle: "Projected dates — not guaranteed")
+                    sectionTitle("Upcoming payments & events", subtitle: "Projected dates")
 
                     VStack(spacing: 0) {
                         ForEach(Array(itemArray.enumerated()), id: \.element.id) { index, item in
@@ -409,7 +409,7 @@ struct InvestorDashboardView: View {
     private var performanceChartSection: some View {
         let points = InvestorPortfolioMetrics.chartPoints(monthsBack: 6, rows: investments)
         return VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Performance overview", subtitle: "Invested vs returned over time (simple view)")
+            sectionTitle("Performance overview", subtitle: "Invested vs returned over time")
 
             Chart {
                 ForEach(points) { p in

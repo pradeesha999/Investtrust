@@ -134,13 +134,19 @@ struct SeekerOpportunityDetailView: View {
                         Label("Edit listing", systemImage: "pencil")
                             .font(.headline.weight(.semibold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .frame(minHeight: AppTheme.minTapTarget)
                     }
                     .buttonStyle(.plain)
                     .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
                     .disabled(!canEditOrDelete || isDeleting)
                     .opacity(canEditOrDelete ? 1 : 0.45)
+                    if !canEditOrDelete {
+                        Text("Resolve pending requests to enable editing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     Button(role: .destructive) {
                         showDeleteConfirm = true
@@ -148,11 +154,17 @@ struct SeekerOpportunityDetailView: View {
                         Label(isDeleting ? "Deleting…" : "Delete listing", systemImage: "trash")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .frame(minHeight: AppTheme.minTapTarget)
                     }
                     .buttonStyle(.bordered)
                     .disabled(!canEditOrDelete || isDeleting)
                     .opacity(canEditOrDelete ? 1 : 0.45)
+                    if !canEditOrDelete {
+                        Text("Resolve pending requests to enable deletion.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 .padding(.top, 4)
 

@@ -132,6 +132,7 @@ struct LoginView: View {
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(AuthTheme.primaryPink)
+            .padding(.vertical, 8)
         }
     }
 
@@ -195,6 +196,7 @@ struct LoginView: View {
         }
         .buttonStyle(.plain)
         .disabled(auth.isLoading)
+        .accessibilityLabel("Continue with Google")
     }
 
     private var isFormValid: Bool {

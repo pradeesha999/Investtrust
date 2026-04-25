@@ -17,7 +17,7 @@ struct ChatThreadRowView: View {
         if let n = profile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
             return n
         }
-        return "Member"
+        return "Conversation"
     }
 
     var body: some View {
@@ -26,14 +26,22 @@ struct ChatThreadRowView: View {
                 .frame(width: 48, height: 48)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(displayName)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+                HStack {
+                    Text(displayName)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                    if let lastMessageAt = thread.lastMessageAt {
+                        Text(shortTime(lastMessageAt))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
                 if !thread.lastMessagePreview.isEmpty {
                     Text(thread.lastMessagePreview)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             }
         }
@@ -80,5 +88,11 @@ struct ChatThreadRowView: View {
         } catch {
             profile = nil
         }
+    }
+
+    private func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }

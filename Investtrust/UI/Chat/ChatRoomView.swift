@@ -17,12 +17,25 @@ struct ChatRoomView: View {
 
     @State private var partnerName: String = "Chat"
     @State private var partnerAvatarURL: URL?
+    @State private var pendingInquirySnapshot: OpportunityInquirySnapshot?
+
+    init(chatId: String, pendingInquirySnapshot: OpportunityInquirySnapshot? = nil) {
+        self.chatId = chatId
+        _pendingInquirySnapshot = State(initialValue: pendingInquirySnapshot)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
+                        if messages.isEmpty {
+                            Text("Say hello to start the conversation.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 24)
+                        }
                         ForEach(messages) { message in
                             messageRow(message)
                                 .id(message.id)
@@ -156,20 +169,99 @@ struct ChatRoomView: View {
         let isMine = message.senderId == auth.currentUserID
         HStack {
             if isMine { Spacer(minLength: 48) }
-            Text(message.text)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    isMine
-                        ? auth.accentColor.opacity(0.2)
-                        : Color(.secondarySystemBackground),
-                    in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                )
+            switch message.kind {
+            case .text:
+                Text(message.text)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        isMine
+                            ? auth.accentColor.opacity(0.2)
+                            : Color(.secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    )
+                    .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
+                        if let createdAt = message.createdAt {
+                            Text(shortTime(createdAt))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .offset(y: 18)
+                        }
+                    }
+            case .opportunityInquiry(let snapshot):
+                inquiryBubble(snapshot: snapshot, isMine: isMine, createdAt: message.createdAt)
+            }
             if !isMine { Spacer(minLength: 48) }
         }
         .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func inquiryBubble(snapshot: OpportunityInquirySnapshot, isMine: Bool, createdAt: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Opportunity inquiry", systemImage: "briefcase.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(auth.accentColor)
+
+            Text(snapshot.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                inquiryLine(label: "Type", value: snapshot.investmentTypeLabel)
+                inquiryLine(label: "Funding", value: snapshot.fundingGoalText)
+                inquiryLine(label: "Min ticket", value: snapshot.minTicketText)
+                inquiryLine(label: "Timeline", value: snapshot.timelineText)
+                inquiryLine(label: "Terms", value: snapshot.termsSummary)
+            }
+
+            NavigationLink {
+                OpportunityDetailView(opportunityId: snapshot.opportunityId)
+            } label: {
+                Text("View opportunity")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 40)
+            }
+            .buttonStyle(.plain)
+            .background(auth.accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .foregroundStyle(.white)
+        }
+        .padding(12)
+        .background(
+            isMine ? auth.accentColor.opacity(0.12) : Color(.secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+        )
+        .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
+            if let createdAt {
+                Text(shortTime(createdAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .offset(y: 18)
+            }
+        }
+    }
+
+    private func inquiryLine(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label + ":")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+        }
+    }
+
+    private func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private func startListening() {
@@ -183,11 +275,30 @@ struct ChatRoomView: View {
                     let data = doc.data()
                     guard let senderId = data["senderId"] as? String,
                           let text = data["text"] as? String else { return nil }
+                    let type = (data["type"] as? String ?? "text").lowercased()
+                    let kind: ChatMessage.Kind
+                    if type == "opportunity_inquiry",
+                       let opportunityId = data["opportunityId"] as? String,
+                       let title = data["opportunityTitle"] as? String {
+                        let snapshot = OpportunityInquirySnapshot(
+                            opportunityId: opportunityId,
+                            title: title,
+                            investmentTypeLabel: data["investmentTypeLabel"] as? String ?? "—",
+                            fundingGoalText: data["fundingGoalText"] as? String ?? "—",
+                            minTicketText: data["minTicketText"] as? String ?? "—",
+                            termsSummary: data["termsSummary"] as? String ?? "—",
+                            timelineText: data["timelineText"] as? String ?? "—"
+                        )
+                        kind = .opportunityInquiry(snapshot: snapshot)
+                    } else {
+                        kind = .text
+                    }
                     return ChatMessage(
                         id: doc.documentID,
                         senderId: senderId,
                         text: text,
-                        createdAt: (data["createdAt"] as? Timestamp)?.dateValue()
+                        createdAt: (data["createdAt"] as? Timestamp)?.dateValue(),
+                        kind: kind
                     )
                 }
                 Task { @MainActor in
@@ -201,7 +312,19 @@ struct ChatRoomView: View {
         let text = inputText
         inputText = ""
         do {
-            try await chatService.sendMessage(chatId: chatId, senderId: uid, text: text)
+            if let snapshot = pendingInquirySnapshot {
+                try await chatService.sendOpportunityInquiryAndMessage(
+                    chatId: chatId,
+                    senderId: uid,
+                    snapshot: snapshot,
+                    text: text
+                )
+                await MainActor.run {
+                    pendingInquirySnapshot = nil
+                }
+            } else {
+                try await chatService.sendMessage(chatId: chatId, senderId: uid, text: text)
+            }
             AppHaptics.lightImpact()
         } catch {
             inputText = text

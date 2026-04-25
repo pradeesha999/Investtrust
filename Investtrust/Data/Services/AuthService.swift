@@ -44,6 +44,7 @@ final class AuthService {
                 if let user {
                     do {
                         try await self.userService.ensureUserDocumentExists(for: user)
+                        try await self.userService.syncIdentityFromAuthIfNeeded(for: user)
                         if let profile = try await self.userService.fetchProfile(userID: user.uid) {
                             self.activeProfile = profile.activeProfile
                             self.roles = profile.roles
@@ -178,7 +179,9 @@ final class AuthService {
             }
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
-            _ = try await Auth.auth().signIn(with: credential)
+            let authResult = try await Auth.auth().signIn(with: credential)
+            try await userService.ensureUserDocumentExists(for: authResult.user)
+            try await userService.syncIdentityFromAuthIfNeeded(for: authResult.user)
             syncLocalUserFromFirebase()
             sessionEpoch += 1
             acknowledgeSessionReady()

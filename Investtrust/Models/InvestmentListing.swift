@@ -31,6 +31,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     // MARK: - MOA / agreement
 
     let agreementStatus: AgreementStatus
+    let fundingStatus: FundingStatus
     let signedByInvestorAt: Date?
     let signedBySeekerAt: Date?
     let agreementGeneratedAt: Date?
@@ -49,6 +50,8 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     /// Signature PNG delivery URLs (Cloudinary HTTPS) after each party signs.
     let investorSignatureImageURL: String?
     let seekerSignatureImageURL: String?
+    let principalSentByInvestorAt: Date?
+    let principalReceivedBySeekerAt: Date?
 
     /// Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
     var blocksSeekerFromManagingOpportunity: Bool {
@@ -120,6 +123,10 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     var isLoanWithSchedule: Bool {
         investmentType == .loan && !loanInstallments.isEmpty
+    }
+
+    var loanRepaymentsUnlocked: Bool {
+        investmentType == .loan && fundingStatus == .disbursed
     }
 
     /// Next installment that still needs action (by due date).

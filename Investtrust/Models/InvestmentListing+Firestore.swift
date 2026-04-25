@@ -58,10 +58,19 @@ extension InvestmentListing {
             }
             return .none
         }()
+        let fundingStatus: FundingStatus = {
+            if let raw = data["fundingStatus"] as? String,
+               let s = FundingStatus(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                return s
+            }
+            return .none
+        }()
 
         let signedByInvestorAt: Date? = (data["signedByInvestorAt"] as? Timestamp)?.dateValue()
         let signedBySeekerAt: Date? = (data["signedBySeekerAt"] as? Timestamp)?.dateValue()
         let agreementGeneratedAt: Date? = (data["agreementGeneratedAt"] as? Timestamp)?.dateValue()
+        let principalSentByInvestorAt: Date? = (data["principalSentByInvestorAt"] as? Timestamp)?.dateValue()
+        let principalReceivedBySeekerAt: Date? = (data["principalReceivedBySeekerAt"] as? Timestamp)?.dateValue()
 
         let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
 
@@ -142,6 +151,7 @@ extension InvestmentListing {
             acceptedAt: acceptedAt,
             receivedAmount: receivedAmount,
             agreementStatus: agreementStatus,
+            fundingStatus: fundingStatus,
             signedByInvestorAt: signedByInvestorAt,
             signedBySeekerAt: signedBySeekerAt,
             agreementGeneratedAt: agreementGeneratedAt,
@@ -150,7 +160,9 @@ extension InvestmentListing {
             moaPdfURL: moaPdfURL?.isEmpty == false ? moaPdfURL : nil,
             moaContentHash: moaContentHash?.isEmpty == false ? moaContentHash : nil,
             investorSignatureImageURL: investorSignatureImageURL?.isEmpty == false ? investorSignatureImageURL : nil,
-            seekerSignatureImageURL: seekerSignatureImageURL?.isEmpty == false ? seekerSignatureImageURL : nil
+            seekerSignatureImageURL: seekerSignatureImageURL?.isEmpty == false ? seekerSignatureImageURL : nil,
+            principalSentByInvestorAt: principalSentByInvestorAt,
+            principalReceivedBySeekerAt: principalReceivedBySeekerAt
         )
     }
 

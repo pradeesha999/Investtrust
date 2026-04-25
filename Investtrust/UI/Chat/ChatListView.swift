@@ -18,7 +18,9 @@ struct ChatListView: View {
                     StatusBlock(
                         icon: "bubble.left.and.bubble.right",
                         title: "No conversations yet",
-                        message: "Negotiation and investment chats will appear here when you contact a seeker or investor."
+                        message: auth.activeProfile == .investor
+                            ? "Start from any opportunity detail to message a seeker."
+                            : "Investor conversations will appear here when requests begin."
                     )
                     .padding(AppTheme.screenPadding)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -34,18 +36,21 @@ struct ChatListView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Chat")
             .navigationDestination(for: ChatDeepLink.self) { link in
-                ChatRoomView(chatId: link.chatId)
+                ChatRoomView(chatId: link.chatId, pendingInquirySnapshot: link.inquirySnapshot)
             }
             .task(id: auth.currentUserID) {
                 await loadThreads()
+                consumePendingDeepLinkIfNeeded()
             }
             .refreshable {
                 await loadThreads()
             }
+            .onAppear {
+                consumePendingDeepLinkIfNeeded()
+            }
             .onChange(of: tabRouter.pendingChatDeepLink) { _, link in
-                guard let link else { return }
-                path.append(link)
-                tabRouter.pendingChatDeepLink = nil
+                guard let _ = link else { return }
+                consumePendingDeepLinkIfNeeded()
             }
             .alert("Could not load chats", isPresented: $showLoadError) {
                 Button("OK") { loadError = nil }
@@ -66,6 +71,13 @@ struct ChatListView: View {
             loadError = error.localizedDescription
             showLoadError = true
         }
+    }
+
+    private func consumePendingDeepLinkIfNeeded() {
+        guard let link = tabRouter.pendingChatDeepLink else { return }
+        path = NavigationPath()
+        path.append(link)
+        tabRouter.pendingChatDeepLink = nil
     }
 }
 

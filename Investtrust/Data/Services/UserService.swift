@@ -75,6 +75,35 @@ final class UserService {
         }
     }
 
+    /// Backfills profile identity fields from Firebase Auth (e.g. Google photo/name)
+    /// without overriding values the user already customized in-app.
+    func syncIdentityFromAuthIfNeeded(for user: User) async throws {
+        let ref = db.collection("users").document(user.uid)
+        let snapshot = try await ref.getDocument()
+        let data = snapshot.data() ?? [:]
+
+        let existingName = (data["displayName"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingAvatar = (data["avatarURL"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var payload: [String: Any] = [:]
+        if existingName.isEmpty,
+           let authName = user.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !authName.isEmpty {
+            payload["displayName"] = authName
+        }
+        if existingAvatar.isEmpty,
+           let authPhoto = user.photoURL?.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines),
+           !authPhoto.isEmpty {
+            payload["avatarURL"] = authPhoto
+        }
+
+        guard !payload.isEmpty else { return }
+        payload["updatedAt"] = Timestamp(date: Date())
+        try await ref.setData(payload, merge: true)
+    }
+
     /// Opportunity listings created + investment stats (shown on public profile).
     func fetchProfileActivityMetrics(userID: String) async throws -> ProfileActivityMetrics {
         let opportunityService = OpportunityService()

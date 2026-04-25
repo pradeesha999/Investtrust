@@ -64,22 +64,24 @@ struct InvestmentAgreementReviewView: View {
             Text("Memorandum of agreement")
                 .font(.title3.weight(.bold))
 
-            Text("Snapshot at acceptance — terms may differ from the live listing.")
+            Text("Snapshot at acceptance.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            Group {
-                row("Opportunity", agreement.opportunityTitle)
-                row("Investor", agreement.investorName)
-                row("Seeker", agreement.seekerName)
-                row("Amount (LKR)", formatLKR(agreement.investmentAmount))
-                row("Type", agreement.investmentType.displayName)
+            termsSection("Parties & deal") {
+                Group {
+                    row("Opportunity", agreement.opportunityTitle)
+                    row("Investor", agreement.investorName)
+                    row("Seeker", agreement.seekerName)
+                    row("Amount (LKR)", formatLKR(agreement.investmentAmount))
+                    row("Type", agreement.investmentType.displayName)
+                }
+                .font(.subheadline)
             }
-            .font(.subheadline)
 
-            Divider()
-
-            termsBody(agreement: agreement, type: agreement.investmentType)
+            termsSection("Terms") {
+                termsBody(agreement: agreement, type: agreement.investmentType)
+            }
 
             if let gen = investment.agreementGeneratedAt {
                 Text("Agreement prepared \(Self.mediumDate(gen))")
@@ -109,6 +111,21 @@ struct InvestmentAgreementReviewView: View {
             Text(value.isEmpty ? "—" : value)
                 .font(.body.weight(.medium))
         }
+    }
+
+    private func termsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+        )
     }
 
     @ViewBuilder

@@ -59,7 +59,7 @@ struct InvestorMarketView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
-        .searchable(text: $searchText, prompt: "Search by listing name")
+        .searchable(text: $searchText, prompt: "Search request by listing title")
         .task { await load() }
         .refreshable { await load() }
     }
@@ -77,7 +77,7 @@ struct InvestorMarketView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Investment requests")
                     .font(.headline)
-                Text("Track requests, signatures, and agreement status.")
+                Text("Your submitted requests, signatures, and agreement status.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

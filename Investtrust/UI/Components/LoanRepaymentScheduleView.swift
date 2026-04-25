@@ -17,6 +17,7 @@ struct LoanRepaymentScheduleView: View {
     @State private var showLibrarySheet = false
     @State private var libraryItem: PhotosPickerItem?
     @State private var libraryTargetInstallment: Int?
+    @State private var isUpdatingPrincipal = false
 
     private let service = InvestmentService()
 
@@ -50,6 +51,7 @@ struct LoanRepaymentScheduleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
                 summaryHero
+                principalDisbursementCard
 
                 if let urlStr = investment.moaPdfURL, let url = URL(string: urlStr) {
                     Link(destination: url) {
@@ -226,6 +228,54 @@ struct LoanRepaymentScheduleView: View {
         .appCardShadow()
     }
 
+    private var principalDisbursementCard: some View {
+        let isInvestor = currentUserId == investment.investorId
+        let isSeeker = currentUserId == investment.seekerId
+        return VStack(alignment: .leading, spacing: 10) {
+            Label("Principal disbursement", systemImage: "banknote.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(auth.accentColor)
+
+            Text(principalStatusText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if investment.agreementStatus != .active {
+                Text("Disbursement unlocks after the agreement is active.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else if investment.fundingStatus == .awaiting_disbursement {
+                if isInvestor, investment.principalSentByInvestorAt == nil {
+                    Button {
+                        Task { await markPrincipalSent() }
+                    } label: {
+                        Text("Mark principal sent")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(auth.accentColor)
+                    .disabled(isUpdatingPrincipal)
+                } else if isSeeker, investment.principalSentByInvestorAt != nil, investment.principalReceivedBySeekerAt == nil {
+                    Button {
+                        Task { await confirmPrincipalReceived() }
+                    } label: {
+                        Text("Confirm principal received")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(auth.accentColor)
+                    .disabled(isUpdatingPrincipal)
+                }
+            }
+        }
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
+    }
+
     // MARK: - Sections
 
     private func scheduleSection(
@@ -309,7 +359,7 @@ struct LoanRepaymentScheduleView: View {
                 metaLine("Attachments", "\(row.proofImageURLs.count) proof image(s)")
             }
 
-            if row.status != .confirmed_paid, investment.agreementStatus == .active {
+            if row.status != .confirmed_paid, investment.loanRepaymentsUnlocked {
                 HStack(spacing: 10) {
                     if isInvestor {
                         Button {
@@ -364,8 +414,8 @@ struct LoanRepaymentScheduleView: View {
                     .buttonStyle(.bordered)
                     .tint(auth.accentColor)
                 }
-            } else if investment.agreementStatus != .active {
-                Text("Repayment actions unlock when the agreement is active.")
+            } else if !investment.loanRepaymentsUnlocked {
+                Text("Repayment actions unlock after principal disbursement is confirmed by both parties.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -424,6 +474,30 @@ struct LoanRepaymentScheduleView: View {
         defer { busyInstallment = nil }
         do {
             try await service.markLoanInstallmentPaidByInvestor(investmentId: investment.id, installmentNo: no, userId: uid)
+            await onRefresh()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+        }
+    }
+
+    private func markPrincipalSent() async {
+        guard let uid = currentUserId else { return }
+        isUpdatingPrincipal = true
+        defer { isUpdatingPrincipal = false }
+        do {
+            try await service.markPrincipalSentByInvestor(investmentId: investment.id, userId: uid)
+            await onRefresh()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+        }
+    }
+
+    private func confirmPrincipalReceived() async {
+        guard let uid = currentUserId else { return }
+        isUpdatingPrincipal = true
+        defer { isUpdatingPrincipal = false }
+        do {
+            try await service.confirmPrincipalReceivedBySeeker(investmentId: investment.id, userId: uid)
             await onRefresh()
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
@@ -514,5 +588,26 @@ struct LoanRepaymentScheduleView: View {
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
         return f.string(from: n) ?? String(format: "%.0f", v)
+    }
+
+    private var principalStatusText: String {
+        switch investment.fundingStatus {
+        case .none:
+            return "Funding starts after both signatures are complete."
+        case .awaiting_disbursement:
+            if let sent = investment.principalSentByInvestorAt {
+                return "Investor marked principal sent on \(mediumDate(sent)). Waiting for seeker confirmation."
+            }
+            return "Waiting for investor to mark principal as sent."
+        case .disbursed:
+            if let received = investment.principalReceivedBySeekerAt {
+                return "Principal confirmed received on \(mediumDate(received)). Installments are unlocked."
+            }
+            return "Principal has been disbursed."
+        case .defaulted:
+            return "This loan is flagged as defaulted due to overdue installments."
+        case .closed:
+            return "Principal and installment lifecycle are fully closed."
+        }
     }
 }

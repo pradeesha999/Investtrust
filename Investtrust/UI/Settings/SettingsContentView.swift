@@ -18,7 +18,7 @@ struct SettingsContentView: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
                     .listRowBackground(Color.clear)
             } footer: {
-                Text("Investor: blue · Opportunity builder: pink")
+                Text("Current role colors: Investor uses blue accents, Opportunity builder uses pink accents.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -118,7 +118,7 @@ struct SettingsContentView: View {
     }
 
     private var profileHeaderAccessibilitySummary: String {
-        "\(displayName). \(activeSinceLine). Activity \(activityBadgeText)."
+        "\(displayName). \(activeSinceLine). Activity score \(activityBadgeValue)."
     }
 
     private var avatarWithBadge: some View {
@@ -226,6 +226,12 @@ struct SettingsContentView: View {
         let d = activityMetrics?.dealsCompletedAsInvestor ?? 0
         let total = min(999, o + d)
         return String(format: "%03d", total)
+    }
+
+    private var activityBadgeValue: Int {
+        let o = activityMetrics?.opportunitiesCreated ?? 0
+        let d = activityMetrics?.dealsCompletedAsInvestor ?? 0
+        return min(999, o + d)
     }
 
     private func toggleActiveProfile() {

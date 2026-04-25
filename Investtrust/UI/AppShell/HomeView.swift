@@ -22,7 +22,7 @@ struct HomeView: View {
 
             actionTab
                 .tabItem {
-                    Label(auth.activeProfile == .investor ? "Invest" : "Create", systemImage: auth.activeProfile == .investor ? "chart.line.uptrend.xyaxis" : "plus.app")
+                    Label(auth.activeProfile == .investor ? "Invest" : "Opportunity", systemImage: auth.activeProfile == .investor ? "chart.line.uptrend.xyaxis" : "briefcase.fill")
                 }
                 .tag(AppTab.action)
 
@@ -50,6 +50,7 @@ struct HomeView: View {
                 }
             }
         }
+        .accessibilityLabel(tabAccessibilitySummary)
     }
 
     private var tabSelection: Binding<AppTab> {
@@ -66,6 +67,12 @@ struct HomeView: View {
         } else {
             SeekerDashboardView()
         }
+    }
+
+    private var tabAccessibilitySummary: String {
+        auth.activeProfile == .investor
+            ? "Investor mode. Tabs: Home, Invest, Chat, Settings."
+            : "Opportunity builder mode. Tabs: Home, Opportunity, Chat, Settings."
     }
 }
 

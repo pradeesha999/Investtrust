@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SeekerDashboardView: View {
     @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
     @State private var showCreateFlow = false
     @State private var myOpportunities: [OpportunityListing] = []
     @State private var isLoading = false
@@ -20,9 +21,11 @@ struct SeekerDashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                    headerCard
+                    if myOpportunities.isEmpty {
+                        headerCard
+                    }
 
-                    Text("My opportunities")
+                    Text("Opportunities")
                         .font(.headline)
                         .padding(.top, 4)
 
@@ -63,9 +66,15 @@ struct SeekerDashboardView: View {
                 .padding(AppTheme.screenPadding)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Create")
+            .navigationTitle("Opportunity")
             .task { await loadMyOpportunities() }
             .refreshable { await loadMyOpportunities() }
+            .onAppear {
+                consumeExternalCreateWizardIntentIfNeeded()
+            }
+            .onChange(of: tabRouter.openSeekerCreateWizard) { _, _ in
+                consumeExternalCreateWizardIntentIfNeeded()
+            }
             .sheet(isPresented: $showCreateFlow) {
                 CreateOpportunityWizardView { draft, imageDataList, videoData in
                     guard let userID = auth.currentUserID else {
@@ -78,6 +87,23 @@ struct SeekerDashboardView: View {
                         videoData: videoData
                     )
                     await loadMyOpportunities()
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !myOpportunities.isEmpty {
+                    Button {
+                        showCreateFlow = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title3.weight(.bold))
+                            .frame(width: 56, height: 56)
+                            .background(auth.accentColor, in: Circle())
+                            .foregroundStyle(.white)
+                            .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, AppTheme.screenPadding)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -95,11 +121,17 @@ struct SeekerDashboardView: View {
         }
     }
 
+    private func consumeExternalCreateWizardIntentIfNeeded() {
+        guard tabRouter.openSeekerCreateWizard else { return }
+        tabRouter.openSeekerCreateWizard = false
+        showCreateFlow = true
+    }
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Create investment opportunities")
+            Text("Create an opportunity")
                 .font(.title3.bold())
-            Text("Post one opportunity at a time using a guided step-by-step form.")
+            Text("Use the guided form to publish a new listing.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -109,7 +141,7 @@ struct SeekerDashboardView: View {
                 Label("Add opportunity", systemImage: "plus.circle.fill")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(minHeight: AppTheme.minTapTarget)
                     .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     .foregroundStyle(.white)
             }
@@ -124,48 +156,79 @@ struct SeekerDashboardView: View {
     }
 
     private func seekerListingRow(_ item: OpportunityListing) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let statusText = item.status.capitalized
+        return VStack(alignment: .leading, spacing: 12) {
             seekerRowMedia(item)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                    .foregroundStyle(.primary)
-                if !item.category.isEmpty {
-                    Text(item.category)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .foregroundStyle(.primary)
+                    if !item.category.isEmpty {
+                        Text(item.category)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if item.interestRate > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(formatRate(item.interestRate))%")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(auth.accentColor)
+                        Text("Interest")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Amount")
+            HStack(spacing: 8) {
+                Text(item.investmentType.displayName)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AppTheme.secondaryFill, in: Capsule())
+                Text(statusText)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(statusColor(item.status).opacity(0.15), in: Capsule())
+                    .foregroundStyle(statusColor(item.status))
+                if let createdAt = item.createdAt {
+                    Label(shortDate(createdAt), systemImage: "calendar")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("LKR \(item.formattedAmountLKR)")
                         .font(.subheadline.weight(.semibold))
                 }
-                Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Type")
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Min ticket")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(item.investmentType.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                    Text("LKR \(item.formattedMinimumLKR)")
+                        .font(.caption.weight(.semibold))
                 }
-                Spacer()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Key terms")
+                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Capacity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(item.termsSummaryLine)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                    Text(item.maximumInvestors.map { "\($0) investors" } ?? "Open")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
                 }
             }
 
@@ -176,17 +239,45 @@ struct SeekerDashboardView: View {
                     .lineLimit(2)
             }
 
-            Text("Manage listing")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(auth.accentColor, in: Capsule())
-                .foregroundStyle(.white)
+            HStack {
+                Text("Manage listing")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .foregroundStyle(auth.accentColor)
         }
         .padding(AppTheme.cardPadding)
         .background(AppTheme.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+        )
         .appCardShadow()
+    }
+
+    private func formatRate(_ rate: Double) -> String {
+        if rate == floor(rate) {
+            return String(Int(rate))
+        }
+        return String(format: "%.1f", rate)
+    }
+
+    private func statusColor(_ raw: String) -> Color {
+        switch raw.lowercased() {
+        case "open": return .green
+        case "closed", "filled", "funded": return .secondary
+        default: return .primary
+        }
+    }
+
+    private func shortDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f.string(from: d)
     }
 
     @ViewBuilder
