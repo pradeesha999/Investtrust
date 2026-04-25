@@ -36,6 +36,8 @@ final class InvestmentService {
         case principalDisbursementNotReady
         case fundingStatusNotAwaitingDisbursement
         case fundingStatusNotDisbursed
+        case invalidOfferTerms
+        case acceptanceCapacityReached
 
         var errorDescription: String? {
             switch self {
@@ -83,6 +85,10 @@ final class InvestmentService {
                 return "This deal is not awaiting principal disbursement."
             case .fundingStatusNotDisbursed:
                 return "Principal funding has not been fully confirmed yet."
+            case .invalidOfferTerms:
+                return "Enter valid offer terms (amount, timeline, and interest rate)."
+            case .acceptanceCapacityReached:
+                return "Investor capacity is full for this opportunity. Decline older requests or increase max investors."
             }
         }
     }
@@ -260,7 +266,12 @@ final class InvestmentService {
         guard investorId != opportunity.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
-        guard proposedAmount > 0 else {
+        let finalAmount: Double = {
+            let cap = max(1, opportunity.maximumInvestors ?? 1)
+            if cap <= 1 { return proposedAmount }
+            return Self.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+        }()
+        guard finalAmount > 0 else {
             throw InvestmentServiceError.invalidAmount
         }
 
@@ -294,7 +305,9 @@ final class InvestmentService {
             "status": "pending",
             "agreementStatus": AgreementStatus.none.rawValue,
             "fundingStatus": FundingStatus.none.rawValue,
-            "investmentAmount": proposedAmount,
+            "requestKind": InvestmentRequestKind.default_request.rawValue,
+            "offerStatus": InvestmentOfferStatus.pending.rawValue,
+            "investmentAmount": finalAmount,
             "finalInterestRate": opportunity.interestRate,
             "finalTimelineMonths": opportunity.repaymentTimelineMonths,
             "investmentType": opportunity.investmentType.rawValue,
@@ -314,6 +327,100 @@ final class InvestmentService {
             throw InvestmentServiceError.notFound
         }
         return created
+    }
+
+    /// Create/update a pending investment request sourced from a negotiated offer.
+    /// For multi-investor opportunities (`maximumInvestors > 1`), amount is always fixed equal split.
+    func createOrUpdateOfferRequest(
+        opportunity: OpportunityListing,
+        investorId: String,
+        proposedAmount: Double?,
+        proposedInterestRate: Double,
+        proposedTimelineMonths: Int,
+        description: String,
+        source: InvestmentOfferSource,
+        chatId: String? = nil,
+        chatMessageId: String? = nil
+    ) async throws -> InvestmentListing {
+        guard investorId != opportunity.ownerId else {
+            throw InvestmentServiceError.cannotInvestInOwnListing
+        }
+        guard proposedInterestRate > 0, proposedTimelineMonths > 0 else {
+            throw InvestmentServiceError.invalidOfferTerms
+        }
+        if let p = try await userService.fetchProfile(userID: investorId) {
+            guard p.profileDetails?.isCompleteForInvesting == true else {
+                throw InvestmentServiceError.profileIncomplete
+            }
+        } else {
+            throw InvestmentServiceError.profileIncomplete
+        }
+
+        let cap = max(1, opportunity.maximumInvestors ?? 1)
+        let amount: Double = {
+            if cap > 1 {
+                return Self.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+            }
+            return proposedAmount ?? 0
+        }()
+        guard amount > 0 else {
+            throw InvestmentServiceError.invalidAmount
+        }
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let now = Date()
+        var payload: [String: Any] = [
+            "opportunityId": opportunity.id,
+            "opportunity": [
+                "id": opportunity.id,
+                "ownerId": opportunity.ownerId
+            ] as [String: Any],
+            "investorId": investorId,
+            "seekerId": opportunity.ownerId,
+            "status": "pending",
+            "agreementStatus": AgreementStatus.none.rawValue,
+            "fundingStatus": FundingStatus.none.rawValue,
+            "requestKind": InvestmentRequestKind.offer_request.rawValue,
+            "offerStatus": InvestmentOfferStatus.pending.rawValue,
+            "offerSource": source.rawValue,
+            "offeredAmount": amount,
+            "offeredInterestRate": proposedInterestRate,
+            "offeredTimelineMonths": proposedTimelineMonths,
+            "offerDescription": trimmedDescription,
+            "investmentAmount": amount,
+            "finalInterestRate": proposedInterestRate,
+            "finalTimelineMonths": proposedTimelineMonths,
+            "investmentType": opportunity.investmentType.rawValue,
+            "opportunityInvestmentType": opportunity.investmentType.rawValue,
+            "receivedAmount": 0,
+            "opportunityTitle": opportunity.title,
+            "updatedAt": Timestamp(date: now),
+            "loanInstallments": []
+        ]
+        if let firstThumb = opportunity.imageStoragePaths.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !firstThumb.isEmpty {
+            payload["thumbnailImageURL"] = firstThumb
+        }
+        if let chatId, !chatId.isEmpty { payload["offerChatId"] = chatId }
+        if let chatMessageId, !chatMessageId.isEmpty { payload["offerChatMessageId"] = chatMessageId }
+
+        let ref: DocumentReference
+        if let existing = try await fetchLatestRequestForInvestor(opportunityId: opportunity.id, investorId: investorId),
+           existing.status.lowercased() == "pending" {
+            ref = db.collection("investments").document(existing.id)
+            // keep original creation time but mark older offer as superseded semantically
+            try await ref.updateData(payload)
+        } else {
+            ref = db.collection("investments").document()
+            payload["createdAt"] = Timestamp(date: now)
+            try await ref.setData(payload)
+        }
+
+        let snap = try await ref.getDocument()
+        guard let merged = snap.data(), let row = InvestmentListing(id: ref.documentID, data: merged) else {
+            throw InvestmentServiceError.notFound
+        }
+        return row
     }
 
     /// Seeker accepts a pending request: updates Firestore and sends the verification message in the investor thread.
@@ -339,6 +446,18 @@ final class InvestmentService {
         guard inv.opportunityId == opportunity.id else {
             throw InvestmentServiceError.notFound
         }
+        if let cap = opportunity.maximumInvestors, cap > 1 {
+            let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunity.id, limit: 500)
+            let occupied = rows.filter { row in
+                guard row.id != inv.id else { return false }
+                let s = row.status.lowercased()
+                if ["accepted", "active", "completed", "defaulted"].contains(s) { return true }
+                return row.agreementStatus == .pending_signatures || row.agreementStatus == .active
+            }.count
+            guard occupied < cap else {
+                throw InvestmentServiceError.acceptanceCapacityReached
+            }
+        }
         let owner = inv.seekerId ?? opportunity.ownerId
         guard owner == seekerId, seekerId == opportunity.ownerId else {
             throw InvestmentServiceError.notOpportunityOwner
@@ -357,15 +476,23 @@ final class InvestmentService {
             investmentAmount: inv.investmentAmount,
             at: now
         )
+        let acceptedInterestRate = inv.offeredInterestRate ?? inv.finalInterestRate ?? opportunity.interestRate
+        let acceptedTimelineMonths = inv.offeredTimelineMonths ?? inv.finalTimelineMonths ?? opportunity.repaymentTimelineMonths
 
-        try await invRef.updateData([
+        var updates: [String: Any] = [
             "status": "accepted",
             "acceptedAt": Timestamp(date: now),
             "agreementStatus": AgreementStatus.pending_signatures.rawValue,
             "agreementGeneratedAt": Timestamp(date: now),
             "agreement": agreementPayload,
+            "finalInterestRate": acceptedInterestRate,
+            "finalTimelineMonths": acceptedTimelineMonths,
             "updatedAt": Timestamp(date: now)
-        ])
+        ]
+        if inv.requestKind == .offer_request {
+            updates["offerStatus"] = InvestmentOfferStatus.accepted.rawValue
+        }
+        try await invRef.updateData(updates)
 
         let chatId = try await chatService.getOrCreateChat(
             opportunityId: opportunity.id,
@@ -824,5 +951,11 @@ final class InvestmentService {
             "termsSnapshot": OpportunityFirestoreCoding.termsDictionary(from: opportunity.terms, type: opportunity.investmentType),
             "createdAt": Timestamp(date: at)
         ]
+    }
+
+    private static func fixedEqualSplitAmount(total: Double, investors: Int) -> Double {
+        guard total > 0, investors > 0 else { return 0 }
+        let raw = total / Double(investors)
+        return (raw * 100).rounded() / 100
     }
 }

@@ -25,6 +25,15 @@ struct OpportunityDetailView: View {
     @State private var isOpeningChat = false
     @State private var myLatestRequest: InvestmentListing?
     @State private var showInvestSheet = false
+    @State private var showOfferSheet = false
+    @State private var offerOpportunityId: String = ""
+    @State private var offerAmountText = ""
+    @State private var offerRateText = ""
+    @State private var offerTimelineText = ""
+    @State private var offerDescriptionText = ""
+    @State private var offerError: String?
+    @State private var isSendingOffer = false
+    @State private var showOfferSentAlert = false
     @State private var agreementReviewContext: AgreementReviewContext?
 
     private struct AgreementReviewContext: Identifiable {
@@ -75,6 +84,11 @@ struct OpportunityDetailView: View {
         } message: {
             Text("Your investment request has been sent to the seeker.")
         }
+        .alert("Offer sent", isPresented: $showOfferSentAlert) {
+            Button("OK") {}
+        } message: {
+            Text("Your negotiated offer was saved and posted in the chat with this seeker.")
+        }
         .task(id: opportunityId) {
             await loadOpportunityFromServer()
         }
@@ -84,14 +98,75 @@ struct OpportunityDetailView: View {
                     guard let uid = auth.currentUserID else {
                         throw InvestmentService.InvestmentServiceError.notSignedIn
                     }
-                    _ = try await investmentService.createInvestmentRequest(
+                    let created = try await investmentService.createInvestmentRequest(
                         opportunity: opportunity,
                         investorId: uid,
                         proposedAmount: amount
                     )
+                    let chatId = try await chatService.getOrCreateChat(
+                        opportunityId: opportunity.id,
+                        seekerId: opportunity.ownerId,
+                        investorId: uid,
+                        opportunityTitle: opportunity.title
+                    )
+                    let requestSnapshot = InvestmentRequestSnapshot(
+                        investmentId: created.id,
+                        opportunityId: opportunity.id,
+                        title: opportunity.title,
+                        amountText: Self.lkrText(created.investmentAmount),
+                        interestRateText: created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—",
+                        timelineText: created.finalTimelineMonths.map { "\($0) months" } ?? "—",
+                        note: "Default investment request from listing.",
+                        requestKindLabel: "Investment request"
+                    )
+                    _ = try await chatService.sendInvestmentRequestCard(
+                        chatId: chatId,
+                        senderId: uid,
+                        snapshot: requestSnapshot
+                    )
                     await loadMyRequest(for: opportunity)
                     await MainActor.run {
                         showRequestSuccess = true
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showOfferSheet) {
+            if let op = opportunity {
+                NavigationStack {
+                    InvestmentOfferComposerForm(
+                        opportunities: [op],
+                        selectedOpportunityId: $offerOpportunityId,
+                        showOpportunityPicker: false,
+                        emptyListingMessage: nil,
+                        amountText: $offerAmountText,
+                        rateText: $offerRateText,
+                        timelineText: $offerTimelineText,
+                        descriptionText: $offerDescriptionText,
+                        errorText: offerError
+                    )
+                    .navigationTitle("Make offer")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") {
+                                showOfferSheet = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            if isSendingOffer {
+                                ProgressView()
+                            } else {
+                                Button("Send offer") {
+                                    Task { await submitOfferFromDetail() }
+                                }
+                            }
+                        }
+                    }
+                    .onAppear {
+                        offerOpportunityId = op.id
+                        seedOfferFieldsForOffer(from: op)
+                        offerError = nil
                     }
                 }
             }
@@ -149,8 +224,13 @@ struct OpportunityDetailView: View {
                     .padding(.horizontal, AppTheme.screenPadding)
                     .padding(.top, 8)
 
-                titleCard(for: opportunity)
+                overviewSection(for: opportunity)
                     .padding(.horizontal, AppTheme.screenPadding)
+
+                if auth.currentUserID != opportunity.ownerId {
+                    keyNumbersSection(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                }
 
                 if shouldShowStatusCard(for: opportunity) {
                     statusCard(for: opportunity)
@@ -166,28 +246,23 @@ struct OpportunityDetailView: View {
                     .padding(.horizontal, AppTheme.screenPadding)
                 }
 
-                quickFactsCard(for: opportunity)
+                incomeFundsTimelineSection(for: opportunity)
                     .padding(.horizontal, AppTheme.screenPadding)
-
-                infoCard(title: "Deal terms", subtitle: dealTermsSubtitle(for: opportunity), systemImage: "doc.text.fill") {
-                    termsContent(for: opportunity)
-                }
-                .padding(.horizontal, AppTheme.screenPadding)
 
                 infoCard(title: "Funding setup", subtitle: "How this round is structured", systemImage: "person.3.fill") {
                     fundingStructureContent(for: opportunity)
                 }
                 .padding(.horizontal, AppTheme.screenPadding)
 
-                if !opportunity.description.isEmpty {
-                    infoCard(title: "About this deal", subtitle: nil, systemImage: "text.alignleft") {
-                        Text(opportunity.description)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, AppTheme.screenPadding)
+                infoCard(title: "Deal terms", subtitle: dealTermsSubtitle(for: opportunity), systemImage: "doc.text.fill") {
+                    termsContent(for: opportunity)
                 }
+                .padding(.horizontal, AppTheme.screenPadding)
+
+                infoCard(title: "Execution plan", subtitle: "Milestones from investment acceptance", systemImage: "list.bullet.rectangle.fill") {
+                    milestonesTimelineContent(for: opportunity)
+                }
+                .padding(.horizontal, AppTheme.screenPadding)
 
                 if let videoRef = opportunity.effectiveVideoReference {
                     infoCard(title: "Video walkthrough", subtitle: nil, systemImage: "play.rectangle.fill") {
@@ -208,11 +283,6 @@ struct OpportunityDetailView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, AppTheme.screenPadding)
                 }
-
-                infoCard(title: "Execution plan", subtitle: "How funds are used and milestones", systemImage: "list.bullet.rectangle.fill") {
-                    executionContent(for: opportunity)
-                }
-                .padding(.horizontal, AppTheme.screenPadding)
 
                 if let sellerCard = seekerCard(for: opportunity) {
                     sellerCard
@@ -326,12 +396,12 @@ struct OpportunityDetailView: View {
         .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
-    // MARK: - Title card
+    // MARK: - Detail sections (overview, key numbers, income & timeline)
 
     @ViewBuilder
-    private func titleCard(for o: OpportunityListing) -> some View {
-        infoCard(title: "", subtitle: nil, systemImage: nil) {
-            VStack(alignment: .leading, spacing: 10) {
+    private func overviewSection(for o: OpportunityListing) -> some View {
+        infoCard(title: "Overview", subtitle: nil, systemImage: "rectangle.and.text.magnifyingglass") {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(o.title)
                     .font(.title2.bold())
                     .foregroundStyle(.primary)
@@ -361,7 +431,415 @@ struct OpportunityDetailView: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
+
+                if !o.description.isEmpty {
+                    Text(o.description)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func keyNumbersSection(for o: OpportunityListing) -> some View {
+        let ticket = o.minimumInvestment
+        let ticketText = (o.maximumInvestors ?? 1) <= 1 ? "LKR \(o.formattedAmountLKR) (full round)" : "LKR \(o.formattedMinimumLKR) (min. ticket)"
+
+        infoCard(title: "Key numbers", subtitle: "Illustrative — not financial advice", systemImage: "chart.bar.fill") {
+            VStack(alignment: .leading, spacing: 14) {
+                keyNumbersPrimaryMetric(for: o)
+                calloutRow(title: "Required investment", value: ticketText)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Upside snapshot")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.green)
+                    Group {
+                        switch o.investmentType {
+                        case .loan:
+                            investorLoanValueBody(o: o, ticket: ticket, ticketText: ticketText)
+                        case .equity:
+                            investorEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
+                        case .revenue_share:
+                            investorRevenueShareValueBody(o: o)
+                        case .project:
+                            investorProjectValueBody(o: o)
+                        case .custom:
+                            investorCustomValueBody(o: o)
+                        }
+                    }
+                }
+                Text("Figures follow the simple-interest model used in agreements; final numbers are fixed when you invest.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func keyNumbersPrimaryMetric(for o: OpportunityListing) -> some View {
+        switch o.investmentType {
+        case .loan:
+            if let rate = o.terms.interestRate {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(formatRate(rate))%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(auth.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Interest rate")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        if let m = o.terms.repaymentTimelineMonths {
+                            Text("\(m) months · \((o.terms.repaymentFrequency ?? .monthly).displayName)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else {
+                Text("—")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Text("Rate not set")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .equity:
+            if let eq = o.terms.equityPercentage, eq > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(formatRate(eq))%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(auth.accentColor)
+                    Text("Equity offered (full round)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Equity %")
+            }
+        case .revenue_share:
+            if let p = o.terms.revenueSharePercent, p > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(formatRate(p))%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(auth.accentColor)
+                    Text("Revenue share")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Revenue share")
+            }
+        case .project:
+            let kind = o.terms.expectedReturnType?.rawValue.capitalized ?? "Return"
+            let value = (o.terms.expectedReturnValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(kind)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(auth.accentColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Expected return")
+            }
+        case .custom:
+            let s = (o.terms.customTermsSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Custom deal")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(String(s.prefix(120)) + (s.count > 120 ? "…" : ""))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(auth.accentColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Custom terms")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func placeholderPrimaryMetric(caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("—")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func incomeFundsTimelineSection(for o: OpportunityListing) -> some View {
+        let income = o.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+        infoCard(title: "Income, funds & timeline", subtitle: nil, systemImage: "arrow.triangle.branch") {
+            VStack(alignment: .leading, spacing: 14) {
+                if !income.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Income generation method")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(o.incomeGenerationMethod)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("The seeker has not added an income narrative on this listing yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !o.useOfFunds.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Use of funds")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(o.useOfFunds)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                calloutRow(title: "Investment timeline", value: investmentTimelineSummary(for: o))
+            }
+        }
+    }
+
+    private func investmentTimelineSummary(for o: OpportunityListing) -> String {
+        var parts: [String] = [o.repaymentLabel]
+        if o.investmentType == .loan, let f = o.terms.repaymentFrequency {
+            parts.append(f.displayName)
+        }
+        return parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0 != "—" }.joined(separator: " · ")
+    }
+
+    private func hasLegacyMilestoneDates(_ o: OpportunityListing) -> Bool {
+        o.milestones.contains { $0.dueDaysAfterAcceptance == nil && $0.expectedDate != nil }
+    }
+
+    private func canShowResolvedMilestoneCalendarDates(for o: OpportunityListing) -> Bool {
+        guard let r = myLatestRequest, r.acceptedAt != nil else { return false }
+        if let oid = r.opportunityId, oid != o.id { return false }
+        let s = r.status.lowercased()
+        if ["accepted", "active", "completed"].contains(s) { return true }
+        if r.agreementStatus == .active || r.agreementStatus == .pending_signatures { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private func milestonesTimelineContent(for o: OpportunityListing) -> some View {
+        let showResolved = canShowResolvedMilestoneCalendarDates(for: o)
+        let acceptedAt = myLatestRequest?.acceptedAt
+
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Day 0 is when your investment is accepted on the platform.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if hasLegacyMilestoneDates(o) {
+                Text("Some milestones use legacy calendar dates from when the listing was created.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !o.milestones.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(o.milestones.enumerated()), id: \.offset) { index, m in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(spacing: 0) {
+                                Circle()
+                                    .fill(auth.accentColor)
+                                    .frame(width: 10, height: 10)
+                                if index < o.milestones.count - 1 {
+                                    Rectangle()
+                                        .fill(auth.accentColor.opacity(0.35))
+                                        .frame(width: 2, height: 44)
+                                }
+                            }
+                            .frame(width: 14)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(m.title.isEmpty ? "Milestone" : m.title)
+                                    .font(.subheadline.weight(.semibold))
+                                if !m.description.isEmpty {
+                                    Text(m.description)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let days = m.dueDaysAfterAcceptance {
+                                    Text("+\(days) days from acceptance")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Color.green)
+                                    if showResolved, let acc = acceptedAt,
+                                       let due = Calendar.current.date(byAdding: .day, value: days, to: acc) {
+                                        Text("On your timeline: \(Self.mediumDate(due))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } else if let d = m.expectedDate {
+                                    Text(Self.mediumDate(d))
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(auth.accentColor)
+                                }
+                            }
+                            .padding(.bottom, index < o.milestones.count - 1 ? 4 : 0)
+                        }
+                    }
+                }
+            } else {
+                Text("No milestones added yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func investorLoanValueBody(o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let rate = t.interestRate,
+           let months = t.repaymentTimelineMonths, months > 0,
+           ticket > 0,
+           let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+               principal: ticket,
+               annualRatePercent: rate,
+               termMonths: months,
+               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+           ) {
+            let freq = (t.repaymentFrequency ?? .monthly).displayName
+            VStack(alignment: .leading, spacing: 8) {
+                Text("At \(ticketText), illustrative total back about LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable)) (approx. LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount)) interest) over \(months) months at \(formatRate(rate))% simple.")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let first = preview.firstInstallmentDue, let last = preview.maturityDue {
+                    if first == last {
+                        Text("One payment around \(OpportunityFinancialPreview.mediumDate(first)).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Modeled \(freq) cadence: first installment about \(OpportunityFinancialPreview.mediumDate(first)), last by \(OpportunityFinancialPreview.mediumDate(last)).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        } else {
+            Text("Once this listing has a clear rate and repayment timeline, you’ll see an estimated return on the minimum ticket here.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func investorEquityValueBody(o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let eq = t.equityPercentage, eq > 0, o.amountRequested > 0, ticket > 0,
+           let slice = OpportunityFinancialPreview.equitySlicePercent(
+               roundEquityPercent: eq,
+               investorAmount: ticket,
+               goalAmount: o.amountRequested
+           ) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("This round offers up to \(formatRate(eq))% equity for the full LKR \(o.formattedAmountLKR) goal.")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("At \(ticketText), your pro‑rata slice is about \(formatRate(slice))% of the company if the round fills at that ticket size.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let v = t.businessValuation, v > 0 {
+                    Text("Seeker’s stated pre-money context: LKR \(OpportunityFinancialPreview.formatLKRInteger(v)).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else {
+            Text("Equity % and funding goal unlock a quick ownership snapshot here.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func investorRevenueShareValueBody(o: OpportunityListing) -> some View {
+        let t = o.terms
+        if let p = t.revenueSharePercent, p > 0,
+           let target = t.targetReturnAmount, target > 0 {
+            let cap = t.maxDurationMonths.map { "\($0) months" } ?? "the agreed cap"
+            Text("Investors share \(formatRate(p))% of revenue until LKR \(OpportunityFinancialPreview.formatLKRInteger(target)) is paid back (max \(cap)).")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Add revenue share %, target, and duration so backers can see the upside cap.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func investorProjectValueBody(o: OpportunityListing) -> some View {
+        let t = o.terms
+        let kind = t.expectedReturnType?.rawValue.capitalized ?? "Return"
+        let value = (t.expectedReturnValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(kind): \(value)")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let d = t.completionDate {
+                    Text("Target wrap-up: \(Self.mediumDate(d)).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Text("Describe the expected return so investors can judge the upside.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func investorCustomValueBody(o: OpportunityListing) -> some View {
+        let s = (o.terms.customTermsSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !s.isEmpty {
+            Text(String(s.prefix(280)) + (s.count > 280 ? "…" : ""))
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Custom summary will appear here once the seeker fills it in.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -477,67 +955,6 @@ struct OpportunityDetailView: View {
             }
             Spacer(minLength: 0)
         }
-    }
-
-    // MARK: - Quick facts
-
-    @ViewBuilder
-    private func quickFactsCard(for o: OpportunityListing) -> some View {
-        let singleInvestor = (o.maximumInvestors ?? 1) <= 1
-        infoCard(title: "Quick facts", subtitle: nil, systemImage: "square.grid.2x2.fill") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    factsTile(
-                        title: "Funding goal",
-                        value: "LKR \(o.formattedAmountLKR)"
-                    )
-                    factsTile(
-                        title: "Min. ticket",
-                        value: singleInvestor ? "Full amount" : "LKR \(o.formattedMinimumLKR)"
-                    )
-                    factsTile(
-                        title: "Timeline",
-                        value: o.repaymentLabel
-                    )
-                }
-
-                if let cap = o.maximumInvestors {
-                    HStack(spacing: 10) {
-                        Image(systemName: "person.3.fill")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(auth.accentColor)
-                            .frame(width: 22, height: 22)
-                            .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        Text("Investor capacity")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("Up to \(cap)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                    }
-                    .padding(12)
-                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-                }
-            }
-        }
-    }
-
-    private func factsTile(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     private func dealTermsSubtitle(for o: OpportunityListing) -> String {
@@ -699,70 +1116,19 @@ struct OpportunityDetailView: View {
         .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
-    @ViewBuilder
-    private func executionContent(for o: OpportunityListing) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            if !o.useOfFunds.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Use of funds", systemImage: "arrow.triangle.branch")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(auth.accentColor)
-                    Text(o.useOfFunds)
-                        .font(.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            if !o.milestones.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Milestones")
-                        .font(.subheadline.weight(.semibold))
-
-                    ForEach(Array(o.milestones.enumerated()), id: \.offset) { index, m in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(spacing: 0) {
-                                Circle()
-                                    .fill(auth.accentColor)
-                                    .frame(width: 10, height: 10)
-                                if index < o.milestones.count - 1 {
-                                    Rectangle()
-                                        .fill(auth.accentColor.opacity(0.35))
-                                        .frame(width: 2, height: 36)
-                                }
-                            }
-                            .frame(width: 14)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(m.title.isEmpty ? "Milestone" : m.title)
-                                    .font(.subheadline.weight(.semibold))
-                                if !m.description.isEmpty {
-                                    Text(m.description)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                if let d = m.expectedDate {
-                                    Text(Self.mediumDate(d))
-                                        .font(.caption.weight(.medium))
-                                        .foregroundStyle(auth.accentColor)
-                                }
-                            }
-                            .padding(.bottom, index < o.milestones.count - 1 ? 4 : 0)
-                        }
-                    }
-                }
-            } else {
-                Text("No milestones added yet.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private static func mediumDate(_ d: Date) -> String {
         let f = DateFormatter()
         f.dateStyle = .medium
         return f.string(from: d)
+    }
+
+    private static func lkrText(_ value: Double) -> String {
+        let n = NSNumber(value: value)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        let s = f.string(from: n) ?? String(format: "%.2f", value)
+        return "LKR \(s)"
     }
 
     private func formatRate(_ rate: Double) -> String {
@@ -788,6 +1154,38 @@ struct OpportunityDetailView: View {
     }
 
     // MARK: - Seeker card
+
+    @ViewBuilder
+    private func seekerAvatar(profile: UserProfile, initials: String) -> some View {
+        let trimmed = profile.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let url = URL(string: trimmed), !trimmed.isEmpty {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    seekerAvatarInitials(initials: initials)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(Circle())
+        } else {
+            seekerAvatarInitials(initials: initials)
+        }
+    }
+
+    private func seekerAvatarInitials(initials: String) -> some View {
+        ZStack {
+            Circle()
+                .fill(auth.accentColor.opacity(0.14))
+            Text(initials)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(auth.accentColor)
+        }
+        .frame(width: 44, height: 44)
+    }
 
     private func seekerCard(for opportunity: OpportunityListing) -> AnyView? {
         guard auth.currentUserID != opportunity.ownerId else { return nil }
@@ -820,14 +1218,7 @@ struct OpportunityDetailView: View {
         let view = infoCard(title: "About the seeker", subtitle: nil, systemImage: "person.crop.square.fill") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(auth.accentColor.opacity(0.14))
-                        Text(initials)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(auth.accentColor)
-                    }
-                    .frame(width: 44, height: 44)
+                    seekerAvatar(profile: profile, initials: initials)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
@@ -921,48 +1312,149 @@ struct OpportunityDetailView: View {
     @ViewBuilder
     private func floatingActionBar(for opportunity: OpportunityListing) -> some View {
         if auth.currentUserID != nil, auth.currentUserID != opportunity.ownerId {
-            HStack(spacing: 10) {
-                Button {
-                    Task { await openChatWithSeeker(opportunity: opportunity) }
-                } label: {
-                    HStack(spacing: 6) {
-                        if isOpeningChat {
-                            ProgressView()
-                                .tint(auth.accentColor)
-                                .controlSize(.small)
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await openChatWithSeeker(opportunity: opportunity) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isOpeningChat {
+                                ProgressView()
+                                    .tint(auth.accentColor)
+                                    .controlSize(.small)
+                            }
+                            Text("Contact seeker")
+                                .font(.subheadline.weight(.semibold))
                         }
-                        Text("Contact seeker")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: AppTheme.minTapTarget)
-                }
-                .buttonStyle(.plain)
-                .background(
-                    RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                        .stroke(auth.accentColor, lineWidth: 1.5)
-                )
-                .foregroundStyle(auth.accentColor)
-                .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
-
-                Button {
-                    performPrimaryFloatingAction(for: opportunity)
-                } label: {
-                    Text(primaryFloatingButtonTitle(for: opportunity))
-                        .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: AppTheme.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                            .stroke(auth.accentColor, lineWidth: 1.5)
+                    )
+                    .foregroundStyle(auth.accentColor)
+                    .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
+
+                    Button {
+                        performPrimaryFloatingAction(for: opportunity)
+                    } label: {
+                        Text(primaryFloatingButtonTitle(for: opportunity))
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
+                    }
+                    .buttonStyle(.plain)
+                    .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    .foregroundStyle(.white)
+                    .disabled(!isPrimaryFloatingActionEnabled(for: opportunity))
+                    .opacity(isPrimaryFloatingActionEnabled(for: opportunity) ? 1 : 0.45)
                 }
-                .buttonStyle(.plain)
-                .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-                .foregroundStyle(.white)
-                .disabled(!isPrimaryFloatingActionEnabled(for: opportunity))
-                .opacity(isPrimaryFloatingActionEnabled(for: opportunity) ? 1 : 0.45)
+
+                if canMakeNegotiatedOffer(for: opportunity) {
+                    Button {
+                        offerError = nil
+                        seedOfferFieldsForOffer(from: opportunity)
+                        offerOpportunityId = opportunity.id
+                        showOfferSheet = true
+                    } label: {
+                        Label("Make offer", systemImage: "slider.horizontal.3")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(auth.accentColor)
+                    .disabled(isSendingOffer)
+                }
             }
             .padding(.horizontal, AppTheme.screenPadding)
             .padding(.top, 10)
             .padding(.bottom, 10)
             .background(.ultraThinMaterial)
+        }
+    }
+
+    private func canMakeNegotiatedOffer(for o: OpportunityListing) -> Bool {
+        guard auth.currentUserID != nil, auth.currentUserID != o.ownerId else { return false }
+        guard profileReadyForInvesting else { return false }
+        return o.isOpenForInvesting
+    }
+
+    private func seedOfferFieldsForOffer(from op: OpportunityListing) {
+        let cap = max(1, op.maximumInvestors ?? 1)
+        offerAmountText = cap > 1 ? "" : String(format: "%.0f", op.amountRequested)
+        offerRateText = op.interestRate > 0 ? String(format: "%.2f", op.interestRate) : ""
+        offerTimelineText = "\(max(1, op.repaymentTimelineMonths))"
+        offerDescriptionText = ""
+    }
+
+    private func submitOfferFromDetail() async {
+        guard let uid = auth.currentUserID,
+              let selected = opportunity else { return }
+        let cap = max(1, selected.maximumInvestors ?? 1)
+        let multi = cap > 1
+        let amountValue: Double?
+        if multi {
+            amountValue = InvestmentOfferComposerForm.offerAmountForOpportunity(selected)
+        } else {
+            let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
+            amountValue = Double(cleaned)
+        }
+        let rateValue = Double(offerRateText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let timelineDigits = offerTimelineText.filter(\.isNumber)
+        let timelineValue = Int(timelineDigits)
+        guard let amountValue, amountValue > 0,
+              let rateValue, rateValue > 0,
+              let timelineValue, timelineValue > 0 else {
+            await MainActor.run {
+                offerError = "Enter valid offer terms to continue."
+            }
+            return
+        }
+
+        isSendingOffer = true
+        defer { isSendingOffer = false }
+        do {
+            let chatId = try await chatService.getOrCreateChat(
+                opportunityId: selected.id,
+                seekerId: selected.ownerId,
+                investorId: uid,
+                opportunityTitle: selected.title
+            )
+            let row = try await investmentService.createOrUpdateOfferRequest(
+                opportunity: selected,
+                investorId: uid,
+                proposedAmount: amountValue,
+                proposedInterestRate: rateValue,
+                proposedTimelineMonths: timelineValue,
+                description: offerDescriptionText,
+                source: .detail_sheet,
+                chatId: chatId
+            )
+            let snapshot = InvestmentOfferSnapshot(
+                investmentId: row.id,
+                opportunityId: selected.id,
+                title: selected.title,
+                amountText: InvestmentOfferComposerForm.lkr(row.offeredAmount ?? row.investmentAmount),
+                interestRateText: String(format: "%.2f%%", row.offeredInterestRate ?? row.finalInterestRate ?? rateValue),
+                timelineText: "\((row.offeredTimelineMonths ?? row.finalTimelineMonths ?? timelineValue)) months",
+                description: offerDescriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
+                isFixedAmount: multi
+            )
+            _ = try await chatService.sendInvestmentOfferCard(chatId: chatId, senderId: uid, snapshot: snapshot)
+            await loadMyRequest(for: selected)
+            await MainActor.run {
+                showOfferSheet = false
+                offerDescriptionText = ""
+                offerError = nil
+                showOfferSentAlert = true
+            }
+        } catch {
+            await MainActor.run {
+                offerError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+            }
         }
     }
 
@@ -1177,7 +1669,7 @@ struct OpportunityDetailView: View {
                 description: "Meow",
                 investmentType: .loan,
                 amountRequested: 150_000,
-                minimumInvestment: 10_000,
+                minimumInvestment: 150_000,
                 maximumInvestors: nil,
                 terms: OpportunityTerms(
                     interestRate: 11,
@@ -1185,8 +1677,14 @@ struct OpportunityDetailView: View {
                     repaymentFrequency: .monthly
                 ),
                 useOfFunds: "Inventory and working capital.",
+                incomeGenerationMethod: "Retail sales and repair services in Colombo.",
                 milestones: [
-                    OpportunityMilestone(title: "Launch", description: "First sales", expectedDate: Date())
+                    OpportunityMilestone(
+                        title: "Launch",
+                        description: "First sales",
+                        expectedDate: nil,
+                        dueDaysAfterAcceptance: 30
+                    )
                 ],
                 location: "Colombo",
                 riskLevel: .medium,

@@ -36,8 +36,6 @@ struct MarketBrowseView: View {
     private var scrollContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                marketHeader
-
                 if isLoading && opportunities.isEmpty {
                     ProgressView("Loading opportunities…")
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -55,13 +53,13 @@ struct MarketBrowseView: View {
                     StatusBlock(
                         icon: "chart.line.uptrend.xyaxis",
                         title: "No open opportunities yet",
-                        message: "When seekers publish investment opportunities, they will appear here."
+                        message: "Listings will appear here once seekers publish opportunities."
                     )
                 } else if embeddedInInvestTab && filteredOpportunities.isEmpty {
                     StatusBlock(
                         icon: "magnifyingglass",
                         title: "No matching listings",
-                        message: "Try different search words or adjust filters.",
+                        message: "Try another search or adjust filters.",
                         actionTitle: hasActiveExploreConstraints ? "Reset filters" : nil,
                         action: hasActiveExploreConstraints ? { resetExploreFilters() } : nil
                     )
@@ -77,35 +75,6 @@ struct MarketBrowseView: View {
             .padding(.top, 16)
             .padding(.bottom, 24)
         }
-    }
-
-    private var marketHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Open listings")
-                    .font(.headline)
-                Spacer()
-            }
-            Text(embeddedInInvestTab ? "Explore opportunities from other seekers" : "From other seekers on the market")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            if embeddedInInvestTab && hasActiveExploreConstraints {
-                Text(activeFilterSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.top, 6)
-    }
-
-    private var activeFilterSummary: String {
-        var count = 0
-        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { count += 1 }
-        if selectedInvestmentType != nil { count += 1 }
-        if selectedRisk != nil { count += 1 }
-        if verifiedOnly { count += 1 }
-        if sortOption != .newest { count += 1 }
-        return "\(count) active \(count == 1 ? "filter" : "filters")"
     }
 
     /// Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.

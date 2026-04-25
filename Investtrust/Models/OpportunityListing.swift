@@ -16,6 +16,8 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     let terms: OpportunityTerms
 
     let useOfFunds: String
+    /// How the business generates income to service the deal (seeker narrative).
+    let incomeGenerationMethod: String
     let milestones: [OpportunityMilestone]
     let location: String
     let riskLevel: RiskLevel
@@ -66,6 +68,16 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
         return f.string(from: n) ?? String(format: "%.0f", minimumInvestment)
+    }
+
+    /// Firestore `status` normalized for comparisons (blank values are treated as open listings).
+    var normalizedListingStatus: String {
+        let s = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return s.isEmpty ? "open" : s
+    }
+
+    var isOpenForInvesting: Bool {
+        normalizedListingStatus == "open"
     }
 
     var repaymentLabel: String {

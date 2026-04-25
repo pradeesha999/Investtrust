@@ -27,10 +27,34 @@ struct OpportunityInquirySnapshot: Equatable, Hashable {
     let timelineText: String
 }
 
+struct InvestmentRequestSnapshot: Equatable, Hashable {
+    let investmentId: String?
+    let opportunityId: String
+    let title: String
+    let amountText: String
+    let interestRateText: String
+    let timelineText: String
+    let note: String
+    let requestKindLabel: String
+}
+
+struct InvestmentOfferSnapshot: Equatable, Hashable {
+    let investmentId: String?
+    let opportunityId: String
+    let title: String
+    let amountText: String
+    let interestRateText: String
+    let timelineText: String
+    let description: String
+    let isFixedAmount: Bool
+}
+
 struct ChatMessage: Identifiable, Equatable {
     enum Kind: Equatable {
         case text
         case opportunityInquiry(snapshot: OpportunityInquirySnapshot)
+        case investmentRequest(snapshot: InvestmentRequestSnapshot)
+        case investmentOffer(snapshot: InvestmentOfferSnapshot)
     }
 
     let id: String

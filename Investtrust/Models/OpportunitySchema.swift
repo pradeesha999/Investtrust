@@ -83,7 +83,10 @@ enum ExpectedReturnType: String, CaseIterable, Codable, Sendable {
 struct OpportunityMilestone: Equatable, Hashable, Codable, Sendable {
     var title: String
     var description: String
+    /// Legacy: calendar target from older listings (creation-based).
     var expectedDate: Date?
+    /// Days after investment acceptance this milestone is due (preferred).
+    var dueDaysAfterAcceptance: Int?
 }
 
 // MARK: - Terms (stored under `terms` in Firestore)
@@ -211,8 +214,20 @@ enum OpportunityFirestoreCoding {
                 if let ts = row["expectedDate"] as? Timestamp { return ts.dateValue() }
                 return nil
             }()
+            let daysAfter: Int? = {
+                if let v = row["daysAfterAcceptance"] as? Int { return v >= 0 ? v : nil }
+                if let n = row["daysAfterAcceptance"] as? NSNumber { let i = n.intValue; return i >= 0 ? i : nil }
+                if let v = row["dueDaysAfterAcceptance"] as? Int { return v >= 0 ? v : nil }
+                if let n = row["dueDaysAfterAcceptance"] as? NSNumber { let i = n.intValue; return i >= 0 ? i : nil }
+                return nil
+            }()
             if title.isEmpty && desc.isEmpty { return nil }
-            return OpportunityMilestone(title: title.isEmpty ? "Milestone" : title, description: desc, expectedDate: expected)
+            return OpportunityMilestone(
+                title: title.isEmpty ? "Milestone" : title,
+                description: desc,
+                expectedDate: expected,
+                dueDaysAfterAcceptance: daysAfter
+            )
         }
     }
 
@@ -224,6 +239,9 @@ enum OpportunityFirestoreCoding {
             ]
             if let d = m.expectedDate {
                 o["expectedDate"] = Timestamp(date: d)
+            }
+            if let days = m.dueDaysAfterAcceptance, days >= 0 {
+                o["daysAfterAcceptance"] = days
             }
             return o
         }

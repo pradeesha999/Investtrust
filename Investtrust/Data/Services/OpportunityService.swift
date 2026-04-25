@@ -12,7 +12,7 @@ final class OpportunityService {
         case invalidInterestRate
         case invalidTimeline
         case invalidTerms
-        case invalidMinimum
+        case incomeGenerationRequired
         case notOwner
         case blockedByActiveInvestmentRequests
 
@@ -26,8 +26,8 @@ final class OpportunityService {
                 return "Enter a valid repayment timeline in months."
             case .invalidTerms:
                 return "Fill in all required fields for the selected investment type."
-            case .invalidMinimum:
-                return "Minimum investment must be greater than zero and not more than the funding goal."
+            case .incomeGenerationRequired:
+                return "Describe how income will be generated to service this opportunity."
             case .notOwner:
                 return "You don’t have permission to change this listing."
             case .blockedByActiveInvestmentRequests:
@@ -47,6 +47,10 @@ final class OpportunityService {
         let normalizedDescription = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedUseOfFunds = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedIncomeGeneration = draft.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIncomeGeneration.isEmpty else {
+            throw OpportunityServiceError.incomeGenerationRequired
+        }
 
         guard let amountRequested = Self.parseDouble(from: draft.amount), amountRequested > 0 else {
             throw OpportunityServiceError.invalidAmount
@@ -54,22 +58,13 @@ final class OpportunityService {
 
         let terms = try Self.validatedTerms(from: draft)
 
-        let minRaw = draft.minimumInvestment.trimmingCharacters(in: .whitespacesAndNewlines)
-        let minimumInvestment: Double
-        if minRaw.isEmpty {
-            minimumInvestment = min(amountRequested, max(1, amountRequested * 0.01))
-        } else {
-            guard let m = Self.parseDouble(from: minRaw), m > 0, m <= amountRequested else {
-                throw OpportunityServiceError.invalidMinimum
-            }
-            minimumInvestment = m
-        }
-
         let maxInvestors: Int? = {
             let t = draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
             return n
         }()
+
+        let minimumInvestment = Self.storedMinimumInvestment(amountRequested: amountRequested, maxInvestors: maxInvestors)
 
         let doc = db.collection("opportunities").document()
         let opportunityID = doc.documentID
@@ -134,6 +129,7 @@ final class OpportunityService {
             "amountRequested": amountRequested,
             "minimumInvestment": minimumInvestment,
             "useOfFunds": normalizedUseOfFunds,
+            "incomeGenerationMethod": normalizedIncomeGeneration,
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
@@ -255,12 +251,12 @@ final class OpportunityService {
                 .getDocuments()
             openRows = snapshot.documents
                 .map { OpportunityListing(document: $0) }
-                .filter { $0.status == "open" }
+                .filter(\.isOpenForInvesting)
         } catch {
             let snapshot = try await base.limit(to: max(fetchCap, 150)).getDocuments()
             openRows = snapshot.documents
                 .map { OpportunityListing(document: $0) }
-                .filter { $0.status == "open" }
+                .filter(\.isOpenForInvesting)
                 .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
         }
         let visible = try await filterOpenListingsStillAcceptingInvestors(openRows)
@@ -311,6 +307,10 @@ final class OpportunityService {
         let normalizedDescription = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedLocation = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedUseOfFunds = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedIncomeGeneration = draft.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedIncomeGeneration.isEmpty else {
+            throw OpportunityServiceError.incomeGenerationRequired
+        }
 
         guard let amountRequested = Self.parseDouble(from: draft.amount), amountRequested > 0 else {
             throw OpportunityServiceError.invalidAmount
@@ -318,22 +318,13 @@ final class OpportunityService {
 
         let terms = try Self.validatedTerms(from: draft)
 
-        let minRaw = draft.minimumInvestment.trimmingCharacters(in: .whitespacesAndNewlines)
-        let minimumInvestment: Double
-        if minRaw.isEmpty {
-            minimumInvestment = min(amountRequested, max(1, amountRequested * 0.01))
-        } else {
-            guard let m = Self.parseDouble(from: minRaw), m > 0, m <= amountRequested else {
-                throw OpportunityServiceError.invalidMinimum
-            }
-            minimumInvestment = m
-        }
-
         let maxInvestors: Int? = {
             let t = draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
             return n
         }()
+
+        let minimumInvestment = Self.storedMinimumInvestment(amountRequested: amountRequested, maxInvestors: maxInvestors)
 
         let ref = db.collection("opportunities").document(opportunityId)
         let snapshot = try await ref.getDocument()
@@ -357,6 +348,7 @@ final class OpportunityService {
             "amountRequested": amountRequested,
             "minimumInvestment": minimumInvestment,
             "useOfFunds": normalizedUseOfFunds,
+            "incomeGenerationMethod": normalizedIncomeGeneration,
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
@@ -460,6 +452,13 @@ final class OpportunityService {
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
+    /// Open listings from this seeker that still have investor capacity (same rules as the marketplace).
+    func fetchSeekerListingsEligibleForOffers(ownerId: String, limit: Int = 100) async throws -> [OpportunityListing] {
+        let rows = try await fetchSeekerListings(ownerId: ownerId, limit: limit)
+        let open = rows.filter(\.isOpenForInvesting)
+        return try await filterOpenListingsStillAcceptingInvestors(open)
+    }
+
     /// Same rules as `createOpportunity` / `updateOpportunity` — use for client-side step validation.
     static func validateDraftTerms(_ draft: OpportunityDraft) throws -> OpportunityTerms {
         try validatedTerms(from: draft)
@@ -536,8 +535,9 @@ final class OpportunityService {
                 "title": title.isEmpty ? "Milestone" : title,
                 "description": desc
             ]
-            if let date = d.expectedDate {
-                o["expectedDate"] = Timestamp(date: date)
+            let dayDigits = d.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            if let days = Int(dayDigits), days >= 0 {
+                o["daysAfterAcceptance"] = min(days, 3650)
             }
             return o
         }
@@ -553,6 +553,17 @@ final class OpportunityService {
     private static func parseInt(from text: String) -> Int? {
         let digitsOnly = text.filter(\.isNumber)
         return Int(digitsOnly)
+    }
+
+    /// Per-investor ticket on the listing: equal split when more than one slot, else the full goal (aligned with `InvestmentService` rounding).
+    private static func storedMinimumInvestment(amountRequested: Double, maxInvestors: Int?) -> Double {
+        let cap = max(1, maxInvestors ?? 1)
+        guard amountRequested > 0 else { return 0 }
+        if cap > 1 {
+            let raw = amountRequested / Double(cap)
+            return (raw * 100).rounded() / 100
+        }
+        return amountRequested
     }
 
     private func withTimeout<T>(

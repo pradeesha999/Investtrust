@@ -8,6 +8,8 @@ struct ChatRoomView: View {
     @Environment(\.effectiveReduceMotion) private var reduceMotion
     private let chatService = ChatService()
     private let userService = UserService()
+    private let opportunityService = OpportunityService()
+    private let investmentService = InvestmentService()
 
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
@@ -18,6 +20,16 @@ struct ChatRoomView: View {
     @State private var partnerName: String = "Chat"
     @State private var partnerAvatarURL: URL?
     @State private var pendingInquirySnapshot: OpportunityInquirySnapshot?
+    @State private var participantIds: (seekerId: String, investorId: String)?
+    @State private var showOfferSheet = false
+    @State private var offerOpportunities: [OpportunityListing] = []
+    @State private var offerOpportunityId: String = ""
+    @State private var offerAmountText = ""
+    @State private var offerRateText = ""
+    @State private var offerTimelineText = ""
+    @State private var offerDescriptionText = ""
+    @State private var offerError: String?
+    @State private var isSendingOffer = false
 
     init(chatId: String, pendingInquirySnapshot: OpportunityInquirySnapshot? = nil) {
         self.chatId = chatId
@@ -61,6 +73,17 @@ struct ChatRoomView: View {
             Divider()
 
             HStack(alignment: .bottom, spacing: 10) {
+                if canCurrentUserMakeOffer {
+                    Button {
+                        Task { await openOfferComposer() }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(auth.accentColor)
+                    }
+                    .accessibilityLabel("Make offer")
+                    .accessibilityHint("Send a negotiated investment offer in this chat.")
+                }
                 TextField("Message", text: $inputText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
@@ -107,6 +130,9 @@ struct ChatRoomView: View {
         } message: {
             Text(sendError ?? "")
         }
+        .sheet(isPresented: $showOfferSheet) {
+            offerComposerSheet
+        }
     }
 
     @ViewBuilder
@@ -139,6 +165,9 @@ struct ChatRoomView: View {
     private func loadPartnerHeader() async {
         guard let uid = auth.currentUserID else { return }
         guard let pair = try? await chatService.fetchParticipantIds(chatId: chatId) else { return }
+        await MainActor.run {
+            participantIds = pair
+        }
         let otherId = pair.seekerId == uid ? pair.investorId : pair.seekerId
         guard let profile = try? await userService.fetchProfile(userID: otherId) else {
             await MainActor.run {
@@ -179,9 +208,15 @@ struct ChatRoomView: View {
                     .background(
                         isMine
                             ? auth.accentColor.opacity(0.2)
-                            : Color(.secondarySystemBackground),
+                            : Color(.systemBackground),
                         in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                     )
+                    .overlay {
+                        if !isMine {
+                            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                .stroke(Color(.separator).opacity(0.45), lineWidth: 1)
+                        }
+                    }
                     .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
                         if let createdAt = message.createdAt {
                             Text(shortTime(createdAt))
@@ -192,6 +227,10 @@ struct ChatRoomView: View {
                     }
             case .opportunityInquiry(let snapshot):
                 inquiryBubble(snapshot: snapshot, isMine: isMine, createdAt: message.createdAt)
+            case .investmentRequest(let snapshot):
+                investmentRequestBubble(snapshot: snapshot, isMine: isMine, createdAt: message.createdAt)
+            case .investmentOffer(let snapshot):
+                investmentOfferBubble(snapshot: snapshot, isMine: isMine, createdAt: message.createdAt)
             }
             if !isMine { Spacer(minLength: 48) }
         }
@@ -202,22 +241,43 @@ struct ChatRoomView: View {
     @ViewBuilder
     private func inquiryBubble(snapshot: OpportunityInquirySnapshot, isMine: Bool, createdAt: Date?) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Opportunity inquiry", systemImage: "briefcase.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(auth.accentColor)
+            HStack(spacing: 8) {
+                Image(systemName: "briefcase.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                    .frame(width: 22, height: 22)
+                    .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text("Opportunity inquiry")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                Spacer(minLength: 0)
+            }
 
             Text(snapshot.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 6) {
-                inquiryLine(label: "Type", value: snapshot.investmentTypeLabel)
-                inquiryLine(label: "Funding", value: snapshot.fundingGoalText)
-                inquiryLine(label: "Min ticket", value: snapshot.minTicketText)
-                inquiryLine(label: "Timeline", value: snapshot.timelineText)
-                inquiryLine(label: "Terms", value: snapshot.termsSummary)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                inquiryMetric(label: "Type", value: snapshot.investmentTypeLabel)
+                inquiryMetric(label: "Funding", value: snapshot.fundingGoalText)
+                inquiryMetric(label: "Min ticket", value: snapshot.minTicketText)
+                inquiryMetric(label: "Timeline", value: snapshot.timelineText)
             }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Terms")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(snapshot.termsSummary)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             NavigationLink {
                 OpportunityDetailView(opportunityId: snapshot.opportunityId)
@@ -233,9 +293,149 @@ struct ChatRoomView: View {
         }
         .padding(12)
         .background(
-            isMine ? auth.accentColor.opacity(0.12) : Color(.secondarySystemBackground),
+            isMine ? auth.accentColor.opacity(0.12) : Color(.systemBackground),
             in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(isMine ? auth.accentColor.opacity(0.25) : Color(.separator).opacity(0.45), lineWidth: 1)
+        }
+        .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
+            if let createdAt {
+                Text(shortTime(createdAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .offset(y: 18)
+            }
+        }
+    }
+
+    private func inquiryMetric(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func investmentRequestBubble(snapshot: InvestmentRequestSnapshot, isMine: Bool, createdAt: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                    .frame(width: 22, height: 22)
+                    .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text(snapshot.requestKindLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                Spacer(minLength: 0)
+            }
+
+            Text(snapshot.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                inquiryMetric(label: "Amount", value: snapshot.amountText)
+                inquiryMetric(label: "Rate", value: snapshot.interestRateText)
+                inquiryMetric(label: "Timeline", value: snapshot.timelineText)
+                inquiryMetric(label: "Kind", value: snapshot.requestKindLabel)
+            }
+
+            if !snapshot.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(snapshot.note)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(12)
+        .background(
+            isMine ? auth.accentColor.opacity(0.12) : Color(.systemBackground),
+            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(isMine ? auth.accentColor.opacity(0.25) : Color(.separator).opacity(0.45), lineWidth: 1)
+        }
+        .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
+            if let createdAt {
+                Text(shortTime(createdAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .offset(y: 18)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func investmentOfferBubble(snapshot: InvestmentOfferSnapshot, isMine: Bool, createdAt: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 22, height: 22)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text("Investment offer")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                Spacer(minLength: 0)
+            }
+
+            Text(snapshot.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                inquiryMetric(label: "Amount", value: snapshot.amountText)
+                inquiryMetric(label: "Rate", value: snapshot.interestRateText)
+                inquiryMetric(label: "Timeline", value: snapshot.timelineText)
+                inquiryMetric(label: "Mode", value: snapshot.isFixedAmount ? "Fixed split" : "Negotiable")
+            }
+
+            if !snapshot.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(snapshot.description)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+        .padding(12)
+        .background(
+            isMine ? Color.orange.opacity(0.14) : Color(.systemBackground),
+            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(isMine ? Color.orange.opacity(0.35) : Color(.separator).opacity(0.45), lineWidth: 1)
+        }
         .overlay(alignment: isMine ? .bottomTrailing : .bottomLeading) {
             if let createdAt {
                 Text(shortTime(createdAt))
@@ -290,6 +490,34 @@ struct ChatRoomView: View {
                             timelineText: data["timelineText"] as? String ?? "—"
                         )
                         kind = .opportunityInquiry(snapshot: snapshot)
+                    } else if type == "investment_request",
+                              let opportunityId = data["opportunityId"] as? String,
+                              let title = data["opportunityTitle"] as? String {
+                        let snapshot = InvestmentRequestSnapshot(
+                            investmentId: data["investmentId"] as? String,
+                            opportunityId: opportunityId,
+                            title: title,
+                            amountText: data["amountText"] as? String ?? "—",
+                            interestRateText: data["interestRateText"] as? String ?? "—",
+                            timelineText: data["timelineText"] as? String ?? "—",
+                            note: data["note"] as? String ?? "",
+                            requestKindLabel: data["requestKindLabel"] as? String ?? "Investment request"
+                        )
+                        kind = .investmentRequest(snapshot: snapshot)
+                    } else if type == "investment_offer",
+                              let opportunityId = data["opportunityId"] as? String,
+                              let title = data["opportunityTitle"] as? String {
+                        let snapshot = InvestmentOfferSnapshot(
+                            investmentId: data["investmentId"] as? String,
+                            opportunityId: opportunityId,
+                            title: title,
+                            amountText: data["amountText"] as? String ?? "—",
+                            interestRateText: data["interestRateText"] as? String ?? "—",
+                            timelineText: data["timelineText"] as? String ?? "—",
+                            description: data["descriptionText"] as? String ?? "",
+                            isFixedAmount: data["isFixedAmount"] as? Bool ?? false
+                        )
+                        kind = .investmentOffer(snapshot: snapshot)
                     } else {
                         kind = .text
                     }
@@ -331,6 +559,147 @@ struct ChatRoomView: View {
             presentSendError(error.localizedDescription)
         }
     }
+
+    private var canCurrentUserMakeOffer: Bool {
+        guard let uid = auth.currentUserID, let pair = participantIds else { return false }
+        return uid == pair.investorId
+    }
+
+    @ViewBuilder
+    private var offerComposerSheet: some View {
+        NavigationStack {
+            InvestmentOfferComposerForm(
+                opportunities: offerOpportunities,
+                selectedOpportunityId: $offerOpportunityId,
+                showOpportunityPicker: offerOpportunities.count > 1,
+                emptyListingMessage: "No listings from this seeker are still open for offers. They may already be full, or not marked open.",
+                amountText: $offerAmountText,
+                rateText: $offerRateText,
+                timelineText: $offerTimelineText,
+                descriptionText: $offerDescriptionText,
+                errorText: offerError
+            )
+            .navigationTitle("Make offer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showOfferSheet = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSendingOffer {
+                        ProgressView()
+                    } else {
+                        Button("Send offer") {
+                            Task { await submitOffer() }
+                        }
+                        .disabled(offerOpportunities.isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private var selectedOfferOpportunity: OpportunityListing? {
+        if !offerOpportunityId.isEmpty, let match = offerOpportunities.first(where: { $0.id == offerOpportunityId }) {
+            return match
+        }
+        return offerOpportunities.first
+    }
+
+    private func openOfferComposer() async {
+        guard auth.currentUserID != nil else { return }
+        if let fresh = try? await chatService.fetchParticipantIds(chatId: chatId) {
+            await MainActor.run { participantIds = fresh }
+        }
+        guard canCurrentUserMakeOffer, let pair = participantIds else { return }
+        do {
+            let openRows = try await opportunityService.fetchSeekerListingsEligibleForOffers(ownerId: pair.seekerId, limit: 100)
+            await MainActor.run {
+                offerOpportunities = openRows
+                offerOpportunityId = openRows.first?.id ?? ""
+                if let first = openRows.first {
+                    let cap = max(1, first.maximumInvestors ?? 1)
+                    offerAmountText = cap > 1 ? "" : String(format: "%.0f", first.amountRequested)
+                    offerRateText = first.interestRate > 0 ? String(format: "%.2f", first.interestRate) : ""
+                    offerTimelineText = "\(max(1, first.repaymentTimelineMonths))"
+                } else {
+                    offerAmountText = ""
+                    offerRateText = ""
+                    offerTimelineText = ""
+                }
+                offerDescriptionText = ""
+                offerError = nil
+                showOfferSheet = true
+            }
+        } catch {
+            await MainActor.run {
+                presentSendError((error as NSError).localizedDescription)
+            }
+        }
+    }
+
+    private func submitOffer() async {
+        guard let uid = auth.currentUserID,
+              let selected = selectedOfferOpportunity else { return }
+        let cap = max(1, selected.maximumInvestors ?? 1)
+        let multi = cap > 1
+        let amountValue: Double?
+        if multi {
+            amountValue = InvestmentOfferComposerForm.offerAmountForOpportunity(selected)
+        } else {
+            let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
+            amountValue = Double(cleaned)
+        }
+        let rateValue = Double(offerRateText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let timelineDigits = offerTimelineText.filter(\.isNumber)
+        let timelineValue = Int(timelineDigits)
+        guard let amountValue, amountValue > 0,
+              let rateValue, rateValue > 0,
+              let timelineValue, timelineValue > 0 else {
+            await MainActor.run {
+                offerError = "Enter valid offer terms to continue."
+            }
+            return
+        }
+
+        isSendingOffer = true
+        defer { isSendingOffer = false }
+        do {
+            let row = try await investmentService.createOrUpdateOfferRequest(
+                opportunity: selected,
+                investorId: uid,
+                proposedAmount: amountValue,
+                proposedInterestRate: rateValue,
+                proposedTimelineMonths: timelineValue,
+                description: offerDescriptionText,
+                source: .chat,
+                chatId: chatId
+            )
+            let snapshot = InvestmentOfferSnapshot(
+                investmentId: row.id,
+                opportunityId: selected.id,
+                title: selected.title,
+                amountText: InvestmentOfferComposerForm.lkr(row.offeredAmount ?? row.investmentAmount),
+                interestRateText: String(format: "%.2f%%", row.offeredInterestRate ?? row.finalInterestRate ?? rateValue),
+                timelineText: "\((row.offeredTimelineMonths ?? row.finalTimelineMonths ?? timelineValue)) months",
+                description: offerDescriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
+                isFixedAmount: multi
+            )
+            _ = try await chatService.sendInvestmentOfferCard(chatId: chatId, senderId: uid, snapshot: snapshot)
+            await MainActor.run {
+                showOfferSheet = false
+                offerDescriptionText = ""
+                offerError = nil
+            }
+        } catch {
+            await MainActor.run {
+                offerError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+            }
+        }
+    }
+
 }
 
 #Preview {

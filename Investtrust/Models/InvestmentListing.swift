@@ -28,6 +28,18 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     /// Repayments received to date (optional; defaults to 0 when missing in Firestore).
     let receivedAmount: Double
 
+    // MARK: - request / offer metadata
+
+    let requestKind: InvestmentRequestKind
+    let offerStatus: InvestmentOfferStatus
+    let offerSource: InvestmentOfferSource?
+    let offeredAmount: Double?
+    let offeredInterestRate: Double?
+    let offeredTimelineMonths: Int?
+    let offerDescription: String?
+    let offerChatId: String?
+    let offerChatMessageId: String?
+
     // MARK: - MOA / agreement
 
     let agreementStatus: AgreementStatus
@@ -127,6 +139,10 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     var loanRepaymentsUnlocked: Bool {
         investmentType == .loan && fundingStatus == .disbursed
+    }
+
+    var isOfferRequest: Bool {
+        requestKind == .offer_request
     }
 
     /// Next installment that still needs action (by due date).

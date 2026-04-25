@@ -174,6 +174,78 @@ final class ChatService {
         try await batch.commit()
     }
 
+    func sendInvestmentRequestCard(
+        chatId: String,
+        senderId: String,
+        snapshot: InvestmentRequestSnapshot
+    ) async throws -> String {
+        let chatRef = db.collection("chats").document(chatId)
+        let msgRef = chatRef.collection("messages").document()
+        let now = Date()
+        let payload: [String: Any] = [
+            "senderId": senderId,
+            "text": "Investment request",
+            "type": "investment_request",
+            "investmentId": snapshot.investmentId as Any,
+            "opportunityId": snapshot.opportunityId,
+            "opportunityTitle": snapshot.title,
+            "amountText": snapshot.amountText,
+            "interestRateText": snapshot.interestRateText,
+            "timelineText": snapshot.timelineText,
+            "note": snapshot.note,
+            "requestKindLabel": snapshot.requestKindLabel,
+            "createdAt": Timestamp(date: now)
+        ]
+        let batch = db.batch()
+        batch.setData(payload, forDocument: msgRef)
+        batch.updateData(
+            [
+                "lastMessageAt": Timestamp(date: now),
+                "lastMessagePreview": String("Investment request: \(snapshot.title)".prefix(120)),
+                "updatedAt": Timestamp(date: now)
+            ],
+            forDocument: chatRef
+        )
+        try await batch.commit()
+        return msgRef.documentID
+    }
+
+    func sendInvestmentOfferCard(
+        chatId: String,
+        senderId: String,
+        snapshot: InvestmentOfferSnapshot
+    ) async throws -> String {
+        let chatRef = db.collection("chats").document(chatId)
+        let msgRef = chatRef.collection("messages").document()
+        let now = Date()
+        let payload: [String: Any] = [
+            "senderId": senderId,
+            "text": "Investment offer",
+            "type": "investment_offer",
+            "investmentId": snapshot.investmentId as Any,
+            "opportunityId": snapshot.opportunityId,
+            "opportunityTitle": snapshot.title,
+            "amountText": snapshot.amountText,
+            "interestRateText": snapshot.interestRateText,
+            "timelineText": snapshot.timelineText,
+            "descriptionText": snapshot.description,
+            "isFixedAmount": snapshot.isFixedAmount,
+            "createdAt": Timestamp(date: now)
+        ]
+        let batch = db.batch()
+        batch.setData(payload, forDocument: msgRef)
+        batch.updateData(
+            [
+                "lastMessageAt": Timestamp(date: now),
+                "lastMessagePreview": String("Investment offer: \(snapshot.title)".prefix(120)),
+                "updatedAt": Timestamp(date: now)
+            ],
+            forDocument: chatRef
+        )
+        try await batch.commit()
+        return msgRef.documentID
+    }
+
     private func canonicalChatId(seekerId: String, investorId: String) -> String {
         let parts = [seekerId, investorId].sorted()
         return "pair_\(parts[0])_\(parts[1])"

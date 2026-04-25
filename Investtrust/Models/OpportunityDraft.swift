@@ -4,13 +4,14 @@ struct MilestoneDraft: Identifiable, Equatable {
     let id: UUID
     var title: String
     var description: String
-    var expectedDate: Date?
+    /// Days after investment acceptance (digits only in UI).
+    var daysAfterAcceptance: String
 
-    init(id: UUID = UUID(), title: String = "", description: String = "", expectedDate: Date? = nil) {
+    init(id: UUID = UUID(), title: String = "", description: String = "", daysAfterAcceptance: String = "") {
         self.id = id
         self.title = title
         self.description = description
-        self.expectedDate = expectedDate
+        self.daysAfterAcceptance = daysAfterAcceptance
     }
 }
 
@@ -25,12 +26,12 @@ struct OpportunityDraft: Identifiable, Equatable {
     var location: String = ""
 
     var amount: String = ""
-    var minimumInvestment: String = ""
     var maximumInvestors: String = ""
 
     var riskLevel: RiskLevel = .medium
     var verificationStatus: VerificationStatus = .unverified
     var useOfFunds: String = ""
+    var incomeGenerationMethod: String = ""
     var milestones: [MilestoneDraft] = []
 
     // Loan

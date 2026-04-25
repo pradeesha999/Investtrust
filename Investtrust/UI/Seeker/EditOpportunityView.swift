@@ -47,12 +47,20 @@ struct EditOpportunityView: View {
                         field("Opportunity title", text: $draft.title, placeholder: "Title")
                         field("Category", text: $draft.category, placeholder: "Category")
                         textArea("Description", text: $draft.description, placeholder: "Describe the opportunity.")
+                        textArea(
+                            "Income generation method",
+                            text: $draft.incomeGenerationMethod,
+                            placeholder: "Explain how revenue or cash flows will be generated to repay or reward investors."
+                        )
                     }
 
                     formSection("Funding & risk") {
                         field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
-                        field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto")
+                        textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
                         field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
+                        Text("With more than one investor, each ticket is the goal divided by the cap (equal shares).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Risk level")
                                 .font(.subheadline.weight(.semibold))
@@ -116,9 +124,7 @@ struct EditOpportunityView: View {
                         }
                     }
 
-                    formSection("Execution plan") {
-                        textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
-
+                    formSection("Milestones") {
                         HStack {
                             Text("Milestones")
                                 .font(.subheadline.weight(.semibold))
@@ -148,14 +154,15 @@ struct EditOpportunityView: View {
                                 }
                                 field("Title", text: $m.title, placeholder: "Title")
                                 field("Description", text: $m.description, placeholder: "Description")
-                                DatePicker(
-                                    "Expected date (optional)",
-                                    selection: Binding(
-                                        get: { m.expectedDate ?? Date() },
-                                        set: { m.expectedDate = $0 }
-                                    ),
-                                    displayedComponents: .date
+                                field(
+                                    "Days after investment is accepted",
+                                    text: $m.daysAfterAcceptance,
+                                    placeholder: "e.g. 30",
+                                    keyboardType: .numberPad
                                 )
+                                Text("Day 0 is when the seeker accepts an investment. Older listings may only have legacy calendar dates stored.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(12)
                             .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
@@ -220,12 +227,29 @@ struct EditOpportunityView: View {
         let t = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let c = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
         let d = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let income = draft.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
         let loc = draft.location.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, !c.isEmpty, !d.isEmpty, !loc.isEmpty, !u.isEmpty else { return false }
+        guard !t.isEmpty, !c.isEmpty, !d.isEmpty, !income.isEmpty, !loc.isEmpty, !u.isEmpty else { return false }
         let cleaned = draft.amount.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
         guard let amt = Double(cleaned), amt > 0 else { return false }
+        guard validateMilestoneDraftOffsets() else { return false }
         return (try? OpportunityService.validateDraftTerms(draft)) != nil
+    }
+
+    private func validateMilestoneDraftOffsets() -> Bool {
+        var previous = -1
+        for m in draft.milestones {
+            let hasContent =
+                !m.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !m.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !hasContent { continue }
+            let digits = m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            guard let n = Int(digits), n >= 0, n <= 3650, n >= previous else { return false }
+            previous = n
+        }
+        return true
     }
 
     private func save() async {
@@ -252,15 +276,16 @@ struct EditOpportunityView: View {
         d.description = listing.description
         d.location = listing.location
         d.amount = String(format: "%.0f", listing.amountRequested)
-        d.minimumInvestment = listing.minimumInvestment > 0 ? String(format: "%.0f", listing.minimumInvestment) : ""
         if let max = listing.maximumInvestors {
             d.maximumInvestors = String(max)
         }
         d.riskLevel = listing.riskLevel
         d.verificationStatus = listing.verificationStatus
         d.useOfFunds = listing.useOfFunds
+        d.incomeGenerationMethod = listing.incomeGenerationMethod
         d.milestones = listing.milestones.map { m in
-            MilestoneDraft(title: m.title, description: m.description, expectedDate: m.expectedDate)
+            let daysStr = m.dueDaysAfterAcceptance.map { String($0) } ?? ""
+            return MilestoneDraft(title: m.title, description: m.description, daysAfterAcceptance: daysStr)
         }
 
         let t = listing.terms

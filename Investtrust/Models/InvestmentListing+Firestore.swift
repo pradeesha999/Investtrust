@@ -50,6 +50,42 @@ extension InvestmentListing {
             if let n = data["receivedAmount"] as? NSNumber { return max(0, n.doubleValue) }
             return 0
         }()
+        let requestKind: InvestmentRequestKind = {
+            if let raw = data["requestKind"] as? String,
+               let kind = InvestmentRequestKind(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                return kind
+            }
+            return .default_request
+        }()
+        let offerStatus: InvestmentOfferStatus = {
+            if let raw = data["offerStatus"] as? String,
+               let status = InvestmentOfferStatus(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                return status
+            }
+            return .pending
+        }()
+        let offerSource: InvestmentOfferSource? = {
+            guard let raw = data["offerSource"] as? String else { return nil }
+            return InvestmentOfferSource(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }()
+        let offeredAmount: Double? = {
+            guard let v = data["offeredAmount"] else { return nil }
+            return Self.parseDouble(v)
+        }()
+        let offeredInterestRate: Double? = {
+            guard let v = data["offeredInterestRate"] else { return nil }
+            return Self.parseDouble(v)
+        }()
+        let offeredTimelineMonths: Int? = {
+            guard let v = data["offeredTimelineMonths"] else { return nil }
+            return Self.parseInt(v)
+        }()
+        let offerDescription = (data["offerDescription"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let offerChatId = (data["offerChatId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let offerChatMessageId = (data["offerChatMessageId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         let agreementStatus: AgreementStatus = {
             if let raw = data["agreementStatus"] as? String,
@@ -150,6 +186,15 @@ extension InvestmentListing {
             investmentType: investmentType,
             acceptedAt: acceptedAt,
             receivedAmount: receivedAmount,
+            requestKind: requestKind,
+            offerStatus: offerStatus,
+            offerSource: offerSource,
+            offeredAmount: offeredAmount,
+            offeredInterestRate: offeredInterestRate,
+            offeredTimelineMonths: offeredTimelineMonths,
+            offerDescription: offerDescription?.isEmpty == false ? offerDescription : nil,
+            offerChatId: offerChatId?.isEmpty == false ? offerChatId : nil,
+            offerChatMessageId: offerChatMessageId?.isEmpty == false ? offerChatMessageId : nil,
             agreementStatus: agreementStatus,
             fundingStatus: fundingStatus,
             signedByInvestorAt: signedByInvestorAt,

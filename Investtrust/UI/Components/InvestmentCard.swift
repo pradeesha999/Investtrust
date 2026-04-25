@@ -15,79 +15,69 @@ struct InvestmentCard: View {
 
     @State private var agreementToShow: InvestmentListing?
     private let investmentService = InvestmentService()
-
-    private static let thumbnailSize: CGFloat = 100
+    private let chatService = ChatService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                thumbnail
+            cardMedia
 
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(inv.opportunityTitle.isEmpty ? "Investment" : inv.opportunityTitle)
                         .font(.headline)
                         .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-
+                        .foregroundStyle(.primary)
                     Text(inv.investmentType.displayName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(auth.accentColor)
-
-                    Text(inv.lifecycleDisplayTitle)
-                        .font(.caption)
-                        .foregroundStyle(lifecycleColor(inv))
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Amount: LKR \(format(inv.investmentAmount))")
-                            .font(.subheadline)
-                        Text("Interest: \(inv.interestLabel)")
-                            .font(.subheadline)
-                        Text("Timeline: \(inv.timelineLabel)")
-                            .font(.subheadline)
-                    }
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 8)
+                statusBadge(inv.lifecycleDisplayTitle, tint: lifecycleColor(inv))
             }
 
-            if let oid = inv.opportunityId, !oid.isEmpty {
-                NavigationLink {
-                    OpportunityDetailView(opportunityId: oid)
-                } label: {
-                    Text("View opportunity")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(auth.accentColor, in: Capsule())
-                        .foregroundStyle(.white)
+            HStack(spacing: 8) {
+                cardChip("Invested")
+                cardChip("LKR \(format(inv.investmentAmount))", tint: auth.accentColor)
+                cardChip(inv.interestLabel)
+                cardChip(inv.timelineLabel)
+                Spacer(minLength: 0)
+                if let created = inv.createdAt {
+                    Label(shortDate(created), systemImage: "calendar")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
             }
 
-            HStack(spacing: 12) {
-                if let oid = inv.opportunityId, let iid = inv.investorId,
-                   auth.currentUserID == iid {
+            HStack(spacing: 8) {
+                if let oid = inv.opportunityId, !oid.isEmpty,
+                   let investorId = inv.investorId,
+                   let seekerId = inv.seekerId,
+                   auth.currentUserID == investorId {
                     Button {
-                        let chatId = "\(oid)_\(iid)"
-                        tabRouter.pendingChatDeepLink = ChatDeepLink(chatId: chatId)
-                        tabRouter.selectedTab = .chat
+                        Task {
+                            do {
+                                let chatId = try await chatService.getOrCreateChat(
+                                    opportunityId: oid,
+                                    seekerId: seekerId,
+                                    investorId: investorId,
+                                    opportunityTitle: inv.opportunityTitle
+                                )
+                                await MainActor.run {
+                                    tabRouter.pendingChatDeepLink = ChatDeepLink(chatId: chatId)
+                                    tabRouter.selectedTab = .chat
+                                }
+                            } catch {
+                                // no-op in card action
+                            }
+                        }
                     } label: {
                         Text("Chat")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
                     }
                     .buttonStyle(.bordered)
                     .tint(auth.accentColor)
-                } else {
-                    Button {
-                    } label: {
-                        Text("Chat")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(auth.accentColor)
-                    .disabled(true)
                 }
 
                 if inv.agreement != nil {
@@ -97,18 +87,10 @@ struct InvestmentCard: View {
                         Text(inv.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review & sign" : "Agreement")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
                     }
                     .buttonStyle(.bordered)
                     .tint(auth.accentColor)
-                } else {
-                    Button {
-                    } label: {
-                        Text("Agreement")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(true)
                 }
             }
 
@@ -119,10 +101,30 @@ struct InvestmentCard: View {
                     onRefresh: { await onRefreshLoan() }
                 )
             }
+
+            if let oid = inv.opportunityId, !oid.isEmpty {
+                NavigationLink {
+                    OpportunityDetailView(opportunityId: oid)
+                } label: {
+                    HStack {
+                        Text("View opportunity")
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(auth.accentColor)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(AppTheme.cardPadding)
-        .background(AppTheme.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .stroke(Color(.separator).opacity(0.25), lineWidth: 1)
+        )
         .appCardShadow()
         .sheet(item: $agreementToShow) { row in
             NavigationStack {
@@ -150,10 +152,8 @@ struct InvestmentCard: View {
         }
     }
 
-    /// Fixed-size thumbnail: `AsyncImage` + `scaledToFill` must be clipped inside an explicit frame or it can draw over sibling text.
     @ViewBuilder
-    private var thumbnail: some View {
-        let corner = RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+    private var cardMedia: some View {
         if let first = inv.imageURLs.first, let url = URL(string: first) {
             AsyncImage(url: url) { phase in
                 switch phase {
@@ -162,30 +162,44 @@ struct InvestmentCard: View {
                         .resizable()
                         .scaledToFill()
                 case .failure:
-                    placeholderFill
+                    mediaPlaceholder
                 case .empty:
                     Color(.systemGray5)
                 @unknown default:
                     Color(.systemGray5)
                 }
             }
-            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
-            .clipped()
-            .clipShape(corner)
+            .frame(height: 190)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         } else {
-            placeholderFill
-                .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
-                .clipShape(corner)
+            mediaPlaceholder
+                .frame(height: 190)
         }
     }
 
-    private var placeholderFill: some View {
-        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-            .fill(Color(.systemGray4))
+    private var mediaPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color(.systemGray5))
             .overlay {
                 Image(systemName: "photo")
+                    .font(.title2)
                     .foregroundStyle(.secondary)
             }
+    }
+
+    private func cardChip(_ text: String, tint: Color = .secondary) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint == .secondary ? AppTheme.secondaryFill : tint.opacity(0.12), in: Capsule())
+            .foregroundStyle(tint == .secondary ? .primary : tint)
+    }
+
+    private func shortDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
     }
 
     private func lifecycleColor(_ inv: InvestmentListing) -> Color {
@@ -203,6 +217,15 @@ struct InvestmentCard: View {
         case "declined", "rejected": return .red
         default: return .secondary
         }
+    }
+
+    private func statusBadge(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.14), in: Capsule())
+            .foregroundStyle(tint)
     }
 
     private func format(_ v: Double) -> String {

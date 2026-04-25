@@ -520,9 +520,47 @@ struct SeekerOpportunityDetailView: View {
                     .foregroundStyle(statusColor(inv))
             }
 
+            if inv.isOfferRequest {
+                HStack(spacing: 8) {
+                    Text("Offer")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.16), in: Capsule())
+                        .foregroundStyle(.orange)
+                    if let source = inv.offerSource {
+                        Text(source == .chat ? "From chat" : "From request sheet")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
             Text("\(inv.interestLabel) • \(inv.timelineLabel)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if inv.isOfferRequest {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let amount = inv.offeredAmount {
+                        Text("Offered amount: LKR \(formatAmount(amount))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let rate = inv.offeredInterestRate, let months = inv.offeredTimelineMonths {
+                        Text(String(format: "Offered terms: %.2f%% • %d months", rate, months))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let note = inv.offerDescription, !note.isEmpty {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(3)
+                    }
+                }
+            }
 
             if let investorId = inv.investorId {
                 NavigationLink {

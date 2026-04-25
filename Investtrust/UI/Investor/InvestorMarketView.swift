@@ -21,8 +21,6 @@ struct InvestorMarketView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: AppTheme.stackSpacing) {
-                header
-
                 if isLoading && investments.isEmpty {
                     ProgressView("Loading requests…")
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -59,31 +57,9 @@ struct InvestorMarketView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
-        .searchable(text: $searchText, prompt: "Search request by listing title")
+        .searchable(text: $searchText, prompt: "Search listing")
         .task { await load() }
         .refreshable { await load() }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(AppTheme.secondaryFill)
-                    .frame(width: 48, height: 48)
-                Image(systemName: "person.fill")
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Investment requests")
-                    .font(.headline)
-                Text("Your submitted requests, signatures, and agreement status.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
     }
 
     private func load() async {

@@ -55,6 +55,9 @@ extension OpportunityListing {
         let useOfFunds = (data["useOfFunds"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
+        let incomeGenerationMethod = (data["incomeGenerationMethod"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
         let milestones = OpportunityFirestoreCoding.milestones(from: data)
 
         let location = (data["location"] as? String)?
@@ -65,7 +68,10 @@ extension OpportunityListing {
 
         let documentURLs = Self.parseStringArray(data["documentURLs"])
 
-        let status = (data["status"] as? String)?.lowercased() ?? "open"
+        let rawStatus = (data["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let status = rawStatus.isEmpty ? "open" : rawStatus
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
 
         let imageStoragePaths = Self.collectImageReferences(from: data)
@@ -127,6 +133,7 @@ extension OpportunityListing {
             maximumInvestors: maximumInvestors,
             terms: terms,
             useOfFunds: useOfFunds,
+            incomeGenerationMethod: incomeGenerationMethod,
             milestones: milestones,
             location: location,
             riskLevel: riskLevel,

@@ -307,6 +307,11 @@ struct CreateOpportunityWizardView: View {
                     field("Opportunity title", text: $draft.title, placeholder: "Ex: Mobile juice cart expansion")
                     field("Category", text: $draft.category, placeholder: "Food / Retail / Freelance")
                     textArea("Description", text: $draft.description, placeholder: "What you’re building and why investors should care.")
+                    textArea(
+                        "Income generation method",
+                        text: $draft.incomeGenerationMethod,
+                        placeholder: "Explain in detail how revenue or cash flows will be generated to repay or reward investors."
+                    )
                 }
             }
             mediaPickerCard
@@ -332,9 +337,8 @@ struct CreateOpportunityWizardView: View {
                     }
 
                     if allowsMultipleInvestors {
-                        field("Minimum investment (LKR)", text: $draft.minimumInvestment, placeholder: "Leave blank to auto (1% of goal, capped)")
                         field("Maximum investors", text: $draft.maximumInvestors, placeholder: "e.g. 10")
-                        Text("Minimum investment helps smaller investors join. Maximum investors sets the cap for this listing.")
+                        Text("Each investor’s ticket is the goal divided by this cap (equal shares).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -417,6 +421,8 @@ struct CreateOpportunityWizardView: View {
             Text("Tip: specific terms build trust on the marketplace.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+
+            seekerCommitmentsPreview
         }
     }
 
@@ -425,38 +431,38 @@ struct CreateOpportunityWizardView: View {
             sectionHeader("Milestones", "Plan your progress updates. We prefilled suggested milestones you can edit.")
             stepFormCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let end = inferredTimelineEndDate() {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "calendar.badge.clock")
-                                    .foregroundStyle(auth.accentColor)
-                                Text("Estimated finishing date")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(shortDate(end))
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.primary)
-                            Text(estimatedCompletionHint(end))
-                                .font(.footnote)
+                    let spanDays = inferredTenorDaysApproximate()
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "calendar.badge.clock")
+                                .foregroundStyle(auth.accentColor)
+                            Text("Deal span from acceptance")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            LinearGradient(
-                                colors: [auth.accentColor.opacity(0.14), AppTheme.secondaryFill],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                                .strokeBorder(auth.accentColor.opacity(0.25), lineWidth: 1)
-                        )
+                        Text("About \(spanDays) days")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(.primary)
+                        Text("Milestones use days after your investment is accepted — not today’s date. Suggested defaults scale to this rough span.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(
+                            colors: [auth.accentColor.opacity(0.14), AppTheme.secondaryFill],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                            .strokeBorder(auth.accentColor.opacity(0.25), lineWidth: 1)
+                    )
 
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
@@ -499,14 +505,15 @@ struct CreateOpportunityWizardView: View {
                                 }
                                 field("Title", text: $m.title, placeholder: "e.g. First production batch")
                                 field("Description", text: $m.description, placeholder: "What’s delivered and how success is measured")
-                                DatePicker(
-                                    "Expected date (optional)",
-                                    selection: Binding(
-                                        get: { m.expectedDate ?? Date() },
-                                        set: { m.expectedDate = $0 }
-                                    ),
-                                    displayedComponents: .date
+                                field(
+                                    "Due within (days after investment is accepted)",
+                                    text: $m.daysAfterAcceptance,
+                                    placeholder: "e.g. 30",
+                                    keyboardType: .numberPad
                                 )
+                                Text("Day 0 is when the seeker accepts your investment on the platform.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                             .padding(12)
                             .background(
@@ -539,18 +546,11 @@ struct CreateOpportunityWizardView: View {
     }
 
     private func milestoneCardBorder(for milestone: MilestoneDraft) -> Color {
-        if milestone.expectedDate != nil {
+        let digits = milestone.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        if !digits.isEmpty, Int(digits) != nil {
             return auth.accentColor.opacity(0.28)
         }
         return Color(uiColor: .separator).opacity(0.35)
-    }
-
-    private func estimatedCompletionHint(_ endDate: Date) -> String {
-        let days = Calendar.current.dateComponents([.day], from: Date(), to: endDate).day ?? 0
-        if days <= 0 {
-            return "Timeline ends today."
-        }
-        return days == 1 ? "About 1 day from now." : "About \(days) days from now."
     }
 
     private var reviewStep: some View {
@@ -570,6 +570,7 @@ struct CreateOpportunityWizardView: View {
                     ("Title", draft.title),
                     ("Category", draft.category),
                     ("Description", draft.description),
+                    ("Income generation", draft.incomeGenerationMethod.isEmpty ? "—" : String(draft.incomeGenerationMethod.prefix(120)) + (draft.incomeGenerationMethod.count > 120 ? "…" : "")),
                     ("Images", selectedImageDataList.isEmpty ? "0" : "\(selectedImageDataList.count)"),
                     ("Video", selectedVideoData == nil ? "No" : "Yes")
                 ]
@@ -579,12 +580,15 @@ struct CreateOpportunityWizardView: View {
                 rows: [
                     ("Amount", "LKR \(draft.amount)"),
                     ("Investor setup", allowsMultipleInvestors ? "Multiple investors" : "Single investor"),
-                    ("Minimum", allowsMultipleInvestors ? (draft.minimumInvestment.isEmpty ? "(auto)" : "LKR \(draft.minimumInvestment)") : "Full amount"),
+                    ("Per-investor ticket", reviewPerInvestorTicketSummary()),
                     ("Max investors", allowsMultipleInvestors ? (draft.maximumInvestors.isEmpty ? "—" : draft.maximumInvestors) : "1"),
                     ("Use of funds", draft.useOfFunds)
                 ]
             )
             reviewCard(title: "Terms", rows: termsReviewRows)
+            if !seekerCommitmentReviewRows.isEmpty {
+                reviewCard(title: "What you’re committing to", rows: seekerCommitmentReviewRows)
+            }
             reviewCard(
                 title: "Execution",
                 rows: [
@@ -621,6 +625,178 @@ struct CreateOpportunityWizardView: View {
             rows.append(("Summary", draft.customTermsSummary.isEmpty ? "—" : String(draft.customTermsSummary.prefix(160))))
         }
         return rows
+    }
+
+    private func reviewPerInvestorTicketSummary() -> String {
+        guard let goal = parsePositiveAmount(draft.amount) else { return "—" }
+        if allowsMultipleInvestors {
+            guard let cap = parseInvestorCap(draft.maximumInvestors), cap >= 2 else { return "—" }
+            let raw = goal / Double(cap)
+            let share = (raw * 100).rounded() / 100
+            return "LKR \(reviewFundingNumberString(share))"
+        }
+        return "LKR \(reviewFundingNumberString(goal))"
+    }
+
+    private func reviewFundingNumberString(_ value: Double) -> String {
+        if abs(value.rounded() - value) < 0.000_001 {
+            return String(format: "%.0f", value)
+        }
+        return String(format: "%.2f", value)
+    }
+
+    private var seekerCommitmentsPreview: some View {
+        let rows = seekerCommitmentReviewRows
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(auth.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your commitments (preview)")
+                        .font(.headline)
+                    Text("Modeled payback if the round fills and installments start today—same simple-interest rules investors see on your listing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if rows.isEmpty {
+                Text(seekerCommitmentMissingHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        Text("• \(row.0): \(row.1)")
+                            .font(.footnote)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [auth.accentColor.opacity(0.1), AppTheme.secondaryFill],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(auth.accentColor.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private var seekerCommitmentMissingHint: String {
+        switch draft.investmentType {
+        case .loan:
+            return "Add your funding goal, interest rate, and repayment timeline to preview total payback and payment dates."
+        case .equity:
+            return "Add your funding goal and equity percentage to preview what you’re offering."
+        case .revenue_share:
+            return "Add revenue share %, target payout, and max duration to preview the investor cap you’re accepting."
+        case .project:
+            return "Describe the expected return and set a completion date so backers know what you’re promising."
+        case .custom:
+            return "Write your custom terms summary—buyers will rely on it, and we surface it on the listing."
+        }
+    }
+
+    private var seekerCommitmentReviewRows: [(String, String)] {
+        switch draft.investmentType {
+        case .loan:
+            guard let goal = parsePositiveAmount(draft.amount),
+                  let rate = parseNonNegativeDouble(draft.interestRate),
+                  let rawTimeline = loanTimelineDigitsFromDraft(),
+                  rawTimeline > 0 else { return [] }
+            let months = OpportunityFinancialPreview.loanTermMonthsFromWizardInput(
+                rawTimeline: rawTimeline,
+                repaymentFrequency: draft.repaymentFrequency
+            )
+            let plan = LoanRepaymentPlan.from(draft.repaymentFrequency)
+            guard let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+                principal: goal,
+                annualRatePercent: rate,
+                termMonths: months,
+                plan: plan
+            ) else { return [] }
+            var rows: [(String, String)] = [
+                ("Modeled total repayable (full goal)", "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))"),
+                ("Interest (simple)", "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))"),
+                ("Rate / term basis", "\(formatWizardRate(rate))% · \(months) months")
+            ]
+            if let first = preview.firstInstallmentDue, let last = preview.maturityDue {
+                if first == last {
+                    rows.append(("Modeled payment date", OpportunityFinancialPreview.mediumDate(first)))
+                } else {
+                    rows.append(("First modeled installment", OpportunityFinancialPreview.mediumDate(first)))
+                    rows.append(("Final modeled payment", OpportunityFinancialPreview.mediumDate(last)))
+                }
+            }
+            return rows
+        case .equity:
+            guard let goal = parsePositiveAmount(draft.amount),
+                  let eq = parseNonNegativeDouble(draft.equityPercentage), eq > 0 else { return [] }
+            var rows: [(String, String)] = [
+                ("Equity offered if round fills", "\(formatWizardRate(eq))% for LKR \(OpportunityFinancialPreview.formatLKRInteger(goal)) raised")
+            ]
+            if let v = parsePositiveAmount(draft.businessValuation) {
+                rows.append(("Stated valuation", "LKR \(OpportunityFinancialPreview.formatLKRInteger(v))"))
+            }
+            return rows
+        case .revenue_share:
+            guard let p = parseNonNegativeDouble(draft.revenueSharePercent), p > 0,
+                  let target = parsePositiveAmount(draft.targetReturnAmount) else { return [] }
+            let digits = draft.maxDurationMonths.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            var rows: [(String, String)] = [
+                ("Revenue share", "\(formatWizardRate(p))% of revenue"),
+                ("Investor return cap", "LKR \(OpportunityFinancialPreview.formatLKRInteger(target))")
+            ]
+            if let m = Int(digits), m > 0 {
+                rows.append(("Duration cap", "\(m) months"))
+            }
+            return rows
+        case .project:
+            let val = draft.expectedReturnValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !val.isEmpty else { return [] }
+            var rows: [(String, String)] = [("Expected return", val)]
+            if let d = draft.completionDate {
+                rows.append(("Target completion", shortDate(d)))
+            }
+            return rows
+        case .custom:
+            let s = draft.customTermsSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty else { return [] }
+            let clip = s.count > 200 ? String(s.prefix(200)) + "…" : s
+            return [("Custom obligations (summary)", clip)]
+        }
+    }
+
+    private func loanTimelineDigitsFromDraft() -> Int? {
+        let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        return Int(digits)
+    }
+
+    private func parseNonNegativeDouble(_ s: String) -> Double? {
+        let cleaned = s.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
+        guard let v = Double(cleaned), v >= 0 else { return nil }
+        return v
+    }
+
+    private func formatWizardRate(_ v: Double) -> String {
+        if abs(v - floor(v)) < 0.000_001 {
+            return String(Int(v))
+        }
+        return String(format: "%.1f", v)
     }
 
     private func sectionHeader(_ title: String, _ subtitle: String) -> some View {
@@ -693,22 +869,19 @@ struct CreateOpportunityWizardView: View {
             let t = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let c = draft.category.trimmingCharacters(in: .whitespacesAndNewlines)
             let d = draft.description.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !t.isEmpty && !c.isEmpty && !d.isEmpty
+            let income = draft.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !t.isEmpty && !c.isEmpty && !d.isEmpty && !income.isEmpty
         case 2:
             guard parsePositiveAmount(draft.amount) != nil else { return false }
-            guard let goal = parsePositiveAmount(draft.amount) else { return false }
             guard !draft.useOfFunds.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             if allowsMultipleInvestors {
                 guard let cap = parseInvestorCap(draft.maximumInvestors), cap >= 2 else { return false }
-                if let minStr = optionalDoubleString(draft.minimumInvestment) {
-                    if minStr > goal { return false }
-                }
             }
             return true
         case 3:
             return (try? OpportunityService.validateDraftTerms(normalizedDraftForTermsValidation())) != nil
         case 4:
-            return true
+            return validateMilestoneDraftOffsets()
         default:
             return true
         }
@@ -718,12 +891,6 @@ struct CreateOpportunityWizardView: View {
         let cleaned = s.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
         guard let v = Double(cleaned), v > 0 else { return nil }
         return v
-    }
-
-    private func optionalDoubleString(_ s: String) -> Double? {
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return nil }
-        return parsePositiveAmount(t)
     }
 
     private func parseInvestorCap(_ s: String) -> Int? {
@@ -742,18 +909,7 @@ struct CreateOpportunityWizardView: View {
             }
             return
         }
-
-        let amount = parsePositiveAmount(draft.amount)
         draft.maximumInvestors = "1"
-        if let amount {
-            let n = NSNumber(value: amount)
-            let f = NumberFormatter()
-            f.numberStyle = .decimal
-            f.maximumFractionDigits = 0
-            draft.minimumInvestment = f.string(from: n) ?? String(format: "%.0f", amount)
-        } else {
-            draft.minimumInvestment = ""
-        }
     }
 
     private func normalizeLoanTermsBeforeSubmit() {
@@ -786,13 +942,6 @@ struct CreateOpportunityWizardView: View {
             return
         }
         draft.maximumInvestors = "1"
-        if let amount = parsePositiveAmount(draft.amount) {
-            let n = NSNumber(value: amount)
-            let f = NumberFormatter()
-            f.numberStyle = .decimal
-            f.maximumFractionDigits = 0
-            draft.minimumInvestment = f.string(from: n) ?? String(format: "%.0f", amount)
-        }
     }
 
     private func syncFundingModeFromDraft() {
@@ -827,44 +976,71 @@ struct CreateOpportunityWizardView: View {
 
     private func seedDefaultMilestonesIfNeeded() {
         if !draft.milestones.isEmpty { return }
-        let start = Date()
-        guard let end = inferredTimelineEndDate(), end > start else { return }
-        let midpoint = Date(timeIntervalSince1970: (start.timeIntervalSince1970 + end.timeIntervalSince1970) / 2)
+        let span = inferredTenorDaysApproximate()
+        let d1 = max(1, span / 3)
+        let d2 = max(d1 + 1, (span * 2) / 3)
+        let d3 = max(d2 + 1, span)
         draft.milestones = [
             MilestoneDraft(
                 title: "Midpoint progress update",
-                description: "Share progress at roughly 50% of the project timeline, including completed work and next steps.",
-                expectedDate: midpoint
+                description: "Share progress partway through the deal window, including completed work and next steps.",
+                daysAfterAcceptance: "\(d1)"
+            ),
+            MilestoneDraft(
+                title: "Later checkpoint",
+                description: "A second update before final delivery so investors stay informed.",
+                daysAfterAcceptance: "\(d2)"
             ),
             MilestoneDraft(
                 title: "Final delivery / completion",
-                description: "Confirm delivery, outcomes, and closeout details by the end of the planned timeline.",
-                expectedDate: end
+                description: "Confirm delivery, outcomes, and closeout details by the end of the planned window.",
+                daysAfterAcceptance: "\(d3)"
             )
         ]
     }
 
-    private func inferredTimelineEndDate() -> Date? {
+    /// Rough span in days from investment acceptance (for milestone defaults and hints).
+    private func inferredTenorDaysApproximate() -> Int {
         let calendar = Calendar.current
         switch draft.investmentType {
         case .loan:
             let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
-            guard let timeline = Int(digits), timeline > 0 else { return nil }
+            guard let timeline = Int(digits), timeline > 0 else { return 180 }
+            let months: Int
             switch draft.repaymentFrequency {
             case .weekly:
-                return calendar.date(byAdding: .weekOfYear, value: timeline, to: Date())
+                months = max(1, Int((Double(timeline) / LoanScheduleGenerator.weeksPerMonth).rounded()))
             case .monthly, .one_time:
-                return calendar.date(byAdding: .month, value: timeline, to: Date())
+                months = timeline
             }
+            return min(3650, max(30, months * 30))
         case .revenue_share:
-            let digits = draft.maxDurationMonths.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
-            guard let months = Int(digits), months > 0 else { return nil }
-            return calendar.date(byAdding: .month, value: months, to: Date())
+            let m = Int(draft.maxDurationMonths.filter(\.isNumber)) ?? 12
+            return min(3650, max(30, m * 30))
         case .project:
-            return draft.completionDate
+            if let end = draft.completionDate {
+                let days = calendar.dateComponents([.day], from: Date(), to: end).day ?? 180
+                return min(3650, max(30, days))
+            }
+            return 180
         case .equity, .custom:
-            return calendar.date(byAdding: .month, value: 6, to: Date())
+            return 180
         }
+    }
+
+    private func validateMilestoneDraftOffsets() -> Bool {
+        var previous = -1
+        for m in draft.milestones {
+            let hasContent =
+                !m.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !m.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !hasContent { continue }
+            let digits = m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            guard let n = Int(digits), n >= 0, n <= 3650, n >= previous else { return false }
+            previous = n
+        }
+        return true
     }
 
     private func shortDate(_ d: Date) -> String {

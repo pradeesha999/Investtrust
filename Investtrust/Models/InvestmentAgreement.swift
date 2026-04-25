@@ -16,6 +16,24 @@ enum FundingStatus: String, Codable, Sendable, CaseIterable {
     case closed
 }
 
+/// Distinguishes a default listing request from a negotiated offer request.
+enum InvestmentRequestKind: String, Codable, Sendable, CaseIterable {
+    case default_request
+    case offer_request
+}
+
+enum InvestmentOfferStatus: String, Codable, Sendable, CaseIterable {
+    case pending
+    case accepted
+    case declined
+    case superseded
+}
+
+enum InvestmentOfferSource: String, Codable, Sendable, CaseIterable {
+    case chat
+    case detail_sheet
+}
+
 /// Structured agreement snapshot stored on the investment at seeker acceptance (no PDF).
 struct InvestmentAgreementSnapshot: Equatable, Hashable, Sendable {
     var opportunityTitle: String
