@@ -30,6 +30,7 @@ struct OpportunityDraft: Identifiable, Equatable {
 
     var riskLevel: RiskLevel = .medium
     var verificationStatus: VerificationStatus = .unverified
+    var isNegotiable: Bool = true
     var useOfFunds: String = ""
     var incomeGenerationMethod: String = ""
     var milestones: [MilestoneDraft] = []

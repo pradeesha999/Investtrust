@@ -29,6 +29,8 @@ struct InvestorActionTabView: View {
                         InvestorMarketView()
                     case .explore:
                         MarketBrowseView(embeddedInInvestTab: true)
+                    case .ongoing:
+                        InvestorOngoingDealsView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

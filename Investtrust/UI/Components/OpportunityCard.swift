@@ -9,6 +9,7 @@ struct OpportunityCard: View {
     @Environment(AuthService.self) private var auth
 
     let opp: OpportunityListing
+    var statusOverride: String? = nil
 
     var body: some View {
         NavigationLink {
@@ -48,12 +49,15 @@ struct OpportunityCard: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(AppTheme.secondaryFill, in: Capsule())
-                    Text(opp.status.capitalized)
+                    let statusText = statusOverride?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        ? statusOverride!
+                        : opp.status.capitalized
+                    Text(statusText)
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(statusColor(opp.status).opacity(0.15), in: Capsule())
-                        .foregroundStyle(statusColor(opp.status))
+                        .background(statusColor(statusText).opacity(0.15), in: Capsule())
+                        .foregroundStyle(statusColor(statusText))
                     if let createdAt = opp.createdAt {
                         Label(shortDate(createdAt), systemImage: "calendar")
                             .font(.caption2)
@@ -89,13 +93,6 @@ struct OpportunityCard: View {
                     }
                 }
 
-                if !opp.description.isEmpty {
-                    Text(opp.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
                 HStack {
                     Text("View opportunity")
                         .font(.subheadline.weight(.semibold))
@@ -128,6 +125,7 @@ struct OpportunityCard: View {
     private func statusColor(_ raw: String) -> Color {
         switch raw.lowercased() {
         case "open": return .green
+        case "request pending": return .orange
         case "closed", "filled", "funded": return .secondary
         default: return .primary
         }

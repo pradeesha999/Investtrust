@@ -12,11 +12,13 @@ struct SeekerHomeDashboardView: View {
     @EnvironmentObject private var tabRouter: MainTabRouter
     @State private var myOpportunities: [OpportunityListing] = []
     @State private var seekerInvestments: [InvestmentListing] = []
+    @State private var profile: UserProfile?
     @State private var isLoading = false
     @State private var loadError: String?
 
     private let opportunityService = OpportunityService()
     private let investmentService = InvestmentService()
+    private let userService = UserService()
 
     private var sortedInvestments: [InvestmentListing] {
         seekerInvestments.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
@@ -84,6 +86,8 @@ struct SeekerHomeDashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
+                    greetingHeader
+
                     if let loadError {
                         Text(loadError)
                             .font(.subheadline)
@@ -149,6 +153,32 @@ struct SeekerHomeDashboardView: View {
     }
 
     // MARK: - Overview
+
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(greetingLine)
+                .font(.title2.bold())
+            Text("See your pipeline, investor activity, and listings in one place.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var greetingLine: String {
+        let name = greetingName
+        return name.isEmpty ? "Welcome" : "Hi, \(name)"
+    }
+
+    private var greetingName: String {
+        if let n = profile?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+            return n
+        }
+        if let e = auth.currentUserEmail, let at = e.firstIndex(of: "@") {
+            let local = e[..<at]
+            return local.capitalized
+        }
+        return ""
+    }
 
     private var pipelineOverviewCard: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -550,9 +580,12 @@ struct SeekerHomeDashboardView: View {
         do {
             async let opps = opportunityService.fetchSeekerListings(ownerId: userID)
             async let invs = investmentService.fetchInvestmentsForSeeker(seekerId: userID)
+            async let p = userService.fetchProfile(userID: userID)
             myOpportunities = try await opps
             seekerInvestments = try await invs
+            profile = try await p
         } catch {
+            profile = nil
             loadError = (error as NSError).localizedDescription
         }
     }

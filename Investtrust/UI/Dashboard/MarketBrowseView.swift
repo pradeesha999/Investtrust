@@ -8,6 +8,7 @@ struct MarketBrowseView: View {
     @Environment(AuthService.self) private var auth
 
     @State private var opportunities: [OpportunityListing] = []
+    @State private var myLatestRequestsByOpportunityId: [String: InvestmentListing] = [:]
     @State private var isLoading = false
     @State private var loadError: String?
 
@@ -19,6 +20,7 @@ struct MarketBrowseView: View {
     @State private var sortOption: MarketExploreSort = .newest
 
     private let opportunityService = OpportunityService()
+    private let investmentService = InvestmentService()
 
     var body: some View {
         scrollContent
@@ -66,7 +68,10 @@ struct MarketBrowseView: View {
                 } else {
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(displayedOpportunities, id: \.id) { opp in
-                            OpportunityCard(opp: opp)
+                            OpportunityCard(
+                                opp: opp,
+                                statusOverride: statusOverride(for: opp)
+                            )
                         }
                     }
                 }
@@ -177,12 +182,41 @@ struct MarketBrowseView: View {
             let all = try await opportunityService.fetchMarketListings()
             if let userID = auth.currentUserID {
                 opportunities = all.filter { $0.ownerId != userID }
+                let myInvestments = try await investmentService.fetchInvestments(forInvestor: userID)
+                myLatestRequestsByOpportunityId = latestRequestsMap(from: myInvestments)
             } else {
                 opportunities = all
+                myLatestRequestsByOpportunityId = [:]
             }
         } catch {
             loadError = (error as NSError).localizedDescription
         }
+    }
+
+    private func latestRequestsMap(from rows: [InvestmentListing]) -> [String: InvestmentListing] {
+        var map: [String: InvestmentListing] = [:]
+        for row in rows {
+            guard let oppId = row.opportunityId, !oppId.isEmpty else { continue }
+            if let existing = map[oppId] {
+                if (row.createdAt ?? .distantPast) > (existing.createdAt ?? .distantPast) {
+                    map[oppId] = row
+                }
+            } else {
+                map[oppId] = row
+            }
+        }
+        return map
+    }
+
+    private func statusOverride(for opp: OpportunityListing) -> String? {
+        guard let request = myLatestRequestsByOpportunityId[opp.id] else { return nil }
+        if request.agreementStatus == .pending_signatures {
+            return "Request pending"
+        }
+        if request.status.lowercased() == "accepted" {
+            return "Request pending"
+        }
+        return nil
     }
 }
 

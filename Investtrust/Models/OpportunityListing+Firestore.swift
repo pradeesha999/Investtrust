@@ -65,6 +65,11 @@ extension OpportunityListing {
 
         let riskLevel = RiskLevel.parse(data["riskLevel"] as? String)
         let verificationStatus = VerificationStatus.parse(data["verificationStatus"] as? String)
+        let isNegotiable: Bool = {
+            if let v = data["isNegotiable"] as? Bool { return v }
+            if let n = data["isNegotiable"] as? NSNumber { return n.boolValue }
+            return true
+        }()
 
         let documentURLs = Self.parseStringArray(data["documentURLs"])
 
@@ -138,6 +143,7 @@ extension OpportunityListing {
             location: location,
             riskLevel: riskLevel,
             verificationStatus: verificationStatus,
+            isNegotiable: isNegotiable,
             documentURLs: documentURLs,
             status: status,
             createdAt: createdAt,

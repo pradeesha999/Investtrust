@@ -21,6 +21,8 @@ struct OpportunityDetailView: View {
 
     @State private var contactError: String?
     @State private var showContactError = false
+    @State private var requestActionError: String?
+    @State private var showRequestActionError = false
     @State private var showRequestSuccess = false
     @State private var isOpeningChat = false
     @State private var myLatestRequest: InvestmentListing?
@@ -34,6 +36,7 @@ struct OpportunityDetailView: View {
     @State private var offerError: String?
     @State private var isSendingOffer = false
     @State private var showOfferSentAlert = false
+    @State private var isRevokingRequest = false
     @State private var agreementReviewContext: AgreementReviewContext?
 
     private struct AgreementReviewContext: Identifiable {
@@ -78,6 +81,11 @@ struct OpportunityDetailView: View {
             Button("OK") { contactError = nil }
         } message: {
             Text(contactError ?? "")
+        }
+        .alert("Could not update request", isPresented: $showRequestActionError) {
+            Button("OK") { requestActionError = nil }
+        } message: {
+            Text(requestActionError ?? "")
         }
         .alert("Request sent", isPresented: $showRequestSuccess) {
             Button("OK") {}
@@ -451,23 +459,18 @@ struct OpportunityDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 keyNumbersPrimaryMetric(for: o)
                 calloutRow(title: "Required investment", value: ticketText)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Upside snapshot")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.green)
-                    Group {
-                        switch o.investmentType {
-                        case .loan:
-                            investorLoanValueBody(o: o, ticket: ticket, ticketText: ticketText)
-                        case .equity:
-                            investorEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
-                        case .revenue_share:
-                            investorRevenueShareValueBody(o: o)
-                        case .project:
-                            investorProjectValueBody(o: o)
-                        case .custom:
-                            investorCustomValueBody(o: o)
-                        }
+                Group {
+                    switch o.investmentType {
+                    case .loan:
+                        loanReturnsSnapshot(for: o, ticket: ticket, ticketText: ticketText)
+                    case .equity:
+                        investorEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
+                    case .revenue_share:
+                        investorRevenueShareValueBody(o: o)
+                    case .project:
+                        investorProjectValueBody(o: o)
+                    case .custom:
+                        investorCustomValueBody(o: o)
                     }
                 }
                 Text("Figures follow the simple-interest model used in agreements; final numbers are fixed when you invest.")
@@ -476,6 +479,69 @@ struct OpportunityDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    @ViewBuilder
+    private func loanReturnsSnapshot(for o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let rate = t.interestRate,
+           let months = t.repaymentTimelineMonths, months > 0,
+           ticket > 0,
+           let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+               principal: ticket,
+               annualRatePercent: rate,
+               termMonths: months,
+               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+           ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Loan return snapshot")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                    spacing: 10
+                ) {
+                    metricTile(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
+                    metricTile(
+                        title: "Interest amount",
+                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
+                        tint: auth.accentColor
+                    )
+                    metricTile(
+                        title: "Profit",
+                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
+                        tint: .green
+                    )
+                    metricTile(
+                        title: "Total back (revenue)",
+                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))",
+                        tint: .green
+                    )
+                }
+
+                Text("Based on \(ticketText) over \(months) months.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            investorLoanValueBody(o: o, ticket: ticket, ticketText: ticketText)
+        }
+    }
+
+    private func metricTile(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(tint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     @ViewBuilder
@@ -725,7 +791,7 @@ struct OpportunityDetailView: View {
            ) {
             let freq = (t.repaymentFrequency ?? .monthly).displayName
             VStack(alignment: .leading, spacing: 8) {
-                Text("At \(ticketText), illustrative total back about LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable)) (approx. LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount)) interest) over \(months) months at \(formatRate(rate))% simple.")
+                Text("Estimated return for \(ticketText): LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount)) interest over \(months) months.")
                     .font(.subheadline)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -862,8 +928,30 @@ struct OpportunityDetailView: View {
             statusShell(tint: .secondary, icon: "person.crop.circle.fill", title: "This is your listing", message: "Switch to the Opportunity tab to manage this post.")
         } else if auth.currentUserID == nil {
             statusShell(tint: .secondary, icon: "person.crop.circle.badge.questionmark", title: "Sign in to request investment", message: "You'll need an account before sending a request.")
-        } else if status == "pending" {
-            statusShell(tint: .orange, icon: "clock.fill", title: "Waiting for seeker", message: "Your request is pending. The seeker can accept or decline.")
+        } else if let r = req, status == "pending" {
+            VStack(alignment: .leading, spacing: 12) {
+                statusHeader(tint: .orange, icon: "clock.fill", title: "Waiting for seeker", message: "Your request is pending. The seeker can accept or decline.")
+                Button(role: .destructive) {
+                    Task { await revokePendingRequest(r, opportunity: opportunity) }
+                } label: {
+                    if isRevokingRequest {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
+                    } else {
+                        Text("Revoke request")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: AppTheme.minTapTarget)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRevokingRequest)
+            }
+            .padding(AppTheme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
         } else if let r = req, r.agreementStatus == .active || status == "active" {
             statusShell(tint: .green, icon: "checkmark.seal.fill", title: "Agreement active", message: "The memorandum is fully signed. Use Chat to coordinate funding outside the platform.")
         } else if let r = req, r.agreementStatus == .pending_signatures {
@@ -1158,22 +1246,24 @@ struct OpportunityDetailView: View {
     @ViewBuilder
     private func seekerAvatar(profile: UserProfile, initials: String) -> some View {
         let trimmed = profile.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if let url = URL(string: trimmed), !trimmed.isEmpty {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                default:
-                    seekerAvatarInitials(initials: initials)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .clipShape(Circle())
-        } else {
+        ZStack {
             seekerAvatarInitials(initials: initials)
+            if let url = URL(string: trimmed), !trimmed.isEmpty {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        Color.clear
+                    }
+                }
+                .clipShape(Circle())
+            }
         }
+        .frame(width: 44, height: 44)
+        .fixedSize()
     }
 
     private func seekerAvatarInitials(initials: String) -> some View {
@@ -1379,6 +1469,7 @@ struct OpportunityDetailView: View {
     private func canMakeNegotiatedOffer(for o: OpportunityListing) -> Bool {
         guard auth.currentUserID != nil, auth.currentUserID != o.ownerId else { return false }
         guard profileReadyForInvesting else { return false }
+        guard o.isNegotiable else { return false }
         return o.isOpenForInvesting
     }
 
@@ -1497,10 +1588,23 @@ struct OpportunityDetailView: View {
         }
         if status == "accepted" || status == "active" || status == "completed" {
             tabRouter.selectedTab = .action
-            tabRouter.investorInvestSegment = .myRequests
+            tabRouter.investorInvestSegment = (status == "active" || status == "completed") ? .ongoing : .myRequests
             return
         }
         showInvestSheet = true
+    }
+
+    private func revokePendingRequest(_ request: InvestmentListing, opportunity: OpportunityListing) async {
+        guard let uid = auth.currentUserID else { return }
+        isRevokingRequest = true
+        defer { isRevokingRequest = false }
+        do {
+            try await investmentService.withdrawInvestmentRequest(investmentId: request.id, investorId: uid)
+            await loadMyRequest(for: opportunity)
+        } catch {
+            requestActionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+            showRequestActionError = true
+        }
     }
 
     private func loadMyRequest(for opportunity: OpportunityListing) async {
@@ -1689,6 +1793,7 @@ struct OpportunityDetailView: View {
                 location: "Colombo",
                 riskLevel: .medium,
                 verificationStatus: .unverified,
+                isNegotiable: true,
                 documentURLs: [],
                 status: "open",
                 createdAt: Date(),

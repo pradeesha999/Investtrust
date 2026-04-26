@@ -133,6 +133,7 @@ final class OpportunityService {
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
+            "isNegotiable": draft.isNegotiable,
             "documentURLs": [String](),
             "terms": termsMap,
             "imageURLs": imageURLs,
@@ -352,6 +353,7 @@ final class OpportunityService {
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
+            "isNegotiable": draft.isNegotiable,
             "terms": termsMap,
             "updatedAt": Timestamp(date: now)
         ]

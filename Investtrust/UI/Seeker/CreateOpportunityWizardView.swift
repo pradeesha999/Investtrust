@@ -325,6 +325,16 @@ struct CreateOpportunityWizardView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
                     textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What exactly will this funding be used for?")
+                    Toggle(isOn: $draft.isNegotiable) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Allow negotiation")
+                                .font(.subheadline.weight(.semibold))
+                            Text("If enabled, investors will see the Make offer button.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(auth.accentColor)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Investor setup")
@@ -582,6 +592,7 @@ struct CreateOpportunityWizardView: View {
                     ("Investor setup", allowsMultipleInvestors ? "Multiple investors" : "Single investor"),
                     ("Per-investor ticket", reviewPerInvestorTicketSummary()),
                     ("Max investors", allowsMultipleInvestors ? (draft.maximumInvestors.isEmpty ? "—" : draft.maximumInvestors) : "1"),
+                    ("Negotiable", draft.isNegotiable ? "Yes" : "No"),
                     ("Use of funds", draft.useOfFunds)
                 ]
             )

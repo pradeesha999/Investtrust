@@ -57,6 +57,16 @@ struct EditOpportunityView: View {
                     formSection("Funding & risk") {
                         field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
                         textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
+                        Toggle(isOn: $draft.isNegotiable) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Allow negotiation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Controls whether investors can see the Make offer button.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .tint(auth.accentColor)
                         field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
                         Text("With more than one investor, each ticket is the goal divided by the cap (equal shares).")
                             .font(.caption)
@@ -281,6 +291,7 @@ struct EditOpportunityView: View {
         }
         d.riskLevel = listing.riskLevel
         d.verificationStatus = listing.verificationStatus
+        d.isNegotiable = listing.isNegotiable
         d.useOfFunds = listing.useOfFunds
         d.incomeGenerationMethod = listing.incomeGenerationMethod
         d.milestones = listing.milestones.map { m in

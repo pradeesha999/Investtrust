@@ -38,6 +38,7 @@ final class InvestmentService {
         case fundingStatusNotDisbursed
         case invalidOfferTerms
         case acceptanceCapacityReached
+        case cannotWithdraw
 
         var errorDescription: String? {
             switch self {
@@ -89,8 +90,31 @@ final class InvestmentService {
                 return "Enter valid offer terms (amount, timeline, and interest rate)."
             case .acceptanceCapacityReached:
                 return "Investor capacity is full for this opportunity. Decline older requests or increase max investors."
+            case .cannotWithdraw:
+                return "Only pending requests can be revoked."
             }
         }
+    }
+
+    /// Investor can revoke only a pending request they created.
+    func withdrawInvestmentRequest(investmentId: String, investorId: String) async throws {
+        let ref = db.collection("investments").document(investmentId)
+        let snap = try await ref.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investorId == investorId else {
+            throw InvestmentServiceError.notSignedIn
+        }
+        let status = inv.status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard status == "pending" else {
+            throw InvestmentServiceError.cannotWithdraw
+        }
+        try await ref.updateData([
+            "status": "withdrawn",
+            "withdrawnAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ])
     }
 
     /// All investment rows for an opportunity (seeker dashboard). Requires `opportunityId` on each document (or nested `opportunity.id`).

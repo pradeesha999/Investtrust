@@ -22,6 +22,8 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     let location: String
     let riskLevel: RiskLevel
     let verificationStatus: VerificationStatus
+    /// If false, investor cannot submit negotiated offer terms.
+    let isNegotiable: Bool
     let documentURLs: [String]
 
     let status: String
