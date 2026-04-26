@@ -26,6 +26,9 @@ final class AuthService {
 
     var isSignedIn: Bool { currentUserID != nil }
 
+    /// True after a successful email/password sign-in saved credentials for Face ID / Touch ID unlock.
+    var canSignInWithBiometrics: Bool { BiometricCredentialStore.hasStoredCredentials }
+
     private let userService: UserService
     private var authListener: AuthStateDidChangeListenerHandle?
 
@@ -64,10 +67,41 @@ final class AuthService {
         errorMessage = nil
         isLoading = true
         do {
+            let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try await Auth.auth().signIn(withEmail: trimmed, password: password)
+            try? BiometricCredentialStore.save(email: trimmed, password: password)
+            syncLocalUserFromFirebase()
+            sessionEpoch += 1
+            acknowledgeSessionReady()
+        } catch {
+            isLoading = false
+            errorMessage = (error as NSError).localizedDescription
+        }
+    }
+
+    /// `LocalAuthentication` Face ID / Touch ID, then Keychain read, then Firebase sign-in.
+    func signInWithBiometrics() async {
+        errorMessage = nil
+        guard BiometricCredentialStore.hasStoredCredentials else {
+            errorMessage = "Sign in with email and password once on this device to enable Face ID."
+            return
+        }
+        isLoading = true
+        do {
+            let context = try await BiometricAuthService.authenticateWithBiometricsReturningContext(
+                reason: "Sign in to Investtrust."
+            )
+            let (email, password) = try BiometricCredentialStore.readCredentials(authenticationContext: context)
             _ = try await Auth.auth().signIn(withEmail: email, password: password)
             syncLocalUserFromFirebase()
             sessionEpoch += 1
             acknowledgeSessionReady()
+        } catch let bioFailure as BiometricAuthService.Failure {
+            isLoading = false
+            errorMessage = bioFailure.localizedDescription
+        } catch let credError as BiometricCredentialStore.BiometricCredentialError {
+            isLoading = false
+            errorMessage = credError.localizedDescription
         } catch {
             isLoading = false
             errorMessage = (error as NSError).localizedDescription
@@ -78,7 +112,9 @@ final class AuthService {
         errorMessage = nil
         isLoading = true
         do {
-            _ = try await Auth.auth().createUser(withEmail: email, password: password)
+            let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            _ = try await Auth.auth().createUser(withEmail: trimmed, password: password)
+            try? BiometricCredentialStore.save(email: trimmed, password: password)
             syncLocalUserFromFirebase()
             sessionEpoch += 1
             acknowledgeSessionReady()
@@ -180,6 +216,7 @@ final class AuthService {
             let accessToken = result.user.accessToken.tokenString
             let credential = GoogleAuthProvider.credential(withIDToken: idToken, accessToken: accessToken)
             let authResult = try await Auth.auth().signIn(with: credential)
+            BiometricCredentialStore.delete()
             try await userService.ensureUserDocumentExists(for: authResult.user)
             try await userService.syncIdentityFromAuthIfNeeded(for: authResult.user)
             syncLocalUserFromFirebase()

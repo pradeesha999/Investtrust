@@ -2,6 +2,7 @@ import FirebaseFirestore
 import FirebaseStorage
 import Foundation
 import UIKit
+import CryptoKit
 
 final class InvestmentService {
     private let db = Firestore.firestore()
@@ -39,6 +40,7 @@ final class InvestmentService {
         case invalidOfferTerms
         case acceptanceCapacityReached
         case cannotWithdraw
+        case agreementUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -92,6 +94,8 @@ final class InvestmentService {
                 return "Investor capacity is full for this opportunity. Decline older requests or increase max investors."
             case .cannotWithdraw:
                 return "Only pending requests can be revoked."
+            case .agreementUnavailable:
+                return "Memorandum details aren’t available for this request yet."
             }
         }
     }
@@ -282,17 +286,21 @@ final class InvestmentService {
     }
 
     /// Creates a `pending` investment request (denormalized listing snapshot for investor dashboards).
+    /// For a single-investor listing, amount is the opportunity’s `amountRequested` unless `proposedAmount` is provided.
     func createInvestmentRequest(
         opportunity: OpportunityListing,
         investorId: String,
-        proposedAmount: Double
+        proposedAmount: Double? = nil
     ) async throws -> InvestmentListing {
         guard investorId != opportunity.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
         let finalAmount: Double = {
             let cap = max(1, opportunity.maximumInvestors ?? 1)
-            if cap <= 1 { return proposedAmount }
+            if cap <= 1 {
+                let amt = proposedAmount ?? opportunity.amountRequested
+                return amt
+            }
             return Self.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
         }()
         guard finalAmount > 0 else {
@@ -491,32 +499,21 @@ final class InvestmentService {
         }
 
         let now = Date()
-        let investorDisplay = await Self.investorLegalOrDisplayName(userService: userService, userId: investorId, fallback: "Investor")
-        let seekerDisplay = await Self.displayName(userService: userService, userId: seekerId, fallback: "Seeker")
-        let agreementPayload = Self.makeAgreementPayload(
-            opportunity: opportunity,
-            investorName: investorDisplay,
-            seekerName: seekerDisplay,
-            investmentAmount: inv.investmentAmount,
-            at: now
-        )
         let acceptedInterestRate = inv.offeredInterestRate ?? inv.finalInterestRate ?? opportunity.interestRate
         let acceptedTimelineMonths = inv.offeredTimelineMonths ?? inv.finalTimelineMonths ?? opportunity.repaymentTimelineMonths
 
-        var updates: [String: Any] = [
+        var acceptedUpdates: [String: Any] = [
             "status": "accepted",
             "acceptedAt": Timestamp(date: now),
-            "agreementStatus": AgreementStatus.pending_signatures.rawValue,
-            "agreementGeneratedAt": Timestamp(date: now),
-            "agreement": agreementPayload,
             "finalInterestRate": acceptedInterestRate,
             "finalTimelineMonths": acceptedTimelineMonths,
             "updatedAt": Timestamp(date: now)
         ]
         if inv.requestKind == .offer_request {
-            updates["offerStatus"] = InvestmentOfferStatus.accepted.rawValue
+            acceptedUpdates["offerStatus"] = InvestmentOfferStatus.accepted.rawValue
         }
-        try await invRef.updateData(updates)
+        try await invRef.updateData(acceptedUpdates)
+        try await reconcileMasterAgreementForOpportunity(opportunity: opportunity, seekerId: seekerId, now: now)
 
         let chatId = try await chatService.getOrCreateChat(
             opportunityId: opportunity.id,
@@ -550,33 +547,39 @@ final class InvestmentService {
         guard inv.agreementStatus == .pending_signatures else {
             throw InvestmentServiceError.agreementNotAwaitingSignatures
         }
-        guard let investorId = inv.investorId, let seekerUid = inv.seekerId else {
+        guard let _ = inv.investorId, let _ = inv.seekerId else {
             throw InvestmentServiceError.missingInvestor
         }
 
-        let roleKey: String
-        let signerAlreadySigned: Bool
-        if userId == investorId {
-            roleKey = "investor"
-            signerAlreadySigned = (inv.signedByInvestorAt != nil)
-        } else if userId == seekerUid {
-            roleKey = "seeker"
-            signerAlreadySigned = (inv.signedBySeekerAt != nil)
-        } else {
+        var agreement = inv.agreement
+        if agreement == nil, let oid = inv.opportunityId {
+            let rows = try await fetchInvestmentsForOpportunity(opportunityId: oid, limit: 500)
+            agreement = rows.first(where: { $0.agreement?.agreementId == oid })?.agreement
+        }
+        guard var agreement else {
+            throw InvestmentServiceError.notFound
+        }
+        guard agreement.requiredSignerIds.contains(userId) else {
             throw InvestmentServiceError.wrongSigner
         }
+        guard let signerIndex = agreement.participants.firstIndex(where: { $0.signerId == userId }) else {
+            throw InvestmentServiceError.wrongSigner
+        }
+        let roleKey = agreement.participants[signerIndex].signerRole == .seeker ? "seeker" : "investor"
+        let signerAlreadySigned = agreement.participants[signerIndex].isSigned
 
         // Idempotent retry path: if this signer already signed and both signatures exist,
         // try finalization again instead of failing with "already signed".
         if signerAlreadySigned {
-            guard let agreement = inv.agreement else { return }
-            guard inv.signedByInvestorAt != nil, inv.signedBySeekerAt != nil else {
+            let signaturesComplete = agreement.participants.allSatisfy(\.isSigned)
+            guard signaturesComplete else {
                 throw InvestmentServiceError.alreadySigned
             }
             try await finalizeMOAAndLoanSchedule(
                 invRef: invRef,
                 inv: inv,
-                agreement: agreement
+                agreement: agreement,
+                triggeringUserId: userId
             )
             return
         }
@@ -588,32 +591,68 @@ final class InvestmentService {
         )
 
         let now = Date()
+        agreement.participants[signerIndex].signedAt = now
+        agreement.participants[signerIndex].signatureURL = uploaded.secureURL
+        let participantPayload: [[String: Any]] = agreement.participants.map {
+            [
+                "signerId": $0.signerId,
+                "signerRole": $0.signerRole.rawValue,
+                "displayName": $0.displayName,
+                "signatureURL": $0.signatureURL ?? "",
+                "signedAt": ($0.signedAt.map { Timestamp(date: $0) } ?? NSNull()) as Any
+            ]
+        }
+
         var updates: [String: Any] = [
+            "agreement.participants": participantPayload,
+            "agreement.requiredSignerIds": agreement.requiredSignerIds,
+            "agreement.termsSnapshotHash": agreement.termsSnapshotHash,
             "updatedAt": Timestamp(date: now)
         ]
-        if userId == investorId {
-            updates["signedByInvestorAt"] = Timestamp(date: now)
-            updates["investorSignatureImageURL"] = uploaded.secureURL
-            updates["signedByInvestorUserId"] = userId
-        } else {
+        if agreement.participants[signerIndex].signerRole == .seeker {
             updates["signedBySeekerAt"] = Timestamp(date: now)
             updates["seekerSignatureImageURL"] = uploaded.secureURL
             updates["signedBySeekerUserId"] = userId
+        } else {
+            updates["signedByInvestorAt"] = Timestamp(date: now)
+            updates["investorSignatureImageURL"] = uploaded.secureURL
+            updates["signedByInvestorUserId"] = userId
         }
-        try await invRef.updateData(updates)
+        if let opId = inv.opportunityId {
+            try await propagateAgreementUpdates(opportunityId: opId, updates: updates)
+        } else {
+            try await invRef.updateData(updates)
+        }
 
         let mergedSnap = try await invRef.getDocument()
         guard let mergedData = mergedSnap.data(),
               let inv2 = InvestmentListing(id: investmentId, data: mergedData),
               let agreement = inv2.agreement else { return }
 
-        guard inv2.signedByInvestorAt != nil, inv2.signedBySeekerAt != nil else { return }
+        guard agreement.participants.allSatisfy(\.isSigned) else { return }
 
         try await finalizeMOAAndLoanSchedule(
             invRef: invRef,
             inv: inv2,
-            agreement: agreement
+            agreement: agreement,
+            triggeringUserId: userId
         )
+    }
+
+    /// Builds the memorandum PDF locally (styled layout + embedded signatures when URLs load). Safe for preview before all parties sign.
+    func buildMOAPDFDocumentData(for investment: InvestmentListing) async throws -> Data {
+        guard let agreement = investment.agreement else {
+            throw InvestmentServiceError.agreementUnavailable
+        }
+        var signaturesBySignerId: [String: UIImage] = [:]
+        for signer in agreement.participants {
+            guard let url = signer.signatureURL, !url.isEmpty else { continue }
+            guard let sigData = try? await Self.downloadSignaturePNGData(from: url),
+                  let img = UIImage(data: sigData)
+            else { continue }
+            signaturesBySignerId[signer.signerId] = img
+        }
+        return MOAPDFBuilder.buildPDF(agreement: agreement, signaturesBySignerId: signaturesBySignerId)
     }
 
     private static func downloadSignaturePNGData(from urlString: String) async throws -> Data {
@@ -636,32 +675,36 @@ final class InvestmentService {
     private func finalizeMOAAndLoanSchedule(
         invRef: DocumentReference,
         inv: InvestmentListing,
-        agreement: InvestmentAgreementSnapshot
+        agreement: InvestmentAgreementSnapshot,
+        triggeringUserId: String
     ) async throws {
-        let investmentId = inv.id
-        let invSigData: Data
-        let seekSigData: Data
-        if let invURL = inv.investorSignatureImageURL,
-           let seekURL = inv.seekerSignatureImageURL,
-           !invURL.isEmpty, !seekURL.isEmpty {
-            invSigData = try await Self.downloadSignaturePNGData(from: invURL)
-            seekSigData = try await Self.downloadSignaturePNGData(from: seekURL)
+        let opportunityId = inv.opportunityId ?? agreement.agreementId
+        let linkedRows: [InvestmentListing]
+        if !opportunityId.isEmpty {
+            let all = try await fetchInvestmentsForOpportunity(opportunityId: opportunityId, limit: 500)
+            linkedRows = all.filter { row in
+                let s = row.status.lowercased()
+                return s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active
+            }
         } else {
-            let invSigRef = storage.reference().child("investments/\(investmentId)/signatures/investor.png")
-            let seekSigRef = storage.reference().child("investments/\(investmentId)/signatures/seeker.png")
-            invSigData = try await invSigRef.getDataAsync(maxSize: Int64(Self.maxSignatureBytes))
-            seekSigData = try await seekSigRef.getDataAsync(maxSize: Int64(Self.maxSignatureBytes))
+            linkedRows = [inv]
         }
-        let invImg = UIImage(data: invSigData)
-        let seekImg = UIImage(data: seekSigData)
-        guard invImg != nil, seekImg != nil else {
-            throw InvestmentServiceError.missingSignatureImages
+
+        var signaturesBySignerId: [String: UIImage] = [:]
+        for signer in agreement.participants {
+            guard let url = signer.signatureURL, !url.isEmpty else {
+                throw InvestmentServiceError.missingSignatureImages
+            }
+            let sigData = try await Self.downloadSignaturePNGData(from: url)
+            guard let sigImage = UIImage(data: sigData) else {
+                throw InvestmentServiceError.missingSignatureImages
+            }
+            signaturesBySignerId[signer.signerId] = sigImage
         }
 
         let pdfData = MOAPDFBuilder.buildPDF(
             agreement: agreement,
-            investorSignature: invImg,
-            seekerSignature: seekImg
+            signaturesBySignerId: signaturesBySignerId
         )
         let hash = MOAPDFBuilder.sha256Hex(of: pdfData)
         var uploadedPDFURL: String?
@@ -669,7 +712,7 @@ final class InvestmentService {
         do {
             let uploadedPDF = try await CloudinaryImageUploadClient.uploadFileData(
                 pdfData,
-                filename: "moa-\(investmentId).pdf",
+                filename: "moa-\(agreement.agreementId).pdf",
                 mimeType: "application/pdf"
             )
             uploadedPDFURL = uploadedPDF.secureURL
@@ -692,40 +735,65 @@ final class InvestmentService {
             updates["moaUploadError"] = moaUploadErrorMessage
         }
 
-        if inv.investmentType == .loan {
-            updates["fundingStatus"] = FundingStatus.awaiting_disbursement.rawValue
-            updates["principalSentByInvestorAt"] = FieldValue.delete()
-            updates["principalReceivedBySeekerAt"] = FieldValue.delete()
-            let months = max(1, inv.finalTimelineMonths ?? agreement.termsSnapshot.repaymentTimelineMonths ?? 1)
-            let rate = inv.finalInterestRate ?? agreement.termsSnapshot.interestRate ?? 0
-            let plan = agreement.loanRepaymentPlan
-            let start = inv.acceptedAt ?? now
-            let schedule = LoanScheduleGenerator.generateSchedule(
-                principal: inv.investmentAmount,
-                annualRatePercent: rate,
-                termMonths: months,
-                plan: plan,
-                startDate: start
-            )
-            updates["loanInstallments"] = schedule.map { $0.firestoreMap() }
+        for row in linkedRows {
+            var rowUpdates = updates
+            var loanScheduleForCalendar: [LoanInstallment]?
+            if row.investmentType == .loan {
+                rowUpdates["fundingStatus"] = FundingStatus.awaiting_disbursement.rawValue
+                rowUpdates["principalSentByInvestorAt"] = FieldValue.delete()
+                rowUpdates["principalReceivedBySeekerAt"] = FieldValue.delete()
+                let months = max(1, row.finalTimelineMonths ?? agreement.termsSnapshot.repaymentTimelineMonths ?? 1)
+                let rate = row.finalInterestRate ?? agreement.termsSnapshot.interestRate ?? 0
+                let plan = agreement.loanRepaymentPlan
+                let start = row.acceptedAt ?? now
+                let schedule = LoanScheduleGenerator.generateSchedule(
+                    principal: row.investmentAmount,
+                    annualRatePercent: rate,
+                    termMonths: months,
+                    plan: plan,
+                    startDate: start
+                )
+                loanScheduleForCalendar = schedule
+                rowUpdates["loanInstallments"] = schedule.map { $0.firestoreMap() }
+            }
+            try await db.collection("investments").document(row.id).updateData(rowUpdates)
+
+            if let schedule = loanScheduleForCalendar {
+                let title = row.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? agreement.opportunityTitle
+                    : row.opportunityTitle
+                let rowId = row.id
+                let investor = row.investorId
+                let seeker = row.seekerId
+                let uid = triggeringUserId
+                Task { @MainActor in
+                    await LoanRepaymentCalendarSync.replaceInstallmentReminders(
+                        investmentId: rowId,
+                        opportunityTitle: title,
+                        installments: schedule,
+                        actingUserId: uid,
+                        investorId: investor,
+                        seekerId: seeker
+                    )
+                }
+            }
         }
 
-        try await invRef.updateData(updates)
-
-        if let opId = inv.opportunityId,
-           let investorId = inv.investorId,
-           let seekerUid = inv.seekerId {
-            let chatId = try await chatService.getOrCreateChat(
-                opportunityId: opId,
-                seekerId: seekerUid,
-                investorId: investorId,
-                opportunityTitle: inv.opportunityTitle
-            )
-            try await chatService.sendMessage(
-                chatId: chatId,
-                senderId: seekerUid,
-                text: "Agreement fully signed. MOA PDF is available on the investment record. Proceed with funding."
-            )
+        if let opId = inv.opportunityId {
+            for row in linkedRows {
+                guard let investorId = row.investorId, let seekerUid = row.seekerId else { continue }
+                let chatId = try await chatService.getOrCreateChat(
+                    opportunityId: opId,
+                    seekerId: seekerUid,
+                    investorId: investorId,
+                    opportunityTitle: row.opportunityTitle
+                )
+                try await chatService.sendMessage(
+                    chatId: chatId,
+                    senderId: seekerUid,
+                    text: "Agreement fully signed by all required parties. MOA PDF is available on the investment record. Proceed with funding."
+                )
+            }
         }
     }
 
@@ -939,6 +1007,79 @@ final class InvestmentService {
         return hasDefaultedInstallment ? .defaulted : previous
     }
 
+    private func propagateAgreementUpdates(opportunityId: String, updates: [String: Any]) async throws {
+        let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunityId, limit: 500)
+        let linked = rows.filter { row in
+            let s = row.status.lowercased()
+            return s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active
+        }
+        for row in linked {
+            try await db.collection("investments").document(row.id).updateData(updates)
+        }
+    }
+
+    private func reconcileMasterAgreementForOpportunity(opportunity: OpportunityListing, seekerId: String, now: Date) async throws {
+        let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunity.id, limit: 500)
+        let activeRows = rows.filter { row in
+            let s = row.status.lowercased()
+            return s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active
+        }
+        guard !activeRows.isEmpty else { return }
+
+        let existingAgreement = activeRows.compactMap(\.agreement).first
+        let hasSignatureStarted = existingAgreement?.participants.contains(where: \.isSigned) == true
+        if hasSignatureStarted { return }
+
+        let seekerDisplay = await Self.displayName(userService: userService, userId: seekerId, fallback: "Seeker")
+        var participants: [AgreementSignerSnapshot] = [
+            AgreementSignerSnapshot(
+                signerId: seekerId,
+                signerRole: .seeker,
+                displayName: seekerDisplay,
+                signatureURL: nil,
+                signedAt: nil
+            )
+        ]
+
+        for row in activeRows {
+            guard let investorId = row.investorId else { continue }
+            if participants.contains(where: { $0.signerId == investorId }) { continue }
+            let investorDisplay = await Self.investorLegalOrDisplayName(userService: userService, userId: investorId, fallback: "Investor")
+            participants.append(
+                AgreementSignerSnapshot(
+                    signerId: investorId,
+                    signerRole: .investor,
+                    displayName: investorDisplay,
+                    signatureURL: nil,
+                    signedAt: nil
+                )
+            )
+        }
+
+        let requiredSignerIds = participants.map(\.signerId)
+        let representativeInvestor = participants.first(where: { $0.signerRole == .investor })?.displayName ?? "Investor"
+        let maxAmount = activeRows.map(\.investmentAmount).max() ?? opportunity.amountRequested
+        let agreementPayload = Self.makeAgreementPayload(
+            opportunity: opportunity,
+            agreementId: opportunity.id,
+            requiredSignerIds: requiredSignerIds,
+            participants: participants,
+            investorName: representativeInvestor,
+            seekerName: seekerDisplay,
+            investmentAmount: maxAmount,
+            at: now
+        )
+
+        for row in activeRows {
+            try await db.collection("investments").document(row.id).updateData([
+                "agreementStatus": AgreementStatus.pending_signatures.rawValue,
+                "agreementGeneratedAt": Timestamp(date: now),
+                "agreement": agreementPayload,
+                "updatedAt": Timestamp(date: now)
+            ])
+        }
+    }
+
     private static func displayName(userService: UserService, userId: String, fallback: String) async -> String {
         if let p = try? await userService.fetchProfile(userID: userId),
            let n = p.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -961,23 +1102,66 @@ final class InvestmentService {
 
     private static func makeAgreementPayload(
         opportunity: OpportunityListing,
+        agreementId: String,
+        requiredSignerIds: [String],
+        participants: [AgreementSignerSnapshot],
         investorName: String,
         seekerName: String,
         investmentAmount: Double,
         at: Date
     ) -> [String: Any] {
-        [
+        let termsPayload = OpportunityFirestoreCoding.termsDictionary(from: opportunity.terms, type: opportunity.investmentType)
+        let termsHash = termsSnapshotDigest(
+            opportunityId: opportunity.id,
+            investmentType: opportunity.investmentType.rawValue,
+            investmentAmount: investmentAmount,
+            terms: termsPayload
+        )
+        let participantMaps: [[String: Any]] = participants.map {
+            [
+                "signerId": $0.signerId,
+                "signerRole": $0.signerRole.rawValue,
+                "displayName": $0.displayName,
+                "signatureURL": $0.signatureURL ?? "",
+                "signedAt": ($0.signedAt.map { Timestamp(date: $0) } ?? NSNull()) as Any
+            ]
+        }
+        return [
+            "agreementId": agreementId,
+            "agreementVersion": 1,
+            "termsSnapshotHash": termsHash,
+            "requiredSignerIds": requiredSignerIds,
+            "participants": participantMaps,
             "opportunityTitle": opportunity.title,
             "investorName": investorName,
             "seekerName": seekerName,
             "investmentAmount": investmentAmount,
             "investmentType": opportunity.investmentType.rawValue,
-            "termsSnapshot": OpportunityFirestoreCoding.termsDictionary(from: opportunity.terms, type: opportunity.investmentType),
+            "termsSnapshot": termsPayload,
             "createdAt": Timestamp(date: at)
         ]
     }
 
-    private static func fixedEqualSplitAmount(total: Double, investors: Int) -> Double {
+    private static func termsSnapshotDigest(
+        opportunityId: String,
+        investmentType: String,
+        investmentAmount: Double,
+        terms: [String: Any]
+    ) -> String {
+        let payload: [String: Any] = [
+            "opportunityId": opportunityId,
+            "investmentType": investmentType,
+            "investmentAmount": investmentAmount,
+            "terms": terms
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
+            return ""
+        }
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func fixedEqualSplitAmount(total: Double, investors: Int) -> Double {
         guard total > 0, investors > 0 else { return 0 }
         let raw = total / Double(investors)
         return (raw * 100).rounded() / 100

@@ -34,8 +34,35 @@ enum InvestmentOfferSource: String, Codable, Sendable, CaseIterable {
     case detail_sheet
 }
 
+enum AgreementSignerRole: String, Codable, Sendable, CaseIterable {
+    case seeker
+    case investor
+}
+
+struct AgreementSignerSnapshot: Equatable, Hashable, Sendable, Codable {
+    var signerId: String
+    var signerRole: AgreementSignerRole
+    var displayName: String
+    var signatureURL: String?
+    var signedAt: Date?
+
+    var isSigned: Bool {
+        signedAt != nil && !(signatureURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 /// Structured agreement snapshot stored on the investment at seeker acceptance (no PDF).
 struct InvestmentAgreementSnapshot: Equatable, Hashable, Sendable {
+    /// Opportunity scoped agreement id (e.g. `opportunityId`).
+    var agreementId: String
+    /// Agreement schema/template version for backward compatibility.
+    var agreementVersion: Int
+    /// Deterministic digest for frozen terms and core economics.
+    var termsSnapshotHash: String
+    /// Required signer user IDs.
+    var requiredSignerIds: [String]
+    /// Snapshot of all participants and their signature state.
+    var participants: [AgreementSignerSnapshot]
     var opportunityTitle: String
     var investorName: String
     var seekerName: String

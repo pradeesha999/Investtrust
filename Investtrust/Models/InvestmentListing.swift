@@ -114,6 +114,12 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     func needsInvestorSignature(currentUserId: String?) -> Bool {
         guard agreementStatus == .pending_signatures else { return false }
+        if let agreement,
+           let currentUserId {
+            return agreement.participants.contains {
+                $0.signerId == currentUserId && $0.signerRole == .investor && !$0.isSigned
+            }
+        }
         guard signedByInvestorAt == nil else { return false }
         guard let currentUserId, let iid = investorId else { return false }
         return currentUserId == iid
@@ -121,9 +127,26 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     func needsSeekerSignature(currentUserId: String?) -> Bool {
         guard agreementStatus == .pending_signatures else { return false }
+        if let agreement,
+           let currentUserId {
+            return agreement.participants.contains {
+                $0.signerId == currentUserId && $0.signerRole == .seeker && !$0.isSigned
+            }
+        }
         guard signedBySeekerAt == nil else { return false }
         guard let currentUserId, let sid = seekerId else { return false }
         return currentUserId == sid
+    }
+
+    var agreementSignedCount: Int {
+        guard let agreement else {
+            return [signedByInvestorAt, signedBySeekerAt].compactMap(\.self).count
+        }
+        return agreement.participants.filter(\.isSigned).count
+    }
+
+    var agreementRequiredSignerCount: Int {
+        agreement?.participants.count ?? 2
     }
 
     /// Sum of installments marked `confirmed_paid` (authoritative for loan repayments when present).

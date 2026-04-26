@@ -18,6 +18,9 @@ struct LoanRepaymentScheduleView: View {
     @State private var libraryItem: PhotosPickerItem?
     @State private var libraryTargetInstallment: Int?
     @State private var isUpdatingPrincipal = false
+    @State private var moaPdfSheet: MOAPDFSheetItem?
+    @State private var moaPdfLoading = false
+    @State private var moaPdfError: String?
 
     private let service = InvestmentService()
 
@@ -47,29 +50,45 @@ struct LoanRepaymentScheduleView: View {
         Calendar.current.startOfDay(for: Date())
     }
 
+    /// Identity for `.task` so calendar reminders refresh when the schedule or agreement state changes.
+    private var calendarSyncTaskId: String {
+        let parts = investment.loanInstallments
+            .sorted { $0.installmentNo < $1.installmentNo }
+            .map { "\($0.installmentNo):\($0.status.rawValue)" }
+        return "\(investment.id)|\(investment.agreementStatus.rawValue)|" + parts.joined(separator: ",")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
                 summaryHero
                 principalDisbursementCard
 
-                if let urlStr = investment.moaPdfURL, let url = URL(string: urlStr) {
-                    Link(destination: url) {
+                if investment.agreement != nil {
+                    Button {
+                        Task { await openMemorandumPDF() }
+                    } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: "doc.richtext.fill")
-                                .font(.title3)
-                                .foregroundStyle(auth.accentColor)
-                                .frame(width: 44, height: 44)
-                                .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                            Group {
+                                if moaPdfLoading {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "doc.richtext.fill")
+                                        .font(.title3)
+                                }
+                            }
+                            .foregroundStyle(auth.accentColor)
+                            .frame(width: 44, height: 44)
+                            .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Signed memorandum")
+                                Text("Memorandum of agreement")
                                     .font(.subheadline.weight(.semibold))
-                                Text("Open the MOA PDF")
+                                Text("View PDF in the app or share")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "arrow.up.right")
+                            Image(systemName: "chevron.right")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                         }
@@ -78,6 +97,13 @@ struct LoanRepaymentScheduleView: View {
                         .appCardShadow()
                     }
                     .buttonStyle(.plain)
+                    .disabled(moaPdfLoading)
+
+                    if let moaPdfError, !moaPdfError.isEmpty {
+                        Text(moaPdfError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 scheduleSection(
@@ -102,6 +128,12 @@ struct LoanRepaymentScheduleView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Repayments")
         .navigationBarTitleDisplayMode(.large)
+        .task(id: calendarSyncTaskId) {
+            await LoanRepaymentCalendarSync.syncIfEligible(
+                investment: investment,
+                currentUserId: auth.currentUserID
+            )
+        }
         .sheet(isPresented: $showLibrarySheet) {
             NavigationStack {
                 VStack(spacing: 20) {
@@ -141,6 +173,9 @@ struct LoanRepaymentScheduleView: View {
                 }
             }
         }
+        .sheet(item: $moaPdfSheet) { item in
+            MOAPDFViewerSheet(pdfData: item.data, filename: item.filename)
+        }
         .fullScreenCover(isPresented: $showDocCamera) {
             Group {
                 if VNDocumentCameraViewController.isSupported {
@@ -178,6 +213,26 @@ struct LoanRepaymentScheduleView: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+    }
+
+    @MainActor
+    private func openMemorandumPDF() async {
+        moaPdfError = nil
+        guard investment.agreement != nil else {
+            moaPdfError = "Memorandum isn’t available."
+            return
+        }
+        moaPdfLoading = true
+        defer { moaPdfLoading = false }
+        do {
+            let data = try await service.buildMOAPDFDocumentData(for: investment)
+            let name = "Investtrust-MOA-\(investment.agreement?.agreementId ?? investment.id).pdf"
+            moaPdfSheet = MOAPDFSheetItem(data: data, filename: name)
+        } catch let invErr as InvestmentService.InvestmentServiceError {
+            moaPdfError = invErr.localizedDescription
+        } catch {
+            moaPdfError = error.localizedDescription
         }
     }
 

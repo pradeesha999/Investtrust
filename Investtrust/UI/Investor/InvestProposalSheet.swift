@@ -1,14 +1,11 @@
 import SwiftUI
 
-/// Confirms proposed amount and submits a pending investment request.
+/// Confirms a standard investment request on the listing’s stated terms (no custom amount or checkboxes here—MOA covers legal acceptance).
 struct InvestProposalSheet: View {
     let opportunity: OpportunityListing
-    let onSubmit: (Double) async throws -> Void
+    let onSubmit: () async throws -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var amountText = ""
-    @State private var acknowledgesOffPlatform = false
-    @State private var agreesToTerms = false
     @State private var isSubmitting = false
     @State private var submitError: String?
 
@@ -16,21 +13,9 @@ struct InvestProposalSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(
-                        "You’re requesting to invest on this listing’s stated terms: \(opportunity.investmentType.displayName) — \(opportunity.termsSummaryLine). Minimum ticket LKR \(opportunity.formattedMinimumLKR). The seeker can accept or decline."
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                }
-
-                Section("Proposed amount (LKR)") {
-                    TextField("Amount", text: $amountText)
-                        .keyboardType(.numberPad)
-                }
-
-                Section {
-                    Toggle("I understand this investment happens outside the platform", isOn: $acknowledgesOffPlatform)
-                    Toggle("I agree to the opportunity terms", isOn: $agreesToTerms)
+                    Text(introCopy)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 if let submitError {
@@ -52,46 +37,43 @@ struct InvestProposalSheet: View {
                     if isSubmitting {
                         ProgressView()
                     } else {
-                        Button("Send") {
+                        Button("Send request") {
                             Task { await submit() }
                         }
-                        .disabled(!acknowledgesOffPlatform || !agreesToTerms)
                     }
-                }
-            }
-            .onAppear {
-                if amountText.isEmpty {
-                    let n = NSNumber(value: opportunity.amountRequested)
-                    let f = NumberFormatter()
-                    f.numberStyle = .decimal
-                    f.maximumFractionDigits = 0
-                    amountText = f.string(from: n) ?? String(format: "%.0f", opportunity.amountRequested)
                 }
             }
         }
     }
 
+    private var introCopy: String {
+        let cap = max(1, opportunity.maximumInvestors ?? 1)
+        if cap > 1 {
+            let split = InvestmentService.fixedEqualSplitAmount(
+                total: opportunity.amountRequested,
+                investors: cap
+            )
+            let splitText = Self.formatLKR(split)
+            return "You’re requesting to invest on this listing’s stated terms: \(opportunity.investmentType.displayName) — \(opportunity.termsSummaryLine). With \(cap) investors, each ticket is LKR \(splitText). The seeker can accept or decline. You’ll review and sign the memorandum of agreement if they accept."
+        }
+        let amt = Self.formatLKR(opportunity.amountRequested)
+        return "You’re requesting to invest LKR \(amt) on this listing’s stated terms: \(opportunity.investmentType.displayName) — \(opportunity.termsSummaryLine). The seeker can accept or decline. You’ll review and sign the memorandum of agreement if they accept."
+    }
+
+    private static func formatLKR(_ v: Double) -> String {
+        let n = NSNumber(value: v)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: n) ?? String(format: "%.0f", v)
+    }
+
     private func submit() async {
         submitError = nil
-        guard acknowledgesOffPlatform, agreesToTerms else {
-            submitError = "Confirm both acknowledgements to continue."
-            return
-        }
-        let cleaned = amountText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: "")
-        guard let value = Double(cleaned), value > 0 else {
-            submitError = "Enter a valid amount."
-            return
-        }
-        guard value >= opportunity.minimumInvestment else {
-            submitError = "Amount must be at least LKR \(opportunity.formattedMinimumLKR)."
-            return
-        }
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            try await onSubmit(value)
+            try await onSubmit()
             await MainActor.run { dismiss() }
         } catch {
             await MainActor.run {
@@ -103,5 +85,4 @@ struct InvestProposalSheet: View {
             }
         }
     }
-
 }

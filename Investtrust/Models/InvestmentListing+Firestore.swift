@@ -223,6 +223,46 @@ extension InvestmentListing {
 
     private static func parseAgreementMap(_ raw: Any?) -> InvestmentAgreementSnapshot? {
         guard let m = raw as? [String: Any], !m.isEmpty else { return nil }
+        let agreementId = (m["agreementId"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let agreementVersion: Int = {
+            if let v = m["agreementVersion"] as? Int { return v }
+            if let n = m["agreementVersion"] as? NSNumber { return n.intValue }
+            return 1
+        }()
+        let termsSnapshotHash = (m["termsSnapshotHash"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var requiredSignerIds: [String] = (m["requiredSignerIds"] as? [String] ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let participants: [AgreementSignerSnapshot] = {
+            guard let rows = m["participants"] as? [[String: Any]] else { return [] }
+            return rows.compactMap { row in
+                let signerId = (row["signerId"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !signerId.isEmpty else { return nil }
+                let role = AgreementSignerRole(
+                    rawValue: ((row["signerRole"] as? String) ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                ) ?? .investor
+                let displayName = (row["displayName"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let signatureURL = (row["signatureURL"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let signedAt = (row["signedAt"] as? Timestamp)?.dateValue()
+                return AgreementSignerSnapshot(
+                    signerId: signerId,
+                    signerRole: role,
+                    displayName: displayName.isEmpty ? "Signer" : displayName,
+                    signatureURL: signatureURL?.isEmpty == false ? signatureURL : nil,
+                    signedAt: signedAt
+                )
+            }
+        }()
+        if requiredSignerIds.isEmpty, !participants.isEmpty {
+            requiredSignerIds = participants.map(\.signerId)
+        }
         let title = (m["opportunityTitle"] as? String) ?? ""
         let investorName = (m["investorName"] as? String) ?? ""
         let seekerName = (m["seekerName"] as? String) ?? ""
@@ -236,6 +276,11 @@ extension InvestmentListing {
             return Date()
         }()
         return InvestmentAgreementSnapshot(
+            agreementId: agreementId,
+            agreementVersion: max(1, agreementVersion),
+            termsSnapshotHash: termsSnapshotHash,
+            requiredSignerIds: requiredSignerIds,
+            participants: participants,
             opportunityTitle: title,
             investorName: investorName,
             seekerName: seekerName,

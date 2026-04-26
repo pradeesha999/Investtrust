@@ -207,7 +207,7 @@ enum OpportunityFirestoreCoding {
 
     static func milestones(from data: [String: Any]) -> [OpportunityMilestone] {
         guard let arr = data["milestones"] as? [[String: Any]] else { return [] }
-        return arr.compactMap { row -> OpportunityMilestone? in
+        let parsed = arr.compactMap { row -> OpportunityMilestone? in
             let title = (row["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let desc = (row["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let expected: Date? = {
@@ -228,6 +228,27 @@ enum OpportunityFirestoreCoding {
                 expectedDate: expected,
                 dueDaysAfterAcceptance: daysAfter
             )
+        }
+        return Self.sortedMilestonesChronologically(parsed)
+    }
+
+    /// Earliest `daysAfterAcceptance` first; then legacy `expectedDate`; undated last (stable by title).
+    static func sortedMilestonesChronologically(_ items: [OpportunityMilestone]) -> [OpportunityMilestone] {
+        items.sorted { a, b in
+            func tierAndSortValue(_ m: OpportunityMilestone) -> (Int, Double, String) {
+                if let d = m.dueDaysAfterAcceptance {
+                    return (0, Double(d), m.title)
+                }
+                if let e = m.expectedDate {
+                    return (1, e.timeIntervalSince1970, m.title)
+                }
+                return (2, 0, m.title)
+            }
+            let ka = tierAndSortValue(a)
+            let kb = tierAndSortValue(b)
+            if ka.0 != kb.0 { return ka.0 < kb.0 }
+            if ka.1 != kb.1 { return ka.1 < kb.1 }
+            return ka.2.localizedCaseInsensitiveCompare(kb.2) == .orderedAscending
         }
     }
 

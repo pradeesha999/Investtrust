@@ -57,20 +57,30 @@ struct EditOpportunityView: View {
                     formSection("Funding & risk") {
                         field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
                         textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What the money will be spent on.")
-                        Toggle(isOn: $draft.isNegotiable) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Allow negotiation")
-                                    .font(.subheadline.weight(.semibold))
-                                Text("Controls whether investors can see the Make offer button.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .tint(auth.accentColor)
                         field("Maximum investors (optional)", text: $draft.maximumInvestors, placeholder: "e.g. 20")
                         Text("With more than one investor, each ticket is the goal divided by the cap (equal shares).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if isMultipleInvestorDraft {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Negotiation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Negotiation is unavailable for multiple investors.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Toggle(isOn: $draft.isNegotiable) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Allow negotiation")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("Controls whether investors can see the Make offer button.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .tint(auth.accentColor)
+                        }
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Risk level")
                                 .font(.subheadline.weight(.semibold))
@@ -140,7 +150,7 @@ struct EditOpportunityView: View {
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             Button {
-                                draft.milestones.append(MilestoneDraft())
+                                draft.milestones.insert(MilestoneDraft(), at: 0)
                             } label: {
                                 Label("Add", systemImage: "plus.circle.fill")
                             }
@@ -218,6 +228,12 @@ struct EditOpportunityView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .onChange(of: draft.maximumInvestors) { _, newValue in
+                let digits = newValue.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+                if let cap = Int(digits), cap >= 2 {
+                    draft.isNegotiable = false
+                }
+            }
         }
     }
 
@@ -247,8 +263,14 @@ struct EditOpportunityView: View {
         return (try? OpportunityService.validateDraftTerms(draft)) != nil
     }
 
+    private var isMultipleInvestorDraft: Bool {
+        let digits = draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+        guard let cap = Int(digits) else { return false }
+        return cap >= 2
+    }
+
+    /// Each milestone with any content must have valid days-after-acceptance (UI order is independent; rows insert on top).
     private func validateMilestoneDraftOffsets() -> Bool {
-        var previous = -1
         for m in draft.milestones {
             let hasContent =
                 !m.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -256,8 +278,7 @@ struct EditOpportunityView: View {
                 || !m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if !hasContent { continue }
             let digits = m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
-            guard let n = Int(digits), n >= 0, n <= 3650, n >= previous else { return false }
-            previous = n
+            guard let n = Int(digits), n >= 0, n <= 3650 else { return false }
         }
         return true
     }

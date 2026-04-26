@@ -325,17 +325,6 @@ struct CreateOpportunityWizardView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     field("Amount needed (LKR)", text: $draft.amount, placeholder: "150000", keyboardType: .numberPad)
                     textArea("Use of funds", text: $draft.useOfFunds, placeholder: "What exactly will this funding be used for?")
-                    Toggle(isOn: $draft.isNegotiable) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Allow negotiation")
-                                .font(.subheadline.weight(.semibold))
-                            Text("If enabled, investors will see the Make offer button.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .tint(auth.accentColor)
-
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Investor setup")
                             .font(.subheadline.weight(.semibold))
@@ -344,6 +333,27 @@ struct CreateOpportunityWizardView: View {
                             Text("Multiple investors").tag(true)
                         }
                         .pickerStyle(.segmented)
+                    }
+
+                    if allowsMultipleInvestors {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Negotiation")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Negotiation is unavailable for multiple investors.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Toggle(isOn: $draft.isNegotiable) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Allow negotiation")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("If enabled, investors will see the Make offer button.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .tint(auth.accentColor)
                     }
 
                     if allowsMultipleInvestors {
@@ -480,7 +490,7 @@ struct CreateOpportunityWizardView: View {
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             Button {
-                                draft.milestones.append(MilestoneDraft())
+                                draft.milestones.insert(MilestoneDraft(), at: 0)
                             } label: {
                                 Label("Add", systemImage: "plus.circle.fill")
                                     .font(.subheadline.weight(.semibold))
@@ -913,6 +923,7 @@ struct CreateOpportunityWizardView: View {
 
     private func normalizeFundingDraftBeforeSubmit() {
         if allowsMultipleInvestors {
+            draft.isNegotiable = false
             if let cap = parseInvestorCap(draft.maximumInvestors), cap >= 2 {
                 draft.maximumInvestors = "\(cap)"
             } else {
@@ -947,6 +958,7 @@ struct CreateOpportunityWizardView: View {
 
     private func applyFundingMode(_ allowsMultiple: Bool) {
         if allowsMultiple {
+            draft.isNegotiable = false
             if draft.maximumInvestors.trimmingCharacters(in: .whitespacesAndNewlines) == "1" {
                 draft.maximumInvestors = ""
             }
@@ -988,24 +1000,19 @@ struct CreateOpportunityWizardView: View {
     private func seedDefaultMilestonesIfNeeded() {
         if !draft.milestones.isEmpty { return }
         let span = inferredTenorDaysApproximate()
-        let d1 = max(1, span / 3)
-        let d2 = max(d1 + 1, (span * 2) / 3)
-        let d3 = max(d2 + 1, span)
+        let half = max(1, span / 2)
+        let tail = max(1, span / 10)
+        let nearEnd = min(span, max(half + 1, span - tail))
         draft.milestones = [
             MilestoneDraft(
-                title: "Midpoint progress update",
-                description: "Share progress partway through the deal window, including completed work and next steps.",
-                daysAfterAcceptance: "\(d1)"
+                title: "Midway progress update",
+                description: "Share progress around the halfway point of the deal window—what’s done and what’s next.",
+                daysAfterAcceptance: "\(half)"
             ),
             MilestoneDraft(
-                title: "Later checkpoint",
-                description: "A second update before final delivery so investors stay informed.",
-                daysAfterAcceptance: "\(d2)"
-            ),
-            MilestoneDraft(
-                title: "Final delivery / completion",
-                description: "Confirm delivery, outcomes, and closeout details by the end of the planned window.",
-                daysAfterAcceptance: "\(d3)"
+                title: "Near completion update",
+                description: "A final checkpoint before the end of the window: delivery status, outcomes, and any wrap-up.",
+                daysAfterAcceptance: "\(nearEnd)"
             )
         ]
     }
@@ -1039,8 +1046,8 @@ struct CreateOpportunityWizardView: View {
         }
     }
 
+    /// Each milestone with any content must have a valid “days after acceptance” (list order is free-form; new rows are added on top).
     private func validateMilestoneDraftOffsets() -> Bool {
-        var previous = -1
         for m in draft.milestones {
             let hasContent =
                 !m.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1048,8 +1055,7 @@ struct CreateOpportunityWizardView: View {
                 || !m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if !hasContent { continue }
             let digits = m.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
-            guard let n = Int(digits), n >= 0, n <= 3650, n >= previous else { return false }
-            previous = n
+            guard let n = Int(digits), n >= 0, n <= 3650 else { return false }
         }
         return true
     }

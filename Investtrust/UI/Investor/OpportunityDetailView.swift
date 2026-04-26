@@ -102,14 +102,13 @@ struct OpportunityDetailView: View {
         }
         .sheet(isPresented: $showInvestSheet) {
             if let opportunity {
-                InvestProposalSheet(opportunity: opportunity) { amount in
+                InvestProposalSheet(opportunity: opportunity) {
                     guard let uid = auth.currentUserID else {
                         throw InvestmentService.InvestmentServiceError.notSignedIn
                     }
                     let created = try await investmentService.createInvestmentRequest(
                         opportunity: opportunity,
-                        investorId: uid,
-                        proposedAmount: amount
+                        investorId: uid
                     )
                     let chatId = try await chatService.getOrCreateChat(
                         opportunityId: opportunity.id,
@@ -1470,6 +1469,8 @@ struct OpportunityDetailView: View {
         guard auth.currentUserID != nil, auth.currentUserID != o.ownerId else { return false }
         guard profileReadyForInvesting else { return false }
         guard o.isNegotiable else { return false }
+        let cap = max(1, o.maximumInvestors ?? 1)
+        guard cap <= 1 else { return false }
         return o.isOpenForInvesting
     }
 

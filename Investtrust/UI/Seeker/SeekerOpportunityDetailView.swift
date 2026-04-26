@@ -24,6 +24,7 @@ struct SeekerOpportunityDetailView: View {
     @State private var investorProfilesById: [String: UserProfile] = [:]
     @State private var showRequestsSheet = false
     @State private var shouldAutoOpenRequestsSheet = false
+    @State private var principalConfirmBusyId: String?
 
     private let investmentService = InvestmentService()
     private let opportunityService = OpportunityService()
@@ -52,10 +53,6 @@ struct SeekerOpportunityDetailView: View {
         !hasBlockingRequests
     }
 
-    private var isSingleInvestorOpportunity: Bool {
-        (opportunity.maximumInvestors ?? 1) <= 1
-    }
-
     private var hasAcceptedOrActiveDeal: Bool {
         investments.contains { inv in
             let s = inv.status.lowercased()
@@ -64,7 +61,7 @@ struct SeekerOpportunityDetailView: View {
     }
 
     private var shouldHideRequestsAfterAcceptance: Bool {
-        isSingleInvestorOpportunity && hasAcceptedOrActiveDeal
+        hasAcceptedOrActiveDeal
     }
 
     private var primarySingleInvestorDeal: InvestmentListing? {
@@ -75,6 +72,341 @@ struct SeekerOpportunityDetailView: View {
             return active
         }
         return investments.first(where: { $0.status.lowercased() == "accepted" })
+    }
+
+    /// Loan deals on this listing with a fully active agreement (repayment / funding UI).
+    private var activeLoanDealsForDashboard: [InvestmentListing] {
+        investments.filter { inv in
+            guard inv.investmentType == .loan else { return false }
+            let oid = inv.opportunityId ?? ""
+            guard oid.isEmpty || oid == opportunity.id else { return false }
+            let s = inv.status.lowercased()
+            return inv.agreementStatus == .active || s == "active"
+        }
+    }
+
+    private var showSeekerLoanRepaymentDashboard: Bool {
+        opportunity.investmentType == .loan && !activeLoanDealsForDashboard.isEmpty
+    }
+
+    private var seekerLoanScheduleAggregate: (next: (investment: InvestmentListing, installment: LoanInstallment)?, paidCount: Int, totalCount: Int, remainingTotal: Double, paidTotal: Double) {
+        var paidCount = 0
+        var totalCount = 0
+        var remainingTotal = 0.0
+        var paidTotal = 0.0
+        var best: (InvestmentListing, LoanInstallment)?
+        var bestDue: Date?
+
+        for inv in activeLoanDealsForDashboard {
+            let sorted = inv.loanInstallments.sorted { $0.installmentNo < $1.installmentNo }
+            for row in sorted {
+                totalCount += 1
+                if row.status == .confirmed_paid {
+                    paidCount += 1
+                    paidTotal += row.totalDue
+                } else {
+                    remainingTotal += row.totalDue
+                    if bestDue == nil || row.dueDate < bestDue! {
+                        bestDue = row.dueDate
+                        best = (inv, row)
+                    }
+                }
+            }
+        }
+        return (best, paidCount, totalCount, remainingTotal, paidTotal)
+    }
+
+    @ViewBuilder
+    private var seekerLoanRepaymentDashboardStack: some View {
+        let agg = seekerLoanScheduleAggregate
+        seekerRepaymentCommandCenter(aggregate: agg) {
+            await loadInvestments()
+            await MainActor.run { onMutate() }
+        }
+        .padding(.horizontal, AppTheme.screenPadding)
+
+        if activeLoanDealsForDashboard.contains(where: {
+            $0.fundingStatus == .awaiting_disbursement
+                && $0.principalReceivedBySeekerAt == nil
+        }) {
+            seekerPrincipalFundingCard
+                .padding(.horizontal, AppTheme.screenPadding)
+        }
+
+        if let deal = primarySingleInvestorDeal ?? activeLoanDealsForDashboard.first, deal.agreement != nil {
+            Button {
+                agreementToReview = deal
+            } label: {
+                Label(
+                    deal.agreementStatus == .pending_signatures && deal.needsSeekerSignature(currentUserId: auth.currentUserID)
+                        ? "Review & sign agreement"
+                        : "View agreement & MOA",
+                    systemImage: "doc.text.fill"
+                )
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: AppTheme.minTapTarget)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(auth.accentColor)
+            .padding(.horizontal, AppTheme.screenPadding)
+        }
+
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Repayment schedules")
+                .font(.headline)
+                .padding(.horizontal, AppTheme.screenPadding)
+            ForEach(activeLoanDealsForDashboard.sorted(by: { ($0.createdAt ?? .distantPast) < ($1.createdAt ?? .distantPast) })) { inv in
+                VStack(alignment: .leading, spacing: 8) {
+                    if activeLoanDealsForDashboard.count > 1 {
+                        let name = displayName(for: inv.investorId.flatMap { investorProfilesById[$0] }, investorId: inv.investorId)
+                        Text(name)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, AppTheme.screenPadding)
+                    }
+                    LoanInstallmentsSection(
+                        investment: inv,
+                        currentUserId: auth.currentUserID,
+                        onRefresh: {
+                            await loadInvestments()
+                            await MainActor.run { onMutate() }
+                        }
+                    )
+                    .padding(.horizontal, AppTheme.screenPadding)
+                }
+            }
+        }
+
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 16) {
+                overviewCard(for: opportunity)
+                keyNumbersCard(for: opportunity)
+                incomeFundsTimelineCard(for: opportunity)
+                fundingSetupCard(for: opportunity)
+                dealTermsCard(for: opportunity)
+                executionPlanCard(for: opportunity)
+            }
+            .padding(.top, 8)
+        } label: {
+            Label("Listing details", systemImage: "list.bullet.rectangle")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .padding(.horizontal, AppTheme.screenPadding)
+    }
+
+    private func seekerRepaymentCommandCenter(
+        aggregate: (next: (investment: InvestmentListing, installment: LoanInstallment)?, paidCount: Int, totalCount: Int, remainingTotal: Double, paidTotal: Double),
+        onRefresh: @escaping () async -> Void
+    ) -> some View {
+        let anyUnconfirmedFunding = activeLoanDealsForDashboard.contains {
+            $0.fundingStatus == .awaiting_disbursement && $0.principalReceivedBySeekerAt == nil
+        }
+        let repaymentsLive = activeLoanDealsForDashboard.allSatisfy(\.loanRepaymentsUnlocked)
+
+        return sectionCard(
+            title: "Loan repayments",
+            subtitle: repaymentsLive ? "Track what you owe and upcoming due dates." : "Confirm principal first — then installment actions unlock.",
+            systemImage: "banknote.fill"
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                if aggregate.totalCount == 0 {
+                    Text("Installment schedule will appear here once the agreement is fully active.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if let pair = aggregate.next {
+                    let days = Self.calendarDaysFromToday(to: pair.installment.dueDate)
+                    let overdue = days < 0 && pair.installment.status != .confirmed_paid
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Next payment")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text("LKR \(formatAmount(pair.installment.totalDue))")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+
+                        Text(Self.nextPaymentTimingLabel(days: days))
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(overdue ? .red : auth.accentColor)
+
+                        Text("Due \(Self.mediumDate(pair.installment.dueDate)) · #\(pair.installment.installmentNo)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        if activeLoanDealsForDashboard.count > 1,
+                           let iid = pair.investment.investorId {
+                            Text("Investor: \(displayName(for: investorProfilesById[iid], investorId: iid))")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if aggregate.totalCount > 0 {
+                        ProgressView(value: Double(aggregate.paidCount), total: Double(aggregate.totalCount))
+                            .tint(auth.accentColor)
+                        Text("\(aggregate.paidCount) of \(aggregate.totalCount) installments paid")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 12) {
+                        seekerMetricPill(title: "Left to pay", value: "LKR \(formatAmount(aggregate.remainingTotal))", tint: .primary)
+                        seekerMetricPill(title: "Paid (confirmed)", value: "LKR \(formatAmount(aggregate.paidTotal))", tint: .green)
+                    }
+
+                    if pair.investment.loanRepaymentsUnlocked,
+                       auth.currentUserID == pair.investment.seekerId,
+                       pair.installment.status != .confirmed_paid {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Record this payment")
+                                .font(.headline)
+                            Text("Upload your bank slip or receipt, then confirm when the money has reached you.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            SeekerLoanPaymentConfirmBlock(
+                                investment: pair.investment,
+                                installmentNo: pair.installment.installmentNo,
+                                onRefresh: onRefresh
+                            )
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.largeTitle)
+                            .foregroundStyle(.green)
+                        Text("All installments are marked paid.")
+                            .font(.headline)
+                        Text("Total confirmed: LKR \(formatAmount(aggregate.paidTotal))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if anyUnconfirmedFunding, !repaymentsLive {
+                    Text("Finish principal confirmation in the card below so repayment check-ins unlock.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    private func seekerMetricPill(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(tint)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+    }
+
+    private var seekerPrincipalFundingCard: some View {
+        sectionCard(
+            title: "Principal & funding",
+            subtitle: "Wire the agreed amount outside the app, then confirm here.",
+            systemImage: "banknote.fill"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(activeLoanDealsForDashboard.filter {
+                    $0.fundingStatus == .awaiting_disbursement && $0.principalReceivedBySeekerAt == nil
+                }) { inv in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(displayName(for: inv.investorId.flatMap { investorProfilesById[$0] }, investorId: inv.investorId))
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("LKR \(formatAmount(inv.investmentAmount))")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        if inv.principalSentByInvestorAt == nil {
+                            Text("Waiting for the investor to mark principal as sent.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Investor marked principal sent — confirm when you’ve received it.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if inv.principalSentByInvestorAt != nil {
+                                Button {
+                                    Task { await confirmPrincipalReceived(investmentId: inv.id) }
+                                } label: {
+                                    Group {
+                                        if principalConfirmBusyId == inv.id {
+                                            ProgressView()
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 10)
+                                        } else {
+                                            Text("Confirm principal received")
+                                                .font(.subheadline.weight(.semibold))
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 12)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(auth.accentColor)
+                                .disabled(principalConfirmBusyId != nil)
+                            }
+                        }
+                    }
+                    .padding(12)
+                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                }
+            }
+        }
+    }
+
+    private func confirmPrincipalReceived(investmentId: String) async {
+        guard let uid = auth.currentUserID else { return }
+        actionError = nil
+        principalConfirmBusyId = investmentId
+        defer { principalConfirmBusyId = nil }
+        do {
+            try await investmentService.confirmPrincipalReceivedBySeeker(investmentId: investmentId, userId: uid)
+            await loadInvestments()
+            await MainActor.run { onMutate() }
+        } catch {
+            if let le = error as? LocalizedError, let d = le.errorDescription {
+                actionError = d
+            } else {
+                actionError = (error as NSError).localizedDescription
+            }
+        }
+    }
+
+    private static func calendarDaysFromToday(to due: Date) -> Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let startDue = cal.startOfDay(for: due)
+        return cal.dateComponents([.day], from: today, to: startDue).day ?? 0
+    }
+
+    private static func nextPaymentTimingLabel(days: Int) -> String {
+        if days < 0 {
+            let n = -days
+            return n == 1 ? "1 day overdue" : "\(n) days overdue"
+        }
+        if days == 0 { return "Due today" }
+        if days == 1 { return "In 1 day" }
+        return "In \(days) days"
     }
 
     var body: some View {
@@ -88,18 +420,23 @@ struct SeekerOpportunityDetailView: View {
                 heroSection(for: opportunity)
                     .padding(.horizontal, AppTheme.screenPadding)
                     .padding(.top, 8)
-                overviewCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
-                keyNumbersCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
-                incomeFundsTimelineCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
-                fundingSetupCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
-                dealTermsCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
-                executionPlanCard(for: opportunity)
-                    .padding(.horizontal, AppTheme.screenPadding)
+
+                if showSeekerLoanRepaymentDashboard {
+                    seekerLoanRepaymentDashboardStack
+                } else {
+                    overviewCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    keyNumbersCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    incomeFundsTimelineCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    fundingSetupCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    dealTermsCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    executionPlanCard(for: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                }
 
                 if let videoRef = opportunity.effectiveVideoReference {
                     mediaCard(title: "Video walkthrough", systemImage: "play.rectangle.fill") {
@@ -121,12 +458,14 @@ struct SeekerOpportunityDetailView: View {
                         .padding(.horizontal, AppTheme.screenPadding)
                 }
 
-                if shouldHideRequestsAfterAcceptance {
-                    singleInvestorDealCard
-                        .padding(.horizontal, AppTheme.screenPadding)
-                } else {
-                    requestsSummaryCard
-                        .padding(.horizontal, AppTheme.screenPadding)
+                if !showSeekerLoanRepaymentDashboard {
+                    if shouldHideRequestsAfterAcceptance {
+                        singleInvestorDealCard
+                            .padding(.horizontal, AppTheme.screenPadding)
+                    } else {
+                        requestsSummaryCard
+                            .padding(.horizontal, AppTheme.screenPadding)
+                    }
                 }
 
                 if !opportunity.mediaWarnings.isEmpty {
@@ -278,6 +617,9 @@ struct SeekerOpportunityDetailView: View {
                             await MainActor.run { onMutate() }
                             throw error
                         }
+                    },
+                    onDidFinishSigning: {
+                        showRequestsSheet = false
                     }
                 )
             }
@@ -306,7 +648,7 @@ struct SeekerOpportunityDetailView: View {
     @ViewBuilder
     private var requestsSection: some View {
         if shouldHideRequestsAfterAcceptance {
-            Text("This single-investor listing already has an accepted deal. Continue with agreement review and signing.")
+            Text("An investment request is already accepted for this listing. Continue with agreement review and signing.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,7 +687,7 @@ struct SeekerOpportunityDetailView: View {
     private var singleInvestorDealCard: some View {
         sectionCard(
             title: "Deal in progress",
-            subtitle: "Requests are closed after acceptance for single-investor listings",
+            subtitle: "Requests are closed after a deal is accepted",
             systemImage: "checkmark.seal.fill"
         ) {
             VStack(alignment: .leading, spacing: 10) {

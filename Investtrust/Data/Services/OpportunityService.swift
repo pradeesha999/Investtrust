@@ -63,6 +63,7 @@ final class OpportunityService {
             guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
             return n
         }()
+        let allowsNegotiation = draft.isNegotiable && (maxInvestors ?? 1) <= 1
 
         let minimumInvestment = Self.storedMinimumInvestment(amountRequested: amountRequested, maxInvestors: maxInvestors)
 
@@ -133,7 +134,7 @@ final class OpportunityService {
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
-            "isNegotiable": draft.isNegotiable,
+            "isNegotiable": allowsNegotiation,
             "documentURLs": [String](),
             "terms": termsMap,
             "imageURLs": imageURLs,
@@ -324,6 +325,7 @@ final class OpportunityService {
             guard !t.isEmpty, let n = Int(t.filter(\.isNumber)), n > 0 else { return nil }
             return n
         }()
+        let allowsNegotiation = draft.isNegotiable && (maxInvestors ?? 1) <= 1
 
         let minimumInvestment = Self.storedMinimumInvestment(amountRequested: amountRequested, maxInvestors: maxInvestors)
 
@@ -353,7 +355,7 @@ final class OpportunityService {
             "milestones": milestonesPayload,
             "riskLevel": draft.riskLevel.rawValue,
             "verificationStatus": draft.verificationStatus.rawValue,
-            "isNegotiable": draft.isNegotiable,
+            "isNegotiable": allowsNegotiation,
             "terms": termsMap,
             "updatedAt": Timestamp(date: now)
         ]
@@ -529,7 +531,7 @@ final class OpportunityService {
     }
 
     private static func milestonesPayload(from items: [MilestoneDraft]) -> [[String: Any]] {
-        items.compactMap { d -> [String: Any]? in
+        sortedMilestoneDraftsForPersistence(items).compactMap { d -> [String: Any]? in
             let title = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let desc = d.description.trimmingCharacters(in: .whitespacesAndNewlines)
             if title.isEmpty && desc.isEmpty { return nil }
@@ -542,6 +544,30 @@ final class OpportunityService {
                 o["daysAfterAcceptance"] = min(days, 3650)
             }
             return o
+        }
+    }
+
+    /// Matches display order: days-after-acceptance ascending; drafts without a day sort last (by title).
+    private static func sortedMilestoneDraftsForPersistence(_ items: [MilestoneDraft]) -> [MilestoneDraft] {
+        func dayValue(_ d: MilestoneDraft) -> Int? {
+            let digits = d.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
+            guard let n = Int(digits), n >= 0 else { return nil }
+            return min(n, 3650)
+        }
+        return items.sorted { a, b in
+            let da = dayValue(a)
+            let db = dayValue(b)
+            switch (da, db) {
+            case let (x?, y?):
+                if x != y { return x < y }
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+            }
         }
     }
 

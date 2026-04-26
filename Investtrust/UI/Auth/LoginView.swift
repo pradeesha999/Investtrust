@@ -60,6 +60,11 @@ struct LoginView: View {
                         signInButton
                             .padding(.top, 20)
 
+                        if auth.canSignInWithBiometrics {
+                            faceIDSignInButton
+                                .padding(.top, 12)
+                        }
+
                         signUpFooter
                             .padding(.top, 28)
 
@@ -134,6 +139,32 @@ struct LoginView: View {
             .foregroundStyle(AuthTheme.primaryPink)
             .padding(.vertical, 8)
         }
+    }
+
+    private var faceIDSignInButton: some View {
+        Button {
+            Task { await auth.signInWithBiometrics() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "faceid")
+                    .font(.title2)
+                    .foregroundStyle(AuthTheme.primaryPink)
+                Text("Sign in with Face ID")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(AuthTheme.primaryPink)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(AuthTheme.fieldBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AuthTheme.buttonCornerRadius, style: .continuous)
+                    .strokeBorder(AuthTheme.primaryPink.opacity(0.45), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(auth.isLoading)
+        .accessibilityLabel("Sign in with Face ID")
     }
 
     private var signInButton: some View {

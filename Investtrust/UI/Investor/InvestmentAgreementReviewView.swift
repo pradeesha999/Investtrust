@@ -12,10 +12,17 @@ struct InvestmentAgreementReviewView: View {
     /// When false, the footer signing action is hidden (read-only view).
     var canSign: Bool = true
     var onSign: (Data) async throws -> Void
+    /// Called on the main actor after a **successful** sign, before this screen dismisses (e.g. close a requests sheet underneath).
+    var onDidFinishSigning: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSigning = false
     @State private var errorText: String?
+    @State private var pdfSheet: MOAPDFSheetItem?
+    @State private var pdfLoading = false
+    @State private var pdfError: String?
+
+    private let investmentService = InvestmentService()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,7 +47,11 @@ struct InvestmentAgreementReviewView: View {
                     isSigning: $isSigning,
                     errorText: $errorText,
                     onSign: { png in
+                        try await BiometricAuthService.requireDeviceOwner(
+                            reason: "Confirm it’s you to sign this memorandum of agreement."
+                        )
                         try await onSign(png)
+                        onDidFinishSigning?()
                         dismiss()
                     }
                 )
@@ -55,6 +66,9 @@ struct InvestmentAgreementReviewView: View {
                 Button("Close") { dismiss() }
                     .disabled(isSigning)
             }
+        }
+        .sheet(item: $pdfSheet) { item in
+            MOAPDFViewerSheet(pdfData: item.data, filename: item.filename)
         }
     }
 
@@ -79,8 +93,44 @@ struct InvestmentAgreementReviewView: View {
                 .font(.subheadline)
             }
 
+            termsSection("Signing progress") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(investment.agreementSignedCount)/\(investment.agreementRequiredSignerCount) completed")
+                        .font(.subheadline.weight(.semibold))
+                    if !agreement.participants.isEmpty {
+                        ForEach(Array(agreement.participants.enumerated()), id: \.offset) { _, participant in
+                            HStack(alignment: .center, spacing: 8) {
+                                Image(systemName: participant.isSigned ? "checkmark.seal.fill" : "clock.badge.questionmark.fill")
+                                    .foregroundStyle(participant.isSigned ? .green : .orange)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(participant.displayName)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(participant.signerRole == .seeker ? "Seeker" : "Investor")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 8)
+                                Text(participant.signedAt.map(Self.mediumDate) ?? "Pending")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(participant.isSigned ? .green : .secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
             termsSection("Terms") {
                 termsBody(agreement: agreement, type: agreement.investmentType)
+            }
+
+            termsSection("Commitments") {
+                let t = agreement.termsSnapshot
+                let freq = (t.repaymentFrequency ?? .monthly).displayName
+                let timeline = t.repaymentTimelineMonths.map { "\($0) months" } ?? "agreed timeline"
+                bullet("Repayment duty", "Seeker agrees to repay principal and interest over \(timeline).")
+                bullet("Schedule adherence", "Payments are expected on each \(freq.lowercased()) due date.")
+                bullet("Late handling", "Missed due dates may move the deal to defaulted status after grace checks.")
+                bullet("Change control", "Any term changes must be agreed by all required signers in app.")
             }
 
             if let gen = investment.agreementGeneratedAt {
@@ -89,17 +139,57 @@ struct InvestmentAgreementReviewView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            if let urlStr = investment.moaPdfURL, let url = URL(string: urlStr) {
-                Divider()
-                Link(destination: url) {
-                    Label("Download signed MOA (PDF)", systemImage: "arrow.down.doc")
+            Divider()
+            Button {
+                Task { await openMemorandumPDF() }
+            } label: {
+                HStack {
+                    if pdfLoading {
+                        ProgressView()
+                            .scaleEffect(0.9)
+                    } else {
+                        Image(systemName: "doc.richtext.fill")
+                            .font(.body.weight(.semibold))
+                    }
+                    Text("View memorandum PDF")
                         .font(.subheadline.weight(.semibold))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .disabled(pdfLoading || investment.agreement == nil)
+
+            if let pdfError, !pdfError.isEmpty {
+                Text(pdfError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
             }
         } else {
             Text("Agreement details are not available for this request.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    @MainActor
+    private func openMemorandumPDF() async {
+        pdfError = nil
+        guard investment.agreement != nil else {
+            pdfError = "Memorandum isn’t available yet."
+            return
+        }
+        pdfLoading = true
+        defer { pdfLoading = false }
+        do {
+            let data = try await investmentService.buildMOAPDFDocumentData(for: investment)
+            let name = "Investtrust-MOA-\(investment.agreement?.agreementId ?? investment.id).pdf"
+            await MainActor.run {
+                pdfSheet = MOAPDFSheetItem(data: data, filename: name)
+            }
+        } catch let invErr as InvestmentService.InvestmentServiceError {
+            await MainActor.run { pdfError = invErr.localizedDescription }
+        } catch {
+            await MainActor.run { pdfError = error.localizedDescription }
         }
     }
 

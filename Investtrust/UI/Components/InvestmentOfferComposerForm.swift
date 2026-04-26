@@ -52,15 +52,23 @@ struct InvestmentOfferComposerForm: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         } else {
-                            TextField("Amount (LKR)", text: $amountText)
+                            LabeledContent("Amount (LKR)") {
+                                TextField("Enter amount", text: $amountText)
+                                    .keyboardType(.decimalPad)
+                            }
+                        }
+                        LabeledContent("Interest rate (%)") {
+                            TextField("e.g. 12.5", text: $rateText)
                                 .keyboardType(.decimalPad)
                         }
-                        TextField("Interest rate (%)", text: $rateText)
-                            .keyboardType(.decimalPad)
-                        TextField("Repayment timeline (months)", text: $timelineText)
-                            .keyboardType(.numberPad)
-                        TextField("Description", text: $descriptionText, axis: .vertical)
-                            .lineLimit(2...4)
+                        LabeledContent("Repayment timeline (months)") {
+                            TextField("e.g. 24", text: $timelineText)
+                                .keyboardType(.numberPad)
+                        }
+                        LabeledContent("Description") {
+                            TextField("Optional note to the seeker", text: $descriptionText, axis: .vertical)
+                                .lineLimit(2...4)
+                        }
                     }
                 }
             }
