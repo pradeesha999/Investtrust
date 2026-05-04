@@ -9,6 +9,7 @@ final class InvestmentService {
     private let storage = Storage.storage()
     private let chatService = ChatService()
     private let userService = UserService()
+    private let opportunityService = OpportunityService()
 
     private static let maxSignatureBytes: Int = 4 * 1024 * 1024
     private static let maxProofBytes: Int = 8 * 1024 * 1024
@@ -41,6 +42,11 @@ final class InvestmentService {
         case acceptanceCapacityReached
         case cannotWithdraw
         case agreementUnavailable
+        case seekerPaymentProofRequired
+        case seekerMustConfirmPaymentFirst
+        case revenuePeriodNotFound
+        case notRevenueShareOrNoSchedule
+        case revenueDeclarationMissing
 
         var errorDescription: String? {
             switch self {
@@ -96,6 +102,16 @@ final class InvestmentService {
                 return "Only pending requests can be revoked."
             case .agreementUnavailable:
                 return "Memorandum details aren’t available for this request yet."
+            case .seekerPaymentProofRequired:
+                return "Attach at least one payment slip or transfer screenshot before confirming you sent this installment."
+            case .seekerMustConfirmPaymentFirst:
+                return "Wait until the seeker confirms they sent this payment before you acknowledge receipt."
+            case .revenuePeriodNotFound:
+                return "That revenue-share period was not found."
+            case .notRevenueShareOrNoSchedule:
+                return "This deal has no revenue-share schedule."
+            case .revenueDeclarationMissing:
+                return "The seeker must submit period revenue before payment can be confirmed."
             }
         }
     }
@@ -123,61 +139,22 @@ final class InvestmentService {
 
     /// All investment rows for an opportunity (seeker dashboard). Requires `opportunityId` on each document (or nested `opportunity.id`).
     func fetchInvestmentsForOpportunity(opportunityId: String, limit: Int = 100) async throws -> [InvestmentListing] {
-        do {
-            let snap = try await db.collection("investments")
-                .whereField("opportunityId", isEqualTo: opportunityId)
-                .limit(to: limit)
-                .getDocuments()
-            let rows = snap.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            if !rows.isEmpty {
-                return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-            }
-        } catch {
-            // fall through
-        }
-
-        let snapshot: QuerySnapshot
-        do {
-            snapshot = try await db.collection("investments")
-                .order(by: "createdAt", descending: true)
-                .limit(to: max(limit, 50))
-                .getDocuments()
-        } catch {
-            snapshot = try await db.collection("investments").limit(to: 200).getDocuments()
-        }
-        return snapshot.documents
-            .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            .filter { $0.opportunityId == opportunityId }
+        let snap = try await db.collection("investments")
+            .whereField("opportunityId", isEqualTo: opportunityId)
+            .limit(to: limit)
+            .getDocuments()
+        let rows = snap.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
+        return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
     /// Investment rows where this user is the listing owner (`seekerId`), newest first.
     func fetchInvestmentsForSeeker(seekerId: String, limit: Int = 200) async throws -> [InvestmentListing] {
-        do {
-            let snap = try await db.collection("investments")
-                .whereField("seekerId", isEqualTo: seekerId)
-                .limit(to: limit)
-                .getDocuments()
-            let rows = snap.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            if !rows.isEmpty {
-                return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-            }
-        } catch {
-            // fall through
-        }
-
-        let snapshot: QuerySnapshot
-        do {
-            snapshot = try await db.collection("investments")
-                .order(by: "createdAt", descending: true)
-                .limit(to: max(limit, 120))
-                .getDocuments()
-        } catch {
-            snapshot = try await db.collection("investments").limit(to: 300).getDocuments()
-        }
-        return snapshot.documents
-            .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            .filter { $0.seekerId == seekerId }
-            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        let snap = try await db.collection("investments")
+            .whereField("seekerId", isEqualTo: seekerId)
+            .limit(to: limit)
+            .getDocuments()
+        let rows = snap.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
+        return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
     /// Marks a request as declined so the seeker can edit/delete the listing once no blocking requests remain.
@@ -228,61 +205,45 @@ final class InvestmentService {
         // `whereField + orderBy` needs a composite index in Firestore. Query by investor only, then sort client-side.
         let queryLimit = min(max(cap * 6, 120), 500)
 
+        // Only equality-filtered queries — unscoped `orderBy` / `limit` on `investments` fails under strict
+        // Firestore rules because the query may return other users' documents (entire query is denied).
+        var merged: [InvestmentListing] = []
         for investorField in ["investorId", "investor"] {
             do {
                 let snapshot = try await db.collection("investments")
                     .whereField(investorField, isEqualTo: userID)
                     .limit(to: queryLimit)
                     .getDocuments()
-                let rows = snapshot.documents
-                    .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-                    .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-                if !rows.isEmpty {
-                    return Array(rows.prefix(cap))
-                }
+                let rows = snapshot.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
+                merged.append(contentsOf: rows)
             } catch {
                 continue
             }
         }
-
-        do {
-            let snapshot = try await db.collection("investments")
-                .order(by: "createdAt", descending: true)
-                .limit(to: max(cap * 4, 100))
-                .getDocuments()
-            let rows = snapshot.documents
-                .filter { doc in
-                    if let investorId = doc.data()["investorId"] as? String { return investorId == userID }
-                    if let investorId = doc.data()["investor"] as? String { return investorId == userID }
-                    return false
-                }
-                .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            return Array(rows.prefix(cap))
-        } catch {
-            let snapshot = try await db.collection("investments")
-                .limit(to: 300)
-                .getDocuments()
-            let rows = snapshot.documents
-                .filter { doc in
-                    if let investorId = doc.data()["investorId"] as? String { return investorId == userID }
-                    if let investorId = doc.data()["investor"] as? String { return investorId == userID }
-                    return false
-                }
-                .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-                .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-            return Array(rows.prefix(cap))
-        }
+        let deduped = Dictionary(grouping: merged, by: \.id).compactMap { $0.value.first }
+        let sorted = deduped.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        return Array(sorted.prefix(cap))
     }
 
     /// Latest investment row for this investor + opportunity (any status), newest first.
+    /// Must filter by investor in the query (not only in memory): otherwise Firestore rejects the read
+    /// when another investor’s row exists for the same opportunity.
     func fetchLatestRequestForInvestor(opportunityId: String, investorId: String) async throws -> InvestmentListing? {
-        let snapshot = try await db.collection("investments")
-            .whereField("opportunityId", isEqualTo: opportunityId)
-            .getDocuments()
-        let rows = snapshot.documents
-            .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
-            .filter { $0.investorId == investorId }
-        return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }.first
+        var merged: [InvestmentListing] = []
+        for investorField in ["investorId", "investor"] {
+            do {
+                let snapshot = try await db.collection("investments")
+                    .whereField("opportunityId", isEqualTo: opportunityId)
+                    .whereField(investorField, isEqualTo: investorId)
+                    .limit(to: 40)
+                    .getDocuments()
+                merged.append(contentsOf: snapshot.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) })
+            } catch {
+                continue
+            }
+        }
+        let deduped = Dictionary(grouping: merged, by: \.id).compactMap { $0.value.first }
+        return deduped.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }.first
     }
 
     /// Creates a `pending` investment request (denormalized listing snapshot for investor dashboards).
@@ -292,16 +253,19 @@ final class InvestmentService {
         investorId: String,
         proposedAmount: Double? = nil
     ) async throws -> InvestmentListing {
-        guard investorId != opportunity.ownerId else {
+        guard let opp = try await opportunityService.fetchOpportunity(opportunityId: opportunity.id) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
         let finalAmount: Double = {
-            let cap = max(1, opportunity.maximumInvestors ?? 1)
+            let cap = max(1, opp.maximumInvestors ?? 1)
             if cap <= 1 {
-                let amt = proposedAmount ?? opportunity.amountRequested
+                let amt = proposedAmount ?? opp.amountRequested
                 return amt
             }
-            return Self.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+            return Self.fixedEqualSplitAmount(total: opp.amountRequested, investors: cap)
         }()
         guard finalAmount > 0 else {
             throw InvestmentServiceError.invalidAmount
@@ -315,7 +279,7 @@ final class InvestmentService {
             throw InvestmentServiceError.profileIncomplete
         }
 
-        if let existing = try await fetchLatestRequestForInvestor(opportunityId: opportunity.id, investorId: investorId) {
+        if let existing = try await fetchLatestRequestForInvestor(opportunityId: opp.id, investorId: investorId) {
             let s = existing.status.lowercased()
             if !["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
                 throw InvestmentServiceError.pendingRequestExists
@@ -324,31 +288,32 @@ final class InvestmentService {
 
         let ref = db.collection("investments").document()
         let now = Date()
-        let firstThumb = opportunity.imageStoragePaths.first?
+        let firstThumb = opp.imageStoragePaths.first?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         var payload: [String: Any] = [
-            "opportunityId": opportunity.id,
+            "opportunityId": opp.id,
             "opportunity": [
-                "id": opportunity.id,
-                "ownerId": opportunity.ownerId
+                "id": opp.id,
+                "ownerId": opp.ownerId
             ] as [String: Any],
             "investorId": investorId,
-            "seekerId": opportunity.ownerId,
+            "seekerId": opp.ownerId,
             "status": "pending",
             "agreementStatus": AgreementStatus.none.rawValue,
             "fundingStatus": FundingStatus.none.rawValue,
             "requestKind": InvestmentRequestKind.default_request.rawValue,
             "offerStatus": InvestmentOfferStatus.pending.rawValue,
             "investmentAmount": finalAmount,
-            "finalInterestRate": opportunity.interestRate,
-            "finalTimelineMonths": opportunity.repaymentTimelineMonths,
-            "investmentType": opportunity.investmentType.rawValue,
-            "opportunityInvestmentType": opportunity.investmentType.rawValue,
+            "finalInterestRate": opp.interestRate,
+            "finalTimelineMonths": opp.repaymentTimelineMonths,
+            "investmentType": opp.investmentType.rawValue,
+            "opportunityInvestmentType": opp.investmentType.rawValue,
             "receivedAmount": 0,
-            "opportunityTitle": opportunity.title,
+            "opportunityTitle": opp.title,
             "createdAt": Timestamp(date: now),
             "updatedAt": Timestamp(date: now),
-            "loanInstallments": []
+            "loanInstallments": [],
+            "revenueSharePeriods": []
         ]
         if let firstThumb, !firstThumb.isEmpty {
             payload["thumbnailImageURL"] = firstThumb
@@ -374,7 +339,10 @@ final class InvestmentService {
         chatId: String? = nil,
         chatMessageId: String? = nil
     ) async throws -> InvestmentListing {
-        guard investorId != opportunity.ownerId else {
+        guard let opp = try await opportunityService.fetchOpportunity(opportunityId: opportunity.id) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
         guard proposedInterestRate > 0, proposedTimelineMonths > 0 else {
@@ -388,10 +356,10 @@ final class InvestmentService {
             throw InvestmentServiceError.profileIncomplete
         }
 
-        let cap = max(1, opportunity.maximumInvestors ?? 1)
+        let cap = max(1, opp.maximumInvestors ?? 1)
         let amount: Double = {
             if cap > 1 {
-                return Self.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+                return Self.fixedEqualSplitAmount(total: opp.amountRequested, investors: cap)
             }
             return proposedAmount ?? 0
         }()
@@ -402,13 +370,13 @@ final class InvestmentService {
 
         let now = Date()
         var payload: [String: Any] = [
-            "opportunityId": opportunity.id,
+            "opportunityId": opp.id,
             "opportunity": [
-                "id": opportunity.id,
-                "ownerId": opportunity.ownerId
+                "id": opp.id,
+                "ownerId": opp.ownerId
             ] as [String: Any],
             "investorId": investorId,
-            "seekerId": opportunity.ownerId,
+            "seekerId": opp.ownerId,
             "status": "pending",
             "agreementStatus": AgreementStatus.none.rawValue,
             "fundingStatus": FundingStatus.none.rawValue,
@@ -422,14 +390,15 @@ final class InvestmentService {
             "investmentAmount": amount,
             "finalInterestRate": proposedInterestRate,
             "finalTimelineMonths": proposedTimelineMonths,
-            "investmentType": opportunity.investmentType.rawValue,
-            "opportunityInvestmentType": opportunity.investmentType.rawValue,
+            "investmentType": opp.investmentType.rawValue,
+            "opportunityInvestmentType": opp.investmentType.rawValue,
             "receivedAmount": 0,
-            "opportunityTitle": opportunity.title,
+            "opportunityTitle": opp.title,
             "updatedAt": Timestamp(date: now),
-            "loanInstallments": []
+            "loanInstallments": [],
+            "revenueSharePeriods": []
         ]
-        if let firstThumb = opportunity.imageStoragePaths.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let firstThumb = opp.imageStoragePaths.first?.trimmingCharacters(in: .whitespacesAndNewlines),
            !firstThumb.isEmpty {
             payload["thumbnailImageURL"] = firstThumb
         }
@@ -437,7 +406,7 @@ final class InvestmentService {
         if let chatMessageId, !chatMessageId.isEmpty { payload["offerChatMessageId"] = chatMessageId }
 
         let ref: DocumentReference
-        if let existing = try await fetchLatestRequestForInvestor(opportunityId: opportunity.id, investorId: investorId),
+        if let existing = try await fetchLatestRequestForInvestor(opportunityId: opp.id, investorId: investorId),
            existing.status.lowercased() == "pending" {
             ref = db.collection("investments").document(existing.id)
             // keep original creation time but mark older offer as superseded semantically
@@ -755,6 +724,19 @@ final class InvestmentService {
                 )
                 loanScheduleForCalendar = schedule
                 rowUpdates["loanInstallments"] = schedule.map { $0.firestoreMap() }
+                rowUpdates["revenueSharePeriods"] = []
+            } else if row.investmentType == .revenue_share {
+                rowUpdates["fundingStatus"] = FundingStatus.disbursed.rawValue
+                rowUpdates["principalSentByInvestorAt"] = FieldValue.delete()
+                rowUpdates["principalReceivedBySeekerAt"] = FieldValue.delete()
+                let months = max(1, row.finalTimelineMonths ?? agreement.termsSnapshot.maxDurationMonths ?? 1)
+                let start = row.acceptedAt ?? now
+                let periods = RevenueShareScheduleGenerator.generatePeriods(
+                    startDate: start,
+                    periodCount: months
+                )
+                rowUpdates["revenueSharePeriods"] = periods.map { $0.firestoreMap() }
+                rowUpdates["loanInstallments"] = []
             }
             try await db.collection("investments").document(row.id).updateData(rowUpdates)
 
@@ -854,27 +836,27 @@ final class InvestmentService {
         ])
     }
 
-    /// Investor marks that they sent payment for an installment (dual-confirmation).
+    /// Investor confirms they **received** this repayment (optionally after uploading receipt proof). Requires seeker to have confirmed payment sent first.
     func markLoanInstallmentPaidByInvestor(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
             guard userId == inv.investorId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
             guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            guard row.seekerMarkedReceivedAt != nil else { throw InvestmentServiceError.seekerMustConfirmPaymentFirst }
             var next = row
             next.investorMarkedPaidAt = Date()
-            if next.seekerMarkedReceivedAt != nil {
-                next.status = .confirmed_paid
-            } else {
-                next.status = .awaiting_confirmation
-            }
+            next.status = .confirmed_paid
             return next
         }
     }
 
-    /// Seeker marks that they received payment for an installment (dual-confirmation).
+    /// Seeker confirms they **sent** this installment payment. Requires at least one seeker payment proof image.
     func markLoanInstallmentReceivedBySeeker(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
             guard userId == inv.seekerId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
             guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            let hasSlip = !row.seekerProofImageURLs.isEmpty
+            let investorAlreadyAcked = row.investorMarkedPaidAt != nil
+            guard hasSlip || investorAlreadyAcked else { throw InvestmentServiceError.seekerPaymentProofRequired }
             var next = row
             next.seekerMarkedReceivedAt = Date()
             if next.investorMarkedPaidAt != nil {
@@ -927,9 +909,11 @@ final class InvestmentService {
         let url = asset.secureURL
 
         var row = rows[idx]
-        var proofs = row.proofImageURLs
-        proofs.append(url)
-        row.proofImageURLs = proofs
+        if userId == inv.seekerId {
+            row.seekerProofImageURLs.append(url)
+        } else if userId == inv.investorId {
+            row.investorProofImageURLs.append(url)
+        }
         rows[idx] = row
 
         let receivedTotal = Self.sumConfirmedReceived(rows: rows)
@@ -1005,6 +989,187 @@ final class InvestmentService {
             row.status != .confirmed_paid && row.dueDate < graceBoundary
         }
         return hasDefaultedInstallment ? .defaulted : previous
+    }
+
+    // MARK: - Revenue share periods
+
+    func declareRevenueForPeriod(
+        investmentId: String,
+        periodNo: Int,
+        declaredRevenue: Double,
+        userId: String
+    ) async throws {
+        try await mutateRevenueSharePeriod(investmentId: investmentId, periodNo: periodNo, userId: userId) { row, inv, allRows in
+            guard userId == inv.seekerId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
+            guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            guard declaredRevenue >= 0 else { throw InvestmentServiceError.invalidAmount }
+            let capAmount = Self.revenueShareCapAmount(for: inv)
+            let alreadyPaid = Self.sumConfirmedRevenueSharePaid(rows: allRows)
+            let remainingCap = max(0, capAmount - alreadyPaid)
+            let sharePct = max(0, inv.agreement?.termsSnapshot.revenueSharePercent ?? 0)
+            let calculated = min(remainingCap, (declaredRevenue * sharePct) / 100.0)
+            var next = row
+            next.declaredRevenue = declaredRevenue
+            next.expectedShareAmount = max(0, Self.round2(calculated))
+            next.seekerDeclaredAt = Date()
+            next.status = .awaiting_payment
+            return next
+        }
+    }
+
+    func markRevenueSharePeriodPaidBySeeker(
+        investmentId: String,
+        periodNo: Int,
+        userId: String
+    ) async throws {
+        try await mutateRevenueSharePeriod(investmentId: investmentId, periodNo: periodNo, userId: userId) { row, inv, _ in
+            guard userId == inv.seekerId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
+            guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            guard row.declaredRevenue != nil else { throw InvestmentServiceError.revenueDeclarationMissing }
+            let due = max(0, row.expectedShareAmount ?? 0)
+            if due > 0 {
+                guard !row.seekerProofImageURLs.isEmpty || row.investorMarkedReceivedAt != nil else {
+                    throw InvestmentServiceError.seekerPaymentProofRequired
+                }
+            }
+            var next = row
+            next.seekerMarkedSentAt = Date()
+            if next.investorMarkedReceivedAt != nil {
+                next.actualPaidAmount = Self.round2(due)
+                next.status = .confirmed_paid
+            } else {
+                next.status = .awaiting_confirmation
+            }
+            return next
+        }
+    }
+
+    func markRevenueSharePeriodReceivedByInvestor(
+        investmentId: String,
+        periodNo: Int,
+        userId: String
+    ) async throws {
+        try await mutateRevenueSharePeriod(investmentId: investmentId, periodNo: periodNo, userId: userId) { row, inv, _ in
+            guard userId == inv.investorId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
+            guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            guard row.seekerMarkedSentAt != nil else { throw InvestmentServiceError.seekerMustConfirmPaymentFirst }
+            guard row.declaredRevenue != nil else { throw InvestmentServiceError.revenueDeclarationMissing }
+            var next = row
+            next.investorMarkedReceivedAt = Date()
+            next.actualPaidAmount = Self.round2(max(0, next.expectedShareAmount ?? 0))
+            next.status = .confirmed_paid
+            return next
+        }
+    }
+
+    func attachRevenueSharePeriodProof(
+        investmentId: String,
+        periodNo: Int,
+        userId: String,
+        imageJPEG: Data
+    ) async throws {
+        let payload = ImageJPEGUploadPayload.jpegForUpload(from: imageJPEG)
+        guard !payload.isEmpty else {
+            throw NSError(domain: "Investtrust", code: 400, userInfo: [NSLocalizedDescriptionKey: "Could not read this image. Try another photo or take a new picture."])
+        }
+        guard payload.count <= Self.maxProofBytes else {
+            throw NSError(domain: "Investtrust", code: 400, userInfo: [NSLocalizedDescriptionKey: "Image is too large."])
+        }
+        try await InappropriateImageGate.validateImageDataForUpload(payload)
+
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .revenue_share, !inv.revenueSharePeriods.isEmpty else {
+            throw InvestmentServiceError.notRevenueShareOrNoSchedule
+        }
+        guard inv.fundingStatus == .disbursed else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
+        guard userId == inv.investorId || userId == inv.seekerId else {
+            throw InvestmentServiceError.wrongPartyForInstallmentAction
+        }
+
+        var rows = inv.revenueSharePeriods.sorted { $0.periodNo < $1.periodNo }
+        guard let idx = rows.firstIndex(where: { $0.periodNo == periodNo }) else {
+            throw InvestmentServiceError.revenuePeriodNotFound
+        }
+        let filename = "revproof-\(investmentId)-\(periodNo)-\(UUID().uuidString.prefix(8)).jpg"
+        let asset = try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
+        let url = asset.secureURL
+
+        var row = rows[idx]
+        if userId == inv.seekerId {
+            row.seekerProofImageURLs.append(url)
+        } else {
+            row.investorProofImageURLs.append(url)
+        }
+        rows[idx] = row
+
+        let paid = Self.sumConfirmedRevenueSharePaid(rows: rows)
+        let updates: [String: Any] = [
+            "revenueSharePeriods": rows.map { $0.firestoreMap() },
+            "receivedAmount": paid,
+            "updatedAt": Timestamp(date: Date())
+        ]
+        try await invRef.updateData(updates)
+    }
+
+    private func mutateRevenueSharePeriod(
+        investmentId: String,
+        periodNo: Int,
+        userId: String,
+        transform: (RevenueSharePeriod, InvestmentListing, [RevenueSharePeriod]) throws -> RevenueSharePeriod
+    ) async throws {
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .revenue_share, !inv.revenueSharePeriods.isEmpty else {
+            throw InvestmentServiceError.notRevenueShareOrNoSchedule
+        }
+        guard inv.fundingStatus == .disbursed else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
+        var rows = inv.revenueSharePeriods.sorted { $0.periodNo < $1.periodNo }
+        guard let idx = rows.firstIndex(where: { $0.periodNo == periodNo }) else {
+            throw InvestmentServiceError.revenuePeriodNotFound
+        }
+        rows[idx] = try transform(rows[idx], inv, rows)
+
+        let paid = Self.sumConfirmedRevenueSharePaid(rows: rows)
+        let cap = Self.revenueShareCapAmount(for: inv)
+        var updates: [String: Any] = [
+            "revenueSharePeriods": rows.map { $0.firestoreMap() },
+            "receivedAmount": paid,
+            "updatedAt": Timestamp(date: Date())
+        ]
+        let fullyClosedByRows = rows.allSatisfy { $0.status == .confirmed_paid }
+        if fullyClosedByRows || paid >= cap {
+            updates["status"] = "completed"
+            updates["fundingStatus"] = FundingStatus.closed.rawValue
+        }
+        try await invRef.updateData(updates)
+    }
+
+    private static func revenueShareCapAmount(for inv: InvestmentListing) -> Double {
+        if let t = inv.agreement?.termsSnapshot.targetReturnAmount, t > 0 {
+            return t
+        }
+        return round2(inv.investmentAmount * 1.25)
+    }
+
+    private static func sumConfirmedRevenueSharePaid(rows: [RevenueSharePeriod]) -> Double {
+        rows
+            .filter { $0.status == .confirmed_paid }
+            .reduce(0) { $0 + max(0, $1.actualPaidAmount ?? $1.expectedShareAmount ?? 0) }
+    }
+
+    private static func round2(_ x: Double) -> Double {
+        (x * 100).rounded() / 100
     }
 
     private func propagateAgreementUpdates(opportunityId: String, updates: [String: Any]) async throws {

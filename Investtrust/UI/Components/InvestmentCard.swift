@@ -100,6 +100,12 @@ struct InvestmentCard: View {
                     currentUserId: auth.currentUserID,
                     onRefresh: { await onRefreshLoan() }
                 )
+            } else if inv.isRevenueShareWithSchedule {
+                RevenueSharePeriodsSection(
+                    investment: inv,
+                    currentUserId: auth.currentUserID,
+                    onRefresh: { await onRefreshLoan() }
+                )
             }
 
             if let oid = inv.opportunityId, !oid.isEmpty {

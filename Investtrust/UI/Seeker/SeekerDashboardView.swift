@@ -183,7 +183,7 @@ struct SeekerDashboardView: View {
             myOpportunities = try await opps
             seekerInvestments = try await invs
         } catch {
-            loadError = (error as NSError).localizedDescription
+            loadError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 

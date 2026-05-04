@@ -53,7 +53,7 @@ final class AuthService {
                             self.roles = profile.roles
                         }
                     } catch {
-                        self.errorMessage = (error as NSError).localizedDescription
+                        self.errorMessage = FirestoreUserFacingMessage.text(for: error)
                     }
                 } else {
                     self.activeProfile = .investor
@@ -237,6 +237,7 @@ final class AuthService {
         errorMessage = nil
         isLoading = false
         sessionEpoch = 0
+        HomeWidgetSnapshotWriter.clearForSignedOut()
         Task {
             await SessionMediaCache.shared.clear()
             await MainActor.run {
@@ -260,6 +261,7 @@ final class AuthService {
         activeProfile = profile
         do {
             try await userService.updateActiveProfile(userID: userID, activeProfile: profile)
+            HomeWidgetSnapshotWriter.updateActiveProfile(auth: self)
         } catch {
             activeProfile = previous
             errorMessage = (error as NSError).localizedDescription

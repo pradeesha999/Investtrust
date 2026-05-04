@@ -44,10 +44,17 @@ struct LoanInstallment: Identifiable, Equatable, Hashable, Sendable {
     var interestComponent: Double
     var totalDue: Double
     var status: LoanInstallmentStatus
+    /// Investor acknowledges **receiving** this repayment (funds arrived).
     var investorMarkedPaidAt: Date?
+    /// Seeker acknowledges **sending** this repayment (after attaching payment proof).
     var seekerMarkedReceivedAt: Date?
-    /// HTTPS URLs or storage paths for payment proof images.
-    var proofImageURLs: [String]
+    /// Payment slip / transfer proof uploaded by the seeker.
+    var seekerProofImageURLs: [String]
+    /// Optional receipt or cash-deposit proof uploaded by the investor.
+    var investorProofImageURLs: [String]
+
+    /// Combined list (seeker first, then investor). Matches legacy `proofImageURLs` in Firestore when not split.
+    var proofImageURLs: [String] { seekerProofImageURLs + investorProofImageURLs }
 
     var isFullyConfirmed: Bool {
         investorMarkedPaidAt != nil && seekerMarkedReceivedAt != nil
@@ -68,7 +75,18 @@ extension LoanInstallment {
         let status = LoanInstallmentStatus(rawValue: statusRaw.lowercased()) ?? .scheduled
         let invPaid = (m["investorMarkedPaidAt"] as? Timestamp)?.dateValue()
         let seekRec = (m["seekerMarkedReceivedAt"] as? Timestamp)?.dateValue()
-        let proofs = m["proofImageURLs"] as? [String] ?? []
+        let seekerP = m["seekerProofImageURLs"] as? [String] ?? []
+        let investorP = m["investorProofImageURLs"] as? [String] ?? []
+        let legacy = m["proofImageURLs"] as? [String] ?? []
+        let seekerProofs: [String]
+        let investorProofs: [String]
+        if seekerP.isEmpty, investorP.isEmpty, !legacy.isEmpty {
+            seekerProofs = legacy
+            investorProofs = []
+        } else {
+            seekerProofs = seekerP
+            investorProofs = investorP
+        }
         self.init(
             installmentNo: installmentNo,
             dueDate: dueDate,
@@ -78,7 +96,8 @@ extension LoanInstallment {
             status: status,
             investorMarkedPaidAt: invPaid,
             seekerMarkedReceivedAt: seekRec,
-            proofImageURLs: proofs
+            seekerProofImageURLs: seekerProofs,
+            investorProofImageURLs: investorProofs
         )
     }
 
@@ -90,6 +109,8 @@ extension LoanInstallment {
             "interestComponent": interestComponent,
             "totalDue": totalDue,
             "status": status.rawValue,
+            "seekerProofImageURLs": seekerProofImageURLs,
+            "investorProofImageURLs": investorProofImageURLs,
             "proofImageURLs": proofImageURLs
         ]
         if let investorMarkedPaidAt {
@@ -149,7 +170,8 @@ enum LoanScheduleGenerator {
                     status: .scheduled,
                     investorMarkedPaidAt: nil,
                     seekerMarkedReceivedAt: nil,
-                    proofImageURLs: []
+                    seekerProofImageURLs: [],
+                    investorProofImageURLs: []
                 )
             ]
 
@@ -206,7 +228,8 @@ enum LoanScheduleGenerator {
                     status: .scheduled,
                     investorMarkedPaidAt: nil,
                     seekerMarkedReceivedAt: nil,
-                    proofImageURLs: []
+                    seekerProofImageURLs: [],
+                    investorProofImageURLs: []
                 )
             )
         }

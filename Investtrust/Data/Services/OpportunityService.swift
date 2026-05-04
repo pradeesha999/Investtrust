@@ -261,8 +261,10 @@ final class OpportunityService {
                 .filter(\.isOpenForInvesting)
                 .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
         }
-        let visible = try await filterOpenListingsStillAcceptingInvestors(openRows)
-        return Array(visible.prefix(limit))
+        // Do not call `filterOpenListingsStillAcceptingInvestors` here: it batches `investments` by
+        // `opportunityId`, and investors cannot read other parties’ investment docs — Firestore denies the query.
+        // Seeker flows that own the listings use `fetchSeekerListingsEligibleForOffers` for slot-aware filtering.
+        return Array(openRows.prefix(limit))
     }
 
     /// Per opportunity, counts investments that still occupy an investor slot (not declined / withdrawn / …).

@@ -27,15 +27,6 @@ struct OpportunityDetailView: View {
     @State private var isOpeningChat = false
     @State private var myLatestRequest: InvestmentListing?
     @State private var showInvestSheet = false
-    @State private var showOfferSheet = false
-    @State private var offerOpportunityId: String = ""
-    @State private var offerAmountText = ""
-    @State private var offerRateText = ""
-    @State private var offerTimelineText = ""
-    @State private var offerDescriptionText = ""
-    @State private var offerError: String?
-    @State private var isSendingOffer = false
-    @State private var showOfferSentAlert = false
     @State private var isRevokingRequest = false
     @State private var agreementReviewContext: AgreementReviewContext?
 
@@ -92,11 +83,6 @@ struct OpportunityDetailView: View {
         } message: {
             Text("Your investment request has been sent to the seeker.")
         }
-        .alert("Offer sent", isPresented: $showOfferSentAlert) {
-            Button("OK") {}
-        } message: {
-            Text("Your negotiated offer was saved and posted in the chat with this seeker.")
-        }
         .task(id: opportunityId) {
             await loadOpportunityFromServer()
         }
@@ -134,46 +120,6 @@ struct OpportunityDetailView: View {
                     await loadMyRequest(for: opportunity)
                     await MainActor.run {
                         showRequestSuccess = true
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showOfferSheet) {
-            if let op = opportunity {
-                NavigationStack {
-                    InvestmentOfferComposerForm(
-                        opportunities: [op],
-                        selectedOpportunityId: $offerOpportunityId,
-                        showOpportunityPicker: false,
-                        emptyListingMessage: nil,
-                        amountText: $offerAmountText,
-                        rateText: $offerRateText,
-                        timelineText: $offerTimelineText,
-                        descriptionText: $offerDescriptionText,
-                        errorText: offerError
-                    )
-                    .navigationTitle("Make offer")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showOfferSheet = false
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            if isSendingOffer {
-                                ProgressView()
-                            } else {
-                                Button("Send offer") {
-                                    Task { await submitOfferFromDetail() }
-                                }
-                            }
-                        }
-                    }
-                    .onAppear {
-                        offerOpportunityId = op.id
-                        seedOfferFieldsForOffer(from: op)
-                        offerError = nil
                     }
                 }
             }
@@ -1402,60 +1348,25 @@ struct OpportunityDetailView: View {
     private func floatingActionBar(for opportunity: OpportunityListing) -> some View {
         if auth.currentUserID != nil, auth.currentUserID != opportunity.ownerId {
             VStack(spacing: 8) {
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await openChatWithSeeker(opportunity: opportunity) }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isOpeningChat {
-                                ProgressView()
-                                    .tint(auth.accentColor)
-                                    .controlSize(.small)
-                            }
-                            Text("Contact seeker")
+                if showsPrimaryInvestmentFloatingAction(for: opportunity) {
+                    HStack(spacing: 10) {
+                        contactSeekerFloatingButton(for: opportunity)
+                        Button {
+                            performPrimaryFloatingAction(for: opportunity)
+                        } label: {
+                            Text(primaryFloatingButtonTitle(for: opportunity))
                                 .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: AppTheme.minTapTarget)
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: AppTheme.minTapTarget)
+                        .buttonStyle(.plain)
+                        .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                        .foregroundStyle(.white)
+                        .disabled(!isPrimaryFloatingActionEnabled(for: opportunity))
+                        .opacity(isPrimaryFloatingActionEnabled(for: opportunity) ? 1 : 0.45)
                     }
-                    .buttonStyle(.plain)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                            .stroke(auth.accentColor, lineWidth: 1.5)
-                    )
-                    .foregroundStyle(auth.accentColor)
-                    .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
-
-                    Button {
-                        performPrimaryFloatingAction(for: opportunity)
-                    } label: {
-                        Text(primaryFloatingButtonTitle(for: opportunity))
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: AppTheme.minTapTarget)
-                    }
-                    .buttonStyle(.plain)
-                    .background(auth.accentColor, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-                    .foregroundStyle(.white)
-                    .disabled(!isPrimaryFloatingActionEnabled(for: opportunity))
-                    .opacity(isPrimaryFloatingActionEnabled(for: opportunity) ? 1 : 0.45)
-                }
-
-                if canMakeNegotiatedOffer(for: opportunity) {
-                    Button {
-                        offerError = nil
-                        seedOfferFieldsForOffer(from: opportunity)
-                        offerOpportunityId = opportunity.id
-                        showOfferSheet = true
-                    } label: {
-                        Label("Make offer", systemImage: "slider.horizontal.3")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: AppTheme.minTapTarget)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(auth.accentColor)
-                    .disabled(isSendingOffer)
+                } else {
+                    contactSeekerFloatingButton(for: opportunity)
                 }
             }
             .padding(.horizontal, AppTheme.screenPadding)
@@ -1465,89 +1376,43 @@ struct OpportunityDetailView: View {
         }
     }
 
-    private func canMakeNegotiatedOffer(for o: OpportunityListing) -> Bool {
-        guard auth.currentUserID != nil, auth.currentUserID != o.ownerId else { return false }
-        guard profileReadyForInvesting else { return false }
-        guard o.isNegotiable else { return false }
-        let cap = max(1, o.maximumInvestors ?? 1)
-        guard cap <= 1 else { return false }
-        return o.isOpenForInvesting
+    private func contactSeekerFloatingButton(for opportunity: OpportunityListing) -> some View {
+        Button {
+            Task { await openChatWithSeeker(opportunity: opportunity) }
+        } label: {
+            HStack(spacing: 6) {
+                if isOpeningChat {
+                    ProgressView()
+                        .tint(auth.accentColor)
+                        .controlSize(.small)
+                }
+                Text("Contact seeker")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: AppTheme.minTapTarget)
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(auth.accentColor, lineWidth: 1.5)
+        )
+        .foregroundStyle(auth.accentColor)
+        .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
     }
 
-    private func seedOfferFieldsForOffer(from op: OpportunityListing) {
-        let cap = max(1, op.maximumInvestors ?? 1)
-        offerAmountText = cap > 1 ? "" : String(format: "%.0f", op.amountRequested)
-        offerRateText = op.interestRate > 0 ? String(format: "%.2f", op.interestRate) : ""
-        offerTimelineText = "\(max(1, op.repaymentTimelineMonths))"
-        offerDescriptionText = ""
-    }
-
-    private func submitOfferFromDetail() async {
-        guard let uid = auth.currentUserID,
-              let selected = opportunity else { return }
-        let cap = max(1, selected.maximumInvestors ?? 1)
-        let multi = cap > 1
-        let amountValue: Double?
-        if multi {
-            amountValue = InvestmentOfferComposerForm.offerAmountForOpportunity(selected)
-        } else {
-            let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
-            amountValue = Double(cleaned)
+    /// Hide request / “open my requests” once a deal is underway; keep signing / profile / new-request paths.
+    private func showsPrimaryInvestmentFloatingAction(for listing: OpportunityListing) -> Bool {
+        guard auth.currentUserID != nil, auth.currentUserID != listing.ownerId else { return false }
+        let req = myLatestRequest
+        let status = req?.status.lowercased() ?? ""
+        if let r = req, r.agreementStatus == .pending_signatures {
+            return true
         }
-        let rateValue = Double(offerRateText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let timelineDigits = offerTimelineText.filter(\.isNumber)
-        let timelineValue = Int(timelineDigits)
-        guard let amountValue, amountValue > 0,
-              let rateValue, rateValue > 0,
-              let timelineValue, timelineValue > 0 else {
-            await MainActor.run {
-                offerError = "Enter valid offer terms to continue."
-            }
-            return
+        if status == "accepted" || status == "active" || status == "completed" {
+            return false
         }
-
-        isSendingOffer = true
-        defer { isSendingOffer = false }
-        do {
-            let chatId = try await chatService.getOrCreateChat(
-                opportunityId: selected.id,
-                seekerId: selected.ownerId,
-                investorId: uid,
-                opportunityTitle: selected.title
-            )
-            let row = try await investmentService.createOrUpdateOfferRequest(
-                opportunity: selected,
-                investorId: uid,
-                proposedAmount: amountValue,
-                proposedInterestRate: rateValue,
-                proposedTimelineMonths: timelineValue,
-                description: offerDescriptionText,
-                source: .detail_sheet,
-                chatId: chatId
-            )
-            let snapshot = InvestmentOfferSnapshot(
-                investmentId: row.id,
-                opportunityId: selected.id,
-                title: selected.title,
-                amountText: InvestmentOfferComposerForm.lkr(row.offeredAmount ?? row.investmentAmount),
-                interestRateText: String(format: "%.2f%%", row.offeredInterestRate ?? row.finalInterestRate ?? rateValue),
-                timelineText: "\((row.offeredTimelineMonths ?? row.finalTimelineMonths ?? timelineValue)) months",
-                description: offerDescriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
-                isFixedAmount: multi
-            )
-            _ = try await chatService.sendInvestmentOfferCard(chatId: chatId, senderId: uid, snapshot: snapshot)
-            await loadMyRequest(for: selected)
-            await MainActor.run {
-                showOfferSheet = false
-                offerDescriptionText = ""
-                offerError = nil
-                showOfferSentAlert = true
-            }
-        } catch {
-            await MainActor.run {
-                offerError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
-            }
-        }
+        return true
     }
 
     private func primaryFloatingButtonTitle(for opportunity: OpportunityListing) -> String {
@@ -1558,7 +1423,6 @@ struct OpportunityDetailView: View {
             return r.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review agreement" : "Awaiting seeker sign"
         }
         if status == "pending" { return "Request sent" }
-        if status == "accepted" || status == "active" || status == "completed" { return "Open my requests" }
         if status == "declined" || status == "rejected" { return "Send another request" }
         return "Request investment"
     }
@@ -1576,7 +1440,6 @@ struct OpportunityDetailView: View {
 
     private func performPrimaryFloatingAction(for opportunity: OpportunityListing) {
         let req = myLatestRequest
-        let status = req?.status.lowercased() ?? ""
         if !profileReadyForInvesting {
             showProfileEdit = true
             return
@@ -1585,11 +1448,6 @@ struct OpportunityDetailView: View {
             if r.needsInvestorSignature(currentUserId: auth.currentUserID) {
                 agreementReviewContext = AgreementReviewContext(investment: r, opportunity: opportunity)
             }
-            return
-        }
-        if status == "accepted" || status == "active" || status == "completed" {
-            tabRouter.selectedTab = .action
-            tabRouter.investorInvestSegment = (status == "active" || status == "completed") ? .ongoing : .myRequests
             return
         }
         showInvestSheet = true

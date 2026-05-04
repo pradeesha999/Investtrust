@@ -110,7 +110,7 @@ struct InvestmentAgreementReviewView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 8)
-                                Text(participant.signedAt.map(Self.mediumDate) ?? "Pending")
+                                Text(participant.signedAt.map(formatMediumDate) ?? "Pending")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(participant.isSigned ? .green : .secondary)
                             }
@@ -134,7 +134,7 @@ struct InvestmentAgreementReviewView: View {
             }
 
             if let gen = investment.agreementGeneratedAt {
-                Text("Agreement prepared \(Self.mediumDate(gen))")
+                Text("Agreement prepared \(formatMediumDate(gen))")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -240,7 +240,7 @@ struct InvestmentAgreementReviewView: View {
             case .project:
                 bullet("Return type", t.expectedReturnType?.rawValue.capitalized ?? "—")
                 if let v = t.expectedReturnValue, !v.isEmpty { bullet("Expected return", v) }
-                if let d = t.completionDate { bullet("Completion", Self.mediumDate(d)) }
+                if let d = t.completionDate { bullet("Completion", formatMediumDate(d)) }
             case .custom:
                 if let s = t.customTermsSummary, !s.isEmpty {
                     Text(s)
@@ -279,7 +279,7 @@ struct InvestmentAgreementReviewView: View {
         return f.string(from: n) ?? String(format: "%.0f", v)
     }
 
-    private static func mediumDate(_ d: Date) -> String {
+    private func formatMediumDate(_ d: Date) -> String {
         let f = DateFormatter()
         f.dateStyle = .medium
         return f.string(from: d)

@@ -109,6 +109,16 @@ enum BiometricAuthService {
             return Failure.failed(
                 "Enroll Face ID or Touch ID in Settings. In the Simulator choose Features → Face ID → Enrolled."
             )
+        case .touchIDNotAvailable:
+            return Failure.notAvailable
+        case .touchIDNotEnrolled:
+            return Failure.failed(
+                "Enroll Touch ID in Settings. In the Simulator choose Features → Touch ID → Enrolled."
+            )
+        case .touchIDLockout:
+            return Failure.lockout
+        case .companionNotAvailable:
+            return Failure.notAvailable
         case .biometryLockout:
             return Failure.lockout
         case .notInteractive:

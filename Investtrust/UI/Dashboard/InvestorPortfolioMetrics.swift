@@ -196,6 +196,20 @@ enum InvestorPortfolioMetrics {
     }
 
     private static func revenueShareNext(_ r: InvestmentListing, horizon: Date) -> UpcomingPayment? {
+        if !r.revenueSharePeriods.isEmpty {
+            if let next = r.revenueSharePeriods
+                .filter({ $0.status != .confirmed_paid && $0.dueDate <= horizon })
+                .sorted(by: { $0.dueDate < $1.dueDate })
+                .first {
+                let amt = max(0, next.expectedShareAmount ?? 0)
+                return UpcomingPayment(
+                    date: max(next.dueDate, Date()),
+                    amount: amt,
+                    title: r.opportunityTitle.isEmpty ? "Revenue share" : r.opportunityTitle,
+                    isProjected: true
+                )
+            }
+        }
         guard let start = r.acceptedAt ?? r.createdAt else { return nil }
         guard let next = Calendar.current.date(byAdding: .month, value: 1, to: start), next <= horizon else { return nil }
         let guess = max(r.investmentAmount * 0.05, 1)

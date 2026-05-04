@@ -32,8 +32,8 @@ struct SeekerLoanPaymentConfirmBlock: View {
         Group {
             if let row, isSeeker, investment.loanRepaymentsUnlocked, row.status != .confirmed_paid {
                 VStack(alignment: .leading, spacing: 12) {
-                    if !row.proofImageURLs.isEmpty {
-                        Label("\(row.proofImageURLs.count) slip image(s) attached", systemImage: "paperclip.circle.fill")
+                    if !row.seekerProofImageURLs.isEmpty {
+                        Label("\(row.seekerProofImageURLs.count) payment slip(s) attached", systemImage: "paperclip.circle.fill")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -47,7 +47,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                             } else {
-                                Text("Confirm payment received")
+                                Text("Confirm payment sent")
                                     .font(.subheadline.weight(.semibold))
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
@@ -56,7 +56,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(auth.accentColor)
-                    .disabled(busy)
+                    .disabled(busy || (row.seekerProofImageURLs.isEmpty && row.investorMarkedPaidAt == nil))
 
                     Menu {
                         if VNDocumentCameraViewController.isSupported {
@@ -81,7 +81,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     .tint(auth.accentColor)
                     .disabled(busy)
 
-                    Text("Add a bank receipt or transfer screenshot. Both sides can attach proof; confirm when the payment has reached you.")
+                    Text("Attach your bank receipt or transfer screenshot, then confirm you sent this installment. The investor will review and confirm they received it (they can add a receipt photo too).")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)

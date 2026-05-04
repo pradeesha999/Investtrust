@@ -131,9 +131,11 @@ struct SeekerHomeDashboardView: View {
                             LazyVStack(spacing: 12) {
                                 ForEach(myOpportunities) { item in
                                     NavigationLink {
-                                        SeekerOpportunityDetailView(opportunity: item) {
-                                            Task { await loadHomeData() }
-                                        }
+                                        SeekerOpportunityDetailView(
+                                            opportunity: item,
+                                            onMutate: { Task { await loadHomeData() } },
+                                            onAcceptedRequest: { Task { await loadHomeData() } }
+                                        )
                                     } label: {
                                         homeListingRow(item)
                                     }
@@ -389,9 +391,11 @@ struct SeekerHomeDashboardView: View {
         let label = investmentDealRowLabel(inv)
         if let opp {
             NavigationLink {
-                SeekerOpportunityDetailView(opportunity: opp) {
-                    Task { await loadHomeData() }
-                }
+                SeekerOpportunityDetailView(
+                    opportunity: opp,
+                    onMutate: { Task { await loadHomeData() } },
+                    onAcceptedRequest: { Task { await loadHomeData() } }
+                )
             } label: {
                 label
             }
@@ -531,9 +535,11 @@ struct SeekerHomeDashboardView: View {
                 ForEach(opportunitiesNeedingAttention) { opp in
                     let n = pendingCount(for: opp.id)
                     NavigationLink {
-                        SeekerOpportunityDetailView(opportunity: opp) {
-                            Task { await loadHomeData() }
-                        }
+                        SeekerOpportunityDetailView(
+                            opportunity: opp,
+                            onMutate: { Task { await loadHomeData() } },
+                            onAcceptedRequest: { Task { await loadHomeData() } }
+                        )
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
@@ -584,9 +590,10 @@ struct SeekerHomeDashboardView: View {
             myOpportunities = try await opps
             seekerInvestments = try await invs
             profile = try await p
+            HomeWidgetSnapshotWriter.persistAfterSeekerHomeLoad(auth: auth, seekerInvestments: seekerInvestments)
         } catch {
             profile = nil
-            loadError = (error as NSError).localizedDescription
+            loadError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 

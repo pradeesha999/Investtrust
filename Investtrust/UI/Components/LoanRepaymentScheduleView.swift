@@ -404,64 +404,83 @@ struct LoanRepaymentScheduleView: View {
                     .foregroundStyle(.orange)
             }
 
-            if let ip = row.investorMarkedPaidAt {
-                metaLine("Investor marked sent", mediumDate(ip))
-            }
             if let sr = row.seekerMarkedReceivedAt {
-                metaLine("Seeker confirmed receipt", mediumDate(sr))
+                metaLine("Seeker confirmed payment sent", mediumDate(sr))
             }
-            if !row.proofImageURLs.isEmpty {
-                metaLine("Attachments", "\(row.proofImageURLs.count) proof image(s)")
+            if let ip = row.investorMarkedPaidAt {
+                metaLine("Investor confirmed receipt", mediumDate(ip))
+            }
+            if !row.seekerProofImageURLs.isEmpty {
+                metaLine("Payment slips (seeker)", "\(row.seekerProofImageURLs.count) image(s)")
+            }
+            if !row.investorProofImageURLs.isEmpty {
+                metaLine("Receipt proof (investor)", "\(row.investorProofImageURLs.count) image(s)")
             }
 
+            installmentProofThumbnails(row)
+
             if row.status != .confirmed_paid, investment.loanRepaymentsUnlocked {
+                let seekerReady = !row.seekerProofImageURLs.isEmpty || row.investorMarkedPaidAt != nil
+                let seekerConfirmed = row.seekerMarkedReceivedAt != nil
+                let investorConfirmed = row.investorMarkedPaidAt != nil
                 HStack(spacing: 10) {
-                    if isInvestor {
+                    if isSeeker, row.seekerMarkedReceivedAt == nil {
                         Button {
-                            Task { await markPaid(row.installmentNo) }
+                            Task { await markReceived(row.installmentNo) }
                         } label: {
-                            Text("Mark sent")
+                            Text("Confirm payment sent")
                                 .font(.subheadline.weight(.semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(auth.accentColor)
-                        .disabled(busyInstallment != nil)
+                        .disabled(busyInstallment != nil || !seekerReady)
                     }
-                    if isSeeker {
+                    if isInvestor, row.investorMarkedPaidAt == nil {
                         Button {
-                            Task { await markReceived(row.installmentNo) }
+                            Task { await markPaid(row.installmentNo) }
                         } label: {
-                            Text("Confirm received")
+                            Text("Confirm payment received")
                                 .font(.subheadline.weight(.semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
                         .tint(auth.accentColor)
-                        .disabled(busyInstallment != nil)
+                        .disabled(busyInstallment != nil || !seekerConfirmed)
                     }
                 }
 
-                if isInvestor || isSeeker {
+                if isSeeker, row.seekerMarkedReceivedAt == nil, !seekerReady {
+                    Text("Attach at least one payment slip before you can confirm you sent this installment.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                if isInvestor, !investorConfirmed, !seekerConfirmed {
+                    Text("Review the seeker’s payment proof above. After they confirm payment sent, acknowledge receipt here. You can attach your own receipt or cash-deposit photo first if you like.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if (isSeeker && row.seekerMarkedReceivedAt == nil) || (isInvestor && row.investorMarkedPaidAt == nil) {
                     Menu {
                         if VNDocumentCameraViewController.isSupported {
                             Button {
                                 proofTargetInstallment = row.installmentNo
                                 showDocCamera = true
                             } label: {
-                                Label("Scan proof", systemImage: "doc.viewfinder")
+                                Label(isInvestor ? "Scan receipt with camera" : "Scan slip with camera", systemImage: "doc.viewfinder")
                             }
                         }
                         Button {
                             libraryTargetInstallment = row.installmentNo
                             showLibrarySheet = true
                         } label: {
-                            Label("Add from library", systemImage: "photo")
+                            Label(isInvestor ? "Receipt from photos" : "Slip from photos", systemImage: "photo")
                         }
                     } label: {
-                        Label("Attach proof", systemImage: "paperclip")
+                        Label(isInvestor ? "Attach receipt proof" : "Attach payment slip", systemImage: "paperclip")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -482,6 +501,40 @@ struct LoanRepaymentScheduleView: View {
                 .strokeBorder(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
         )
         .appCardShadow()
+    }
+
+    @ViewBuilder
+    private func installmentProofThumbnails(_ row: LoanInstallment) -> some View {
+        let hasAny = !row.seekerProofImageURLs.isEmpty || !row.investorProofImageURLs.isEmpty
+        if !hasAny {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                if !row.seekerProofImageURLs.isEmpty {
+                    proofThumbnailStrip(title: "Seeker payment proof", urls: row.seekerProofImageURLs)
+                }
+                if !row.investorProofImageURLs.isEmpty {
+                    proofThumbnailStrip(title: "Investor receipt proof", urls: row.investorProofImageURLs)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func proofThumbnailStrip(title: String, urls: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(urls, id: \.self) { url in
+                        StorageBackedAsyncImage(reference: url, height: 80, cornerRadius: 10, feedThumbnail: true)
+                            .frame(width: 80, height: 80)
+                    }
+                }
+            }
+        }
     }
 
     private func statusPill(_ row: LoanInstallment) -> some View {

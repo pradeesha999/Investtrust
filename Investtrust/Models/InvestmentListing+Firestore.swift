@@ -115,6 +115,11 @@ extension InvestmentListing {
             return arr.compactMap { LoanInstallment(firestoreMap: $0) }
                 .sorted { $0.installmentNo < $1.installmentNo }
         }()
+        let revenueSharePeriods: [RevenueSharePeriod] = {
+            guard let arr = data["revenueSharePeriods"] as? [[String: Any]] else { return [] }
+            return arr.compactMap { RevenueSharePeriod(firestoreMap: $0) }
+                .sorted { $0.periodNo < $1.periodNo }
+        }()
 
         let moaPdfURL = (data["moaPdfURL"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -202,6 +207,7 @@ extension InvestmentListing {
             agreementGeneratedAt: agreementGeneratedAt,
             agreement: agreement,
             loanInstallments: loanInstallments,
+            revenueSharePeriods: revenueSharePeriods,
             moaPdfURL: moaPdfURL?.isEmpty == false ? moaPdfURL : nil,
             moaContentHash: moaContentHash?.isEmpty == false ? moaContentHash : nil,
             investorSignatureImageURL: investorSignatureImageURL?.isEmpty == false ? investorSignatureImageURL : nil,

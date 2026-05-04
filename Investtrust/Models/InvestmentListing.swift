@@ -52,6 +52,8 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     /// Generated when a **loan** agreement becomes fully signed (`agreementStatus == active`).
     let loanInstallments: [LoanInstallment]
+    /// Generated when a **revenue share** agreement becomes fully signed (`agreementStatus == active`).
+    let revenueSharePeriods: [RevenueSharePeriod]
 
     /// Final MOA PDF download URL after both parties sign (Cloudinary/Firebase).
     let moaPdfURL: String?
@@ -160,8 +162,16 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         investmentType == .loan && !loanInstallments.isEmpty
     }
 
+    var isRevenueShareWithSchedule: Bool {
+        investmentType == .revenue_share && !revenueSharePeriods.isEmpty
+    }
+
     var loanRepaymentsUnlocked: Bool {
         investmentType == .loan && fundingStatus == .disbursed
+    }
+
+    var revenueShareActionsUnlocked: Bool {
+        investmentType == .revenue_share && fundingStatus == .disbursed
     }
 
     var isOfferRequest: Bool {
@@ -171,6 +181,13 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     /// Next installment that still needs action (by due date).
     var nextOpenLoanInstallment: LoanInstallment? {
         loanInstallments
+            .filter { $0.status != .confirmed_paid }
+            .sorted { $0.dueDate < $1.dueDate }
+            .first
+    }
+
+    var nextOpenRevenueSharePeriod: RevenueSharePeriod? {
+        revenueSharePeriods
             .filter { $0.status != .confirmed_paid }
             .sorted { $0.dueDate < $1.dueDate }
             .first

@@ -259,6 +259,8 @@ struct SeekerOpportunityDetailView: View {
                         seekerMetricPill(title: "Left to pay", value: "LKR \(formatAmount(aggregate.remainingTotal))", tint: .primary)
                         seekerMetricPill(title: "Paid (confirmed)", value: "LKR \(formatAmount(aggregate.paidTotal))", tint: .green)
                     }
+                    .padding(.top, 10)
+                    
 
                     if pair.investment.loanRepaymentsUnlocked,
                        auth.currentUserID == pair.investment.seekerId,

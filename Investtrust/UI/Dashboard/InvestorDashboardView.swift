@@ -493,8 +493,9 @@ struct InvestorDashboardView: View {
             let (inv, prof) = try await (invTask, profileTask)
             investments = inv
             profile = prof
+            HomeWidgetSnapshotWriter.persistAfterInvestorDashboardLoad(auth: auth, investments: inv)
         } catch {
-            loadError = (error as NSError).localizedDescription
+            loadError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 }

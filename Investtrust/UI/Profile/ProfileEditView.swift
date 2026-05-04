@@ -152,7 +152,7 @@ struct ProfileEditView: View {
                 }
             }
         } catch {
-            loadError = (error as NSError).localizedDescription
+            loadError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 

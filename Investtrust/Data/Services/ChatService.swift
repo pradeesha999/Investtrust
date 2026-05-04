@@ -22,9 +22,13 @@ final class ChatService {
 
         let chatId = canonicalChatId(seekerId: seekerId, investorId: investorId)
         let ref = db.collection("chats").document(chatId)
-        let snapshot = try await ref.getDocument()
-        if snapshot.exists {
-            return chatId
+        do {
+            let snapshot = try await ref.getDocument()
+            if snapshot.exists {
+                return chatId
+            }
+        } catch {
+            // Unreadable legacy row at canonical id — fall through and create/repair via setData.
         }
 
         let now = Date()
@@ -254,28 +258,43 @@ final class ChatService {
     /// Finds a previously created chat regardless of legacy id format.
     private func findExistingPairChatId(seekerId: String, investorId: String) async throws -> String? {
         let canonicalId = canonicalChatId(seekerId: seekerId, investorId: investorId)
-        let canonicalSnapshot = try await db.collection("chats").document(canonicalId).getDocument()
-        if canonicalSnapshot.exists {
-            return canonicalId
+        do {
+            let canonicalSnapshot = try await db.collection("chats").document(canonicalId).getDocument()
+            if canonicalSnapshot.exists {
+                return canonicalId
+            }
+        } catch {
+            // Legacy or unreadable doc at canonical id — continue discovery below.
         }
 
-        // Avoid composite-index queries here: fetch by one field and filter in memory.
-        let snapshot = try await db.collection("chats")
-            .whereField("investorId", isEqualTo: investorId)
+        func pairMatchDocId(from snapshot: QuerySnapshot) -> String? {
+            snapshot.documents.first { doc in
+                let data = doc.data()
+                return (data["seekerId"] as? String) == seekerId
+                    && (data["investorId"] as? String) == investorId
+            }?.documentID
+        }
+
+        // `participantIds array-contains` keeps every result readable under strict rules.
+        let byInvestor = try await db.collection("chats")
+            .whereField("participantIds", arrayContains: investorId)
+            .limit(to: 200)
             .getDocuments()
+        if let id = pairMatchDocId(from: byInvestor) { return id }
 
-        let match = snapshot.documents.first { doc in
-            let data = doc.data()
-            return (data["seekerId"] as? String) == seekerId
-        }
-        return match?.documentID
+        let bySeeker = try await db.collection("chats")
+            .whereField("participantIds", arrayContains: seekerId)
+            .limit(to: 200)
+            .getDocuments()
+        return pairMatchDocId(from: bySeeker)
     }
 
     /// Deletes duplicate chat documents for a seeker/investor pair and keeps one.
     /// Note: Firestore subcollection docs are not recursively deleted by this call.
     private func cleanupDuplicatePairChats(seekerId: String, investorId: String, keepChatId: String) async throws {
         let snapshot = try await db.collection("chats")
-            .whereField("investorId", isEqualTo: investorId)
+            .whereField("participantIds", arrayContains: investorId)
+            .limit(to: 200)
             .getDocuments()
 
         let duplicates = snapshot.documents.filter { doc in
