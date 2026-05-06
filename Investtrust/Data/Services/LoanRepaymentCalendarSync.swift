@@ -68,6 +68,11 @@ enum LoanRepaymentCalendarSync {
         persistEventIds(newIds, investmentId: investmentId)
     }
 
+    /// Removes locally synced calendar rows and UserDefaults keys for this investment (e.g. after revoke or server delete).
+    static func clearReminders(forInvestmentId investmentId: String) {
+        removeStoredEvents(forInvestmentId: investmentId)
+    }
+
     /// Call when the user opens the repayment hub so the other party (who did not run finalization) gets the same reminders.
     static func syncIfEligible(investment: InvestmentListing, currentUserId: String?) async {
         guard investment.investmentType == .loan else { return }

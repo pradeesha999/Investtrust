@@ -16,20 +16,12 @@ final class ChatService {
         opportunityTitle: String
     ) async throws -> String {
         if let existing = try await findExistingPairChatId(seekerId: seekerId, investorId: investorId) {
-            try await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: existing)
+            try? await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: existing)
             return existing
         }
 
         let chatId = canonicalChatId(seekerId: seekerId, investorId: investorId)
-        let ref = db.collection("chats").document(chatId)
-        do {
-            let snapshot = try await ref.getDocument()
-            if snapshot.exists {
-                return chatId
-            }
-        } catch {
-            // Unreadable legacy row at canonical id — fall through and create/repair via setData.
-        }
+        let canonicalRef = db.collection("chats").document(chatId)
 
         let now = Date()
         let payload: [String: Any] = [
@@ -43,17 +35,24 @@ final class ChatService {
             "lastMessageAt": Timestamp(date: now),
             "updatedAt": Timestamp(date: now)
         ]
-        try await ref.setData(payload)
-        try await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: chatId)
-        return chatId
+        do {
+            try await canonicalRef.setData(payload)
+            try? await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: chatId)
+            return chatId
+        } catch {
+            // Some legacy deployments may have an unreadable canonical doc id.
+            // Fall back to creating a fresh chat document with an auto id.
+            let fallbackRef = db.collection("chats").document()
+            try await fallbackRef.setData(payload)
+            try? await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: fallbackRef.documentID)
+            return fallbackRef.documentID
+        }
     }
 
     func fetchThreads(for userId: String) async throws -> [ChatThread] {
-        let snapshot = try await db.collection("chats")
-            .whereField("participantIds", arrayContains: userId)
-            .getDocuments()
+        let docs = try await fetchChatDocumentsScoped(to: userId)
 
-        let allThreads = snapshot.documents
+        let allThreads = docs
             .compactMap { doc -> ChatThread? in
                 let data = doc.data()
                 return ChatThread(
@@ -255,6 +254,35 @@ final class ChatService {
         return "pair_\(parts[0])_\(parts[1])"
     }
 
+    /// Backward-compatible chat list query.
+    /// Prefer `participantIds` (current model), then fall back to legacy pair fields.
+    private func fetchChatDocumentsScoped(to userId: String) async throws -> [QueryDocumentSnapshot] {
+        do {
+            let snapshot = try await db.collection("chats")
+                .whereField("participantIds", arrayContains: userId)
+                .getDocuments()
+            return snapshot.documents
+        } catch {
+            let seekerSnapshot = try await db.collection("chats")
+                .whereField("seekerId", isEqualTo: userId)
+                .limit(to: 200)
+                .getDocuments()
+            let investorSnapshot = try await db.collection("chats")
+                .whereField("investorId", isEqualTo: userId)
+                .limit(to: 200)
+                .getDocuments()
+
+            var docsById: [String: QueryDocumentSnapshot] = [:]
+            for doc in seekerSnapshot.documents {
+                docsById[doc.documentID] = doc
+            }
+            for doc in investorSnapshot.documents {
+                docsById[doc.documentID] = doc
+            }
+            return Array(docsById.values)
+        }
+    }
+
     /// Finds a previously created chat regardless of legacy id format.
     private func findExistingPairChatId(seekerId: String, investorId: String) async throws -> String? {
         let canonicalId = canonicalChatId(seekerId: seekerId, investorId: investorId)
@@ -286,7 +314,20 @@ final class ChatService {
             .whereField("participantIds", arrayContains: seekerId)
             .limit(to: 200)
             .getDocuments()
-        return pairMatchDocId(from: bySeeker)
+        if let id = pairMatchDocId(from: bySeeker) { return id }
+
+        // Legacy fallback when participantIds was not written.
+        let legacyByInvestor = try await db.collection("chats")
+            .whereField("investorId", isEqualTo: investorId)
+            .limit(to: 200)
+            .getDocuments()
+        if let id = pairMatchDocId(from: legacyByInvestor) { return id }
+
+        let legacyBySeeker = try await db.collection("chats")
+            .whereField("seekerId", isEqualTo: seekerId)
+            .limit(to: 200)
+            .getDocuments()
+        return pairMatchDocId(from: legacyBySeeker)
     }
 
     /// Deletes duplicate chat documents for a seeker/investor pair and keeps one.

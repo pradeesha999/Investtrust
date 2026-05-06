@@ -116,7 +116,7 @@ final class InvestmentService {
         }
     }
 
-    /// Investor can revoke only a pending request they created.
+    /// Investor cancels a **pending** request by deleting its Firestore document (seeker UI and counts update immediately after refresh).
     func withdrawInvestmentRequest(investmentId: String, investorId: String) async throws {
         let ref = db.collection("investments").document(investmentId)
         let snap = try await ref.getDocument()
@@ -130,14 +130,14 @@ final class InvestmentService {
         guard status == "pending" else {
             throw InvestmentServiceError.cannotWithdraw
         }
-        try await ref.updateData([
-            "status": "withdrawn",
-            "withdrawnAt": FieldValue.serverTimestamp(),
-            "updatedAt": FieldValue.serverTimestamp()
-        ])
+        try await ref.delete()
+        await MainActor.run {
+            LoanRepaymentCalendarSync.clearReminders(forInvestmentId: investmentId)
+        }
     }
 
-    /// All investment rows for an opportunity (seeker dashboard). Requires `opportunityId` on each document (or nested `opportunity.id`).
+    /// All investment rows for an opportunity (seeker / listing-owner tooling only).
+    /// Do **not** call from an investor-facing flow: the query may include other parties’ documents and Firestore will reject the whole query.
     func fetchInvestmentsForOpportunity(opportunityId: String, limit: Int = 100) async throws -> [InvestmentListing] {
         let snap = try await db.collection("investments")
             .whereField("opportunityId", isEqualTo: opportunityId)
@@ -148,12 +148,15 @@ final class InvestmentService {
     }
 
     /// Investment rows where this user is the listing owner (`seekerId`), newest first.
+    /// Rows with status `withdrawn` are omitted (revokes now delete the document; this hides any legacy data).
     func fetchInvestmentsForSeeker(seekerId: String, limit: Int = 200) async throws -> [InvestmentListing] {
         let snap = try await db.collection("investments")
             .whereField("seekerId", isEqualTo: seekerId)
             .limit(to: limit)
             .getDocuments()
-        let rows = snap.documents.compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
+        let rows = snap.documents
+            .compactMap { InvestmentListing(id: $0.documentID, data: $0.data()) }
+            .filter { $0.status.lowercased() != "withdrawn" }
         return rows.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
@@ -436,6 +439,13 @@ final class InvestmentService {
             throw InvestmentServiceError.verificationMessageTooShort
         }
 
+        guard let serverOpportunity = try await opportunityService.fetchOpportunity(opportunityId: opportunity.id) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard serverOpportunity.ownerId == seekerId else {
+            throw InvestmentServiceError.notOpportunityOwner
+        }
+
         let invRef = db.collection("investments").document(investmentId)
         let snap = try await invRef.getDocument()
         guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
@@ -444,11 +454,11 @@ final class InvestmentService {
         guard inv.status.lowercased() == "pending" else {
             throw InvestmentServiceError.notPending
         }
-        guard inv.opportunityId == opportunity.id else {
+        guard inv.opportunityId == serverOpportunity.id else {
             throw InvestmentServiceError.notFound
         }
-        if let cap = opportunity.maximumInvestors, cap > 1 {
-            let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunity.id, limit: 500)
+        if let cap = serverOpportunity.maximumInvestors, cap > 1 {
+            let rows = try await fetchInvestmentsForOpportunity(opportunityId: serverOpportunity.id, limit: 500)
             let occupied = rows.filter { row in
                 guard row.id != inv.id else { return false }
                 let s = row.status.lowercased()
@@ -459,8 +469,8 @@ final class InvestmentService {
                 throw InvestmentServiceError.acceptanceCapacityReached
             }
         }
-        let owner = inv.seekerId ?? opportunity.ownerId
-        guard owner == seekerId, seekerId == opportunity.ownerId else {
+        let owner = inv.seekerId ?? serverOpportunity.ownerId
+        guard owner == seekerId else {
             throw InvestmentServiceError.notOpportunityOwner
         }
         guard let investorId = inv.investorId else {
@@ -468,8 +478,8 @@ final class InvestmentService {
         }
 
         let now = Date()
-        let acceptedInterestRate = inv.offeredInterestRate ?? inv.finalInterestRate ?? opportunity.interestRate
-        let acceptedTimelineMonths = inv.offeredTimelineMonths ?? inv.finalTimelineMonths ?? opportunity.repaymentTimelineMonths
+        let acceptedInterestRate = inv.offeredInterestRate ?? inv.finalInterestRate ?? serverOpportunity.interestRate
+        let acceptedTimelineMonths = inv.offeredTimelineMonths ?? inv.finalTimelineMonths ?? serverOpportunity.repaymentTimelineMonths
 
         var acceptedUpdates: [String: Any] = [
             "status": "accepted",
@@ -482,13 +492,13 @@ final class InvestmentService {
             acceptedUpdates["offerStatus"] = InvestmentOfferStatus.accepted.rawValue
         }
         try await invRef.updateData(acceptedUpdates)
-        try await reconcileMasterAgreementForOpportunity(opportunity: opportunity, seekerId: seekerId, now: now)
+        try await reconcileMasterAgreementForOpportunity(opportunity: serverOpportunity, seekerId: seekerId, now: now)
 
         let chatId = try await chatService.getOrCreateChat(
-            opportunityId: opportunity.id,
+            opportunityId: serverOpportunity.id,
             seekerId: seekerId,
             investorId: investorId,
-            opportunityTitle: opportunity.title
+            opportunityTitle: serverOpportunity.title
         )
         try await chatService.sendMessage(
             chatId: chatId,
@@ -521,9 +531,13 @@ final class InvestmentService {
         }
 
         var agreement = inv.agreement
-        if agreement == nil, let oid = inv.opportunityId {
+        // Only the seeker may list all `investments` for an opportunity; investors hit PERMISSION_DENIED.
+        if agreement == nil, let oid = inv.opportunityId,
+           let seeker = inv.seekerId, userId == seeker {
             let rows = try await fetchInvestmentsForOpportunity(opportunityId: oid, limit: 500)
-            agreement = rows.first(where: { $0.agreement?.agreementId == oid })?.agreement
+            agreement = rows.first(where: {
+                $0.agreement?.agreementId == oid || $0.id == investmentId
+            })?.agreement
         }
         guard var agreement else {
             throw InvestmentServiceError.notFound
@@ -587,11 +601,16 @@ final class InvestmentService {
             updates["investorSignatureImageURL"] = uploaded.secureURL
             updates["signedByInvestorUserId"] = userId
         }
-        if let opId = inv.opportunityId {
-            try await propagateAgreementUpdates(opportunityId: opId, updates: updates)
-        } else {
-            try await invRef.updateData(updates)
+        let syncIds: [String] = {
+            let linked = agreement.linkedInvestmentIds.filter { !$0.isEmpty }
+            if !linked.isEmpty { return Array(Set(linked)) }
+            return [investmentId]
+        }()
+        let batch = db.batch()
+        for syncId in syncIds {
+            batch.updateData(updates, forDocument: db.collection("investments").document(syncId))
         }
+        try await batch.commit()
 
         let mergedSnap = try await invRef.getDocument()
         guard let mergedData = mergedSnap.data(),
@@ -648,14 +667,20 @@ final class InvestmentService {
         triggeringUserId: String
     ) async throws {
         let opportunityId = inv.opportunityId ?? agreement.agreementId
-        let linkedRows: [InvestmentListing]
-        if !opportunityId.isEmpty {
-            let all = try await fetchInvestmentsForOpportunity(opportunityId: opportunityId, limit: 500)
-            linkedRows = all.filter { row in
-                let s = row.status.lowercased()
-                return s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active
-            }
-        } else {
+        let candidateIds: [String] = {
+            let linked = agreement.linkedInvestmentIds.filter { !$0.isEmpty }
+            if !linked.isEmpty { return Array(Set(linked)) }
+            return [inv.id]
+        }()
+        var linkedRows: [InvestmentListing] = []
+        for docId in candidateIds {
+            let snap = try await db.collection("investments").document(docId).getDocument()
+            guard let data = snap.data(), let row = InvestmentListing(id: docId, data: data) else { continue }
+            let s = row.status.lowercased()
+            guard s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active else { continue }
+            linkedRows.append(row)
+        }
+        if linkedRows.isEmpty {
             linkedRows = [inv]
         }
 
@@ -704,6 +729,8 @@ final class InvestmentService {
             updates["moaUploadError"] = moaUploadErrorMessage
         }
 
+        var finalizeRows: [(row: InvestmentListing, updates: [String: Any], loanSchedule: [LoanInstallment]?)] = []
+        finalizeRows.reserveCapacity(linkedRows.count)
         for row in linkedRows {
             var rowUpdates = updates
             var loanScheduleForCalendar: [LoanInstallment]?
@@ -738,15 +765,23 @@ final class InvestmentService {
                 rowUpdates["revenueSharePeriods"] = periods.map { $0.firestoreMap() }
                 rowUpdates["loanInstallments"] = []
             }
-            try await db.collection("investments").document(row.id).updateData(rowUpdates)
+            finalizeRows.append((row, rowUpdates, loanScheduleForCalendar))
+        }
 
-            if let schedule = loanScheduleForCalendar {
-                let title = row.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let commitBatch = db.batch()
+        for item in finalizeRows {
+            commitBatch.updateData(item.updates, forDocument: db.collection("investments").document(item.row.id))
+        }
+        try await commitBatch.commit()
+
+        for item in finalizeRows {
+            if let schedule = item.loanSchedule {
+                let title = item.row.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? agreement.opportunityTitle
-                    : row.opportunityTitle
-                let rowId = row.id
-                let investor = row.investorId
-                let seeker = row.seekerId
+                    : item.row.opportunityTitle
+                let rowId = item.row.id
+                let investor = item.row.investorId
+                let seeker = item.row.seekerId
                 let uid = triggeringUserId
                 Task { @MainActor in
                     await LoanRepaymentCalendarSync.replaceInstallmentReminders(
@@ -761,20 +796,26 @@ final class InvestmentService {
             }
         }
 
+        // Rules require `senderId == request.auth.uid`. Finalization may be triggered by seeker or investor.
+        // Chat is best-effort: if it fails, investment rows are already committed — don’t surface a false failure.
         if let opId = inv.opportunityId {
             for row in linkedRows {
                 guard let investorId = row.investorId, let seekerUid = row.seekerId else { continue }
-                let chatId = try await chatService.getOrCreateChat(
-                    opportunityId: opId,
-                    seekerId: seekerUid,
-                    investorId: investorId,
-                    opportunityTitle: row.opportunityTitle
-                )
-                try await chatService.sendMessage(
-                    chatId: chatId,
-                    senderId: seekerUid,
-                    text: "Agreement fully signed by all required parties. MOA PDF is available on the investment record. Proceed with funding."
-                )
+                do {
+                    let chatId = try await chatService.getOrCreateChat(
+                        opportunityId: opId,
+                        seekerId: seekerUid,
+                        investorId: investorId,
+                        opportunityTitle: row.opportunityTitle
+                    )
+                    try await chatService.sendMessage(
+                        chatId: chatId,
+                        senderId: triggeringUserId,
+                        text: "Agreement fully signed by all required parties. MOA PDF is available on the investment record. Proceed with funding."
+                    )
+                } catch {
+                    // Non-fatal: MOA state is already on Firestore.
+                }
             }
         }
     }
@@ -1172,17 +1213,6 @@ final class InvestmentService {
         (x * 100).rounded() / 100
     }
 
-    private func propagateAgreementUpdates(opportunityId: String, updates: [String: Any]) async throws {
-        let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunityId, limit: 500)
-        let linked = rows.filter { row in
-            let s = row.status.lowercased()
-            return s == "accepted" || s == "active" || s == "completed" || row.agreementStatus == .pending_signatures || row.agreementStatus == .active
-        }
-        for row in linked {
-            try await db.collection("investments").document(row.id).updateData(updates)
-        }
-    }
-
     private func reconcileMasterAgreementForOpportunity(opportunity: OpportunityListing, seekerId: String, now: Date) async throws {
         let rows = try await fetchInvestmentsForOpportunity(opportunityId: opportunity.id, limit: 500)
         let activeRows = rows.filter { row in
@@ -1228,6 +1258,7 @@ final class InvestmentService {
             opportunity: opportunity,
             agreementId: opportunity.id,
             requiredSignerIds: requiredSignerIds,
+            linkedInvestmentIds: activeRows.map(\.id),
             participants: participants,
             investorName: representativeInvestor,
             seekerName: seekerDisplay,
@@ -1235,14 +1266,17 @@ final class InvestmentService {
             at: now
         )
 
+        let moaBatch = db.batch()
+        let pendingPayload: [String: Any] = [
+            "agreementStatus": AgreementStatus.pending_signatures.rawValue,
+            "agreementGeneratedAt": Timestamp(date: now),
+            "agreement": agreementPayload,
+            "updatedAt": Timestamp(date: now)
+        ]
         for row in activeRows {
-            try await db.collection("investments").document(row.id).updateData([
-                "agreementStatus": AgreementStatus.pending_signatures.rawValue,
-                "agreementGeneratedAt": Timestamp(date: now),
-                "agreement": agreementPayload,
-                "updatedAt": Timestamp(date: now)
-            ])
+            moaBatch.updateData(pendingPayload, forDocument: db.collection("investments").document(row.id))
         }
+        try await moaBatch.commit()
     }
 
     private static func displayName(userService: UserService, userId: String, fallback: String) async -> String {
@@ -1269,6 +1303,7 @@ final class InvestmentService {
         opportunity: OpportunityListing,
         agreementId: String,
         requiredSignerIds: [String],
+        linkedInvestmentIds: [String],
         participants: [AgreementSignerSnapshot],
         investorName: String,
         seekerName: String,
@@ -1296,6 +1331,7 @@ final class InvestmentService {
             "agreementVersion": 1,
             "termsSnapshotHash": termsHash,
             "requiredSignerIds": requiredSignerIds,
+            "linkedInvestmentIds": linkedInvestmentIds,
             "participants": participantMaps,
             "opportunityTitle": opportunity.title,
             "investorName": investorName,

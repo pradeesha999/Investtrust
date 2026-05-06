@@ -458,10 +458,17 @@ final class OpportunityService {
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
-    /// Open listings from this seeker that still have investor capacity (same rules as the marketplace).
-    func fetchSeekerListingsEligibleForOffers(ownerId: String, limit: Int = 100) async throws -> [OpportunityListing] {
+    /// Open listings from this seeker. With `refineByInvestorCapacity` (default), filters out listings at max
+    /// investors via `investments` (seeker-only; requires read access to those rows). Set to `false` when the
+    /// caller is an **investor** (e.g. chat “make offer”) — otherwise Firestore denies the batched query.
+    func fetchSeekerListingsEligibleForOffers(
+        ownerId: String,
+        limit: Int = 100,
+        refineByInvestorCapacity: Bool = true
+    ) async throws -> [OpportunityListing] {
         let rows = try await fetchSeekerListings(ownerId: ownerId, limit: limit)
         let open = rows.filter(\.isOpenForInvesting)
+        guard refineByInvestorCapacity else { return open }
         return try await filterOpenListingsStillAcceptingInvestors(open)
     }
 

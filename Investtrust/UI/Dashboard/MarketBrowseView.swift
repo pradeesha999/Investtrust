@@ -194,8 +194,10 @@ struct MarketBrowseView: View {
     }
 
     private func latestRequestsMap(from rows: [InvestmentListing]) -> [String: InvestmentListing] {
+        // Ongoing / live deals use the Ongoing tab; don’t drive Explore badges from them.
+        let pipeline = rows.filter { !InvestorPortfolioMetrics.isOngoingPortfolioRow($0) }
         var map: [String: InvestmentListing] = [:]
-        for row in rows {
+        for row in pipeline {
             guard let oppId = row.opportunityId, !oppId.isEmpty else { continue }
             if let existing = map[oppId] {
                 if (row.createdAt ?? .distantPast) > (existing.createdAt ?? .distantPast) {

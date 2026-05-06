@@ -1338,8 +1338,10 @@ struct SeekerOpportunityDetailView: View {
         defer { isLoadingInvestments = false }
         do {
             let rows = try await investmentService.fetchInvestmentsForOpportunity(opportunityId: opportunity.id)
-            investments = rows
-            investorProfilesById = await loadInvestorProfiles(for: rows)
+            // Revoked requests are deleted in Firestore; hide legacy `withdrawn` rows so the sheet doesn’t show stuck cards without actions.
+            let visible = rows.filter { $0.status.lowercased() != "withdrawn" }
+            investments = visible
+            investorProfilesById = await loadInvestorProfiles(for: visible)
         } catch {
             loadError = (error as NSError).localizedDescription
         }

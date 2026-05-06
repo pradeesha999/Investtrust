@@ -76,10 +76,10 @@ struct OpportunityCard: View {
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Min ticket")
+                        Text("Final return")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("LKR \(opp.formattedMinimumLKR)")
+                        Text(projectedFinalReturnText)
                             .font(.caption.weight(.semibold))
                     }
                     Spacer(minLength: 0)
@@ -135,6 +135,19 @@ struct OpportunityCard: View {
         let f = DateFormatter()
         f.dateStyle = .medium
         return f.string(from: d)
+    }
+
+    private var projectedFinalReturnText: String {
+        let principal = opp.amountRequested
+        let rate = opp.interestRate
+        let months = opp.repaymentTimelineMonths
+        guard principal > 0, rate > 0, months > 0 else { return "—" }
+        let total = LoanScheduleGenerator.totalRepayable(
+            principal: principal,
+            annualRatePercent: rate,
+            termMonths: months
+        )
+        return "LKR \(OpportunityFinancialPreview.formatLKRInteger(total))"
     }
 
     /// Feed: images only (first photo, Cloudinary-thumbnail when applicable). Video plays on the detail screen — never load a player here.

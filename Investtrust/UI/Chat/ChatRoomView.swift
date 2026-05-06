@@ -16,6 +16,10 @@ struct ChatRoomView: View {
     @State private var listener: ListenerRegistration?
     @State private var sendError: String?
     @State private var showSendError = false
+    @State private var loadError: String?
+    @State private var showLoadError = false
+    @State private var offerComposerLoadError: String?
+    @State private var showOfferComposerLoadError = false
 
     @State private var partnerName: String = "Chat"
     @State private var partnerAvatarURL: URL?
@@ -129,6 +133,16 @@ struct ChatRoomView: View {
             Button("OK") { sendError = nil }
         } message: {
             Text(sendError ?? "")
+        }
+        .alert("Could not load messages", isPresented: $showLoadError) {
+            Button("OK") { loadError = nil }
+        } message: {
+            Text(loadError ?? "")
+        }
+        .alert("Couldn’t load offers", isPresented: $showOfferComposerLoadError) {
+            Button("OK") { offerComposerLoadError = nil }
+        } message: {
+            Text(offerComposerLoadError ?? "")
         }
         .sheet(isPresented: $showOfferSheet) {
             offerComposerSheet
@@ -470,6 +484,13 @@ struct ChatRoomView: View {
             .collection("chats").document(chatId).collection("messages")
             .order(by: "createdAt", descending: false)
             .addSnapshotListener { snapshot, error in
+                if let error {
+                    Task { @MainActor in
+                        loadError = (error as NSError).localizedDescription
+                        showLoadError = true
+                    }
+                    return
+                }
                 guard let docs = snapshot?.documents else { return }
                 let parsed: [ChatMessage] = docs.compactMap { doc in
                     let data = doc.data()
@@ -615,7 +636,11 @@ struct ChatRoomView: View {
         }
         guard canCurrentUserMakeOffer, let pair = participantIds else { return }
         do {
-            let openRows = try await opportunityService.fetchSeekerListingsEligibleForOffers(ownerId: pair.seekerId, limit: 100)
+            let openRows = try await opportunityService.fetchSeekerListingsEligibleForOffers(
+                ownerId: pair.seekerId,
+                limit: 100,
+                refineByInvestorCapacity: false
+            )
             await MainActor.run {
                 offerOpportunities = openRows
                 offerOpportunityId = openRows.first?.id ?? ""
@@ -635,7 +660,8 @@ struct ChatRoomView: View {
             }
         } catch {
             await MainActor.run {
-                presentSendError((error as NSError).localizedDescription)
+                offerComposerLoadError = (error as NSError).localizedDescription
+                showOfferComposerLoadError = true
             }
         }
     }

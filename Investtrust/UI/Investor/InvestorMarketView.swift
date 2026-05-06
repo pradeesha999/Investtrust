@@ -11,11 +11,12 @@ struct InvestorMarketView: View {
     private let investmentService = InvestmentService()
 
     var filteredInvestments: [InvestmentListing] {
+        let base = InvestorPortfolioMetrics.rowsForMyRequestsTab(investments)
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return investments
+            return base
         }
         let q = searchText.lowercased()
-        return investments.filter { $0.opportunityTitle.lowercased().contains(q) }
+        return base.filter { $0.opportunityTitle.lowercased().contains(q) }
     }
 
     var body: some View {

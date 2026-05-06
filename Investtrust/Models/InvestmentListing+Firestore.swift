@@ -269,6 +269,9 @@ extension InvestmentListing {
         if requiredSignerIds.isEmpty, !participants.isEmpty {
             requiredSignerIds = participants.map(\.signerId)
         }
+        let linkedInvestmentIds: [String] = (m["linkedInvestmentIds"] as? [String] ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         let title = (m["opportunityTitle"] as? String) ?? ""
         let investorName = (m["investorName"] as? String) ?? ""
         let seekerName = (m["seekerName"] as? String) ?? ""
@@ -286,6 +289,7 @@ extension InvestmentListing {
             agreementVersion: max(1, agreementVersion),
             termsSnapshotHash: termsSnapshotHash,
             requiredSignerIds: requiredSignerIds,
+            linkedInvestmentIds: linkedInvestmentIds,
             participants: participants,
             opportunityTitle: title,
             investorName: investorName,

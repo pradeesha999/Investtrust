@@ -202,16 +202,6 @@ struct OpportunityDetailView: View {
                 incomeFundsTimelineSection(for: opportunity)
                     .padding(.horizontal, AppTheme.screenPadding)
 
-                infoCard(title: "Funding setup", subtitle: "How this round is structured", systemImage: "person.3.fill") {
-                    fundingStructureContent(for: opportunity)
-                }
-                .padding(.horizontal, AppTheme.screenPadding)
-
-                infoCard(title: "Deal terms", subtitle: dealTermsSubtitle(for: opportunity), systemImage: "doc.text.fill") {
-                    termsContent(for: opportunity)
-                }
-                .padding(.horizontal, AppTheme.screenPadding)
-
                 infoCard(title: "Execution plan", subtitle: "Milestones from investment acceptance", systemImage: "list.bullet.rectangle.fill") {
                     milestonesTimelineContent(for: opportunity)
                 }
@@ -402,8 +392,7 @@ struct OpportunityDetailView: View {
 
         infoCard(title: "Key numbers", subtitle: "Illustrative — not financial advice", systemImage: "chart.bar.fill") {
             VStack(alignment: .leading, spacing: 14) {
-                keyNumbersPrimaryMetric(for: o)
-                calloutRow(title: "Required investment", value: ticketText)
+                keyNumbersPrimaryMetric(for: o, ticket: ticket)
                 Group {
                     switch o.investmentType {
                     case .loan:
@@ -447,19 +436,13 @@ struct OpportunityDetailView: View {
                     columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                     spacing: 10
                 ) {
-                    metricTile(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
                     metricTile(
-                        title: "Interest amount",
-                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
-                        tint: auth.accentColor
+                        title: "Investment amount",
+                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(ticket))",
+                        tint: .primary
                     )
                     metricTile(
-                        title: "Profit",
-                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
-                        tint: .green
-                    )
-                    metricTile(
-                        title: "Total back (revenue)",
+                        title: "Final amount returned",
                         value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))",
                         tint: .green
                     )
@@ -490,25 +473,39 @@ struct OpportunityDetailView: View {
     }
 
     @ViewBuilder
-    private func keyNumbersPrimaryMetric(for o: OpportunityListing) -> some View {
+    private func keyNumbersPrimaryMetric(for o: OpportunityListing, ticket: Double) -> some View {
         switch o.investmentType {
         case .loan:
             if let rate = o.terms.interestRate {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("\(formatRate(rate))%")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(auth.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Interest rate")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        if let m = o.terms.repaymentTimelineMonths {
-                            Text("\(m) months · \((o.terms.repaymentFrequency ?? .monthly).displayName)")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                        }
+                if let months = o.terms.repaymentTimelineMonths, months > 0,
+                   let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+                    principal: ticket,
+                    annualRatePercent: rate,
+                    termMonths: months,
+                    plan: LoanRepaymentPlan.from(o.terms.repaymentFrequency)
+                   ) {
+                    HStack(spacing: 8) {
+                        heroLoanMetric(
+                            title: "Interest rate",
+                            value: "\(formatRate(rate))%",
+                            tint: auth.accentColor
+                        )
+                        heroLoanMetric(
+                            title: "Timeline",
+                            value: "\(months) months",
+                            tint: .primary
+                        )
+                        heroLoanMetric(
+                            title: "Final profit",
+                            value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
+                            tint: .green
+                        )
                     }
-                    Spacer(minLength: 0)
+                } else {
+                    HStack(spacing: 8) {
+                        heroLoanMetric(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
+                        heroLoanMetric(title: "Timeline", value: "—", tint: .primary)
+                    }
                 }
             } else {
                 Text("—")
@@ -590,6 +587,22 @@ struct OpportunityDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func heroLoanMetric(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     @ViewBuilder
@@ -755,7 +768,7 @@ struct OpportunityDetailView: View {
                 }
             }
         } else {
-            Text("Once this listing has a clear rate and repayment timeline, you’ll see an estimated return on the minimum ticket here.")
+            Text("Once this listing has a clear rate and timeline, you’ll see the projected final profit and total returned amount here.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

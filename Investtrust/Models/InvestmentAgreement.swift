@@ -61,6 +61,8 @@ struct InvestmentAgreementSnapshot: Equatable, Hashable, Sendable {
     var termsSnapshotHash: String
     /// Required signer user IDs.
     var requiredSignerIds: [String]
+    /// Investment document IDs that share this MOA (written at acceptance). Lets signers sync signatures without listing the whole `investments` collection.
+    var linkedInvestmentIds: [String]
     /// Snapshot of all participants and their signature state.
     var participants: [AgreementSignerSnapshot]
     var opportunityTitle: String

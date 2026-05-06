@@ -71,6 +71,33 @@ enum InvestorPortfolioMetrics {
         rows.filter { $0.status.lowercased() == "completed" }.count
     }
 
+    // MARK: - Investor Invest tab (My requests vs Ongoing)
+
+    /// Rows that belong in **Ongoing** — live MOA / operational deal. Not shown under **My requests**.
+    static func isOngoingPortfolioRow(_ inv: InvestmentListing) -> Bool {
+        let s = inv.status.lowercased()
+        if inv.agreementStatus == .active { return true }
+        if s == "active" { return true }
+        if s == "completed" { return true }
+        return false
+    }
+
+    /// **My requests** list: pre-live pipeline only, and a single row per opportunity (newest `createdAt` wins).
+    /// Hides a superseded **declined** row after the investor submits a newer request for the same listing.
+    static func rowsForMyRequestsTab(_ rows: [InvestmentListing]) -> [InvestmentListing] {
+        let pipeline = rows.filter { !isOngoingPortfolioRow($0) }
+        let byOpp = Dictionary(grouping: pipeline) { inv -> String in
+            if let oid = inv.opportunityId, !oid.isEmpty { return oid }
+            return inv.id
+        }
+        let picked = byOpp.values.compactMap { group -> InvestmentListing? in
+            group.max { a, b in
+                (a.createdAt ?? .distantPast) < (b.createdAt ?? .distantPast)
+            }
+        }
+        return picked.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+    }
+
     static func phase(rows: [InvestmentListing]) -> DashboardPhase {
         if rows.isEmpty { return .newUser }
         let hasActive = rows.contains { $0.agreementStatus == .active }
