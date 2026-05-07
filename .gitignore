@@ -1,0 +1,9 @@
+node_modules/
+.firebase/
+*-debug.log
+npm-debug.log*
+
+# Local Xcode / tooling (keep repo root clean)
+.derivedData/
+google-cloud-sdk/
+*.tar.gz

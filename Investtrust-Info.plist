@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLOUDINARY_CLOUD_NAME</key>
+	<string>dic8bbkur</string>
+	<key>CLOUDINARY_UPLOAD_PRESET</key>
+	<string>Investtrust</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Investtrust needs photo library access to attach opportunity media.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Investtrust uses the camera to scan payment receipts and capture documents.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Investtrust uses Face ID so only you can confirm signing the memorandum of agreement.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Investtrust can add repayment due dates to your calendar with amounts and a reminder one day before each payment.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1086968973516-j3f0vb3rs8uunqq8nhf8afmbr12fdh4c</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

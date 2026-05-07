@@ -1,0 +1,165 @@
+rules_version = '2';
+
+// Investtrust — replace the temporary open rules before they expire.
+// Deploy: Firebase Console → Firestore → Rules → Publish, or `firebase deploy --only firestore:rules`
+//
+// Client note: do NOT run unscoped list queries on `investments` (e.g. orderBy + limit on the whole
+// collection). Firestore will reject the query if it could return documents the user may not read.
+//
+// Open / “no rules” mode: anyone with your Firebase API keys could read or wipe your database.
+// Do not ship that. For a temporary dev-only window Firebase used to offer test rules with an expiry;
+// prefer staying signed-in + the rules below instead.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // --- users/{userId} ---
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isUser(userId);
+      allow delete: if false;
+    }
+
+    // --- opportunities/{opportunityId} ---
+    match /opportunities/{opportunityId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    function investmentParty(data) {
+      return data.investorId == request.auth.uid
+        || data.seekerId == request.auth.uid
+        || ('investor' in data && data.investor == request.auth.uid);
+    }
+
+    function opportunityOwnerId(oppId) {
+      return get(/databases/$(database)/documents/opportunities/$(oppId)).data.ownerId;
+    }
+
+    // Some legacy `investments` rows store the listing id only under `opportunity.id` (no top-level `opportunityId`).
+    function investmentSeekerIsListingOwner(data) {
+      return (
+        (
+          'opportunityId' in data
+          && data.opportunityId is string
+          && exists(/databases/$(database)/documents/opportunities/$(data.opportunityId))
+          && opportunityOwnerId(data.opportunityId) == request.auth.uid
+        )
+        || (
+          'opportunity' in data
+          && data.opportunity is map
+          && 'id' in data.opportunity
+          && data.opportunity.id is string
+          && exists(/databases/$(database)/documents/opportunities/$(data.opportunity.id))
+          && opportunityOwnerId(data.opportunity.id) == request.auth.uid
+        )
+      );
+    }
+
+    // Chat: prefer `participantIds`, but older docs may only have seekerId/investorId.
+    function chatParticipant(data) {
+      return signedIn() && (
+        ('participantIds' in data && data.participantIds is list && request.auth.uid in data.participantIds)
+        || ('seekerId' in data && data.seekerId == request.auth.uid)
+        || ('investorId' in data && data.investorId == request.auth.uid)
+      );
+    }
+
+    // Master MOA lists every required signer on each linked investment; any signer may update for propagation/finalize.
+    function isAgreementSigner(data) {
+      return signedIn()
+        && 'agreement' in data
+        && 'requiredSignerIds' in data.agreement
+        && request.auth.uid in data.agreement.requiredSignerIds;
+    }
+
+    function equityProgressFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'equityUpdates',
+        'equityMilestones'
+      ]);
+    }
+
+    // --- investments/{investmentId} ---
+    match /investments/{investmentId} {
+      allow read: if signedIn() && (
+        investmentParty(resource.data)
+        || investmentSeekerIsListingOwner(resource.data)
+        || isAgreementSigner(resource.data)
+      );
+
+      allow create: if signedIn()
+        && request.resource.data.investorId == request.auth.uid
+        && 'opportunityId' in request.resource.data
+        && 'seekerId' in request.resource.data
+        && exists(/databases/$(database)/documents/opportunities/$(request.resource.data.opportunityId))
+        && opportunityOwnerId(request.resource.data.opportunityId) == request.resource.data.seekerId;
+
+      allow update: if signedIn() && (
+        (
+          equityProgressFieldsChanged()
+          && resource.data.seekerId == request.auth.uid
+        )
+        || (
+          !equityProgressFieldsChanged()
+          && (
+            investmentParty(resource.data)
+            || isAgreementSigner(resource.data)
+            || investmentSeekerIsListingOwner(resource.data)
+          )
+        )
+      );
+
+      allow delete: if signedIn() && (
+        investmentParty(resource.data)
+        || investmentSeekerIsListingOwner(resource.data)
+      );
+    }
+
+    // --- chats/{chatId} and messages ---
+    // Client: prefer `participantIds array-contains request.auth.uid` for list queries so results
+    // are guaranteed readable; legacy docs may still be readable via seekerId/investorId above.
+    match /chats/{chatId} {
+      allow read: if chatParticipant(resource.data);
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['participantIds', 'seekerId', 'investorId'])
+        && request.resource.data.participantIds is list
+        && request.resource.data.seekerId in request.resource.data.participantIds
+        && request.resource.data.investorId in request.resource.data.participantIds
+        && (request.auth.uid == request.resource.data.seekerId
+            || request.auth.uid == request.resource.data.investorId);
+
+      allow update, delete: if chatParticipant(resource.data);
+
+      match /messages/{messageId} {
+        allow read: if chatParticipant(
+          get(/databases/$(database)/documents/chats/$(chatId)).data
+        );
+
+        allow create: if signedIn()
+          && request.resource.data.senderId == request.auth.uid
+          && chatParticipant(
+            get(/databases/$(database)/documents/chats/$(chatId)).data
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

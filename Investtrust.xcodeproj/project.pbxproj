@@ -6,8 +6,54 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4116401A2F78EE8E007D270C /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 411640182F78EE8E007D270C /* FirebaseAuth */; };
+		4116401B2F78EE8E007D270C /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 411640192F78EE8E007D270C /* FirebaseCore */; };
+		4116401F2F78EE8E007D270C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 4116401D2F78EE8E007D270C /* GoogleSignIn */; };
+		411640202F78EE8E007D270C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 411640212F78EE8E007D270C /* FirebaseFirestore */; };
+		411640222F78EE8E007D270C /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 411640232F78EE8E007D270C /* FirebaseStorage */; };
+		411640272F78EE8E007D270C /* NSFWDetector in Frameworks */ = {isa = PBXBuildFile; productRef = 411640262F78EE8E007D270C /* NSFWDetector */; };
+		41B100292F78EE8E007D270C /* InvesttrustWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 41B100202F78EE8E007D270C /* InvesttrustWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		41B1002B2F78EE8E007D270C /* HomeWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B1002A2F78EE8E007D270C /* HomeWidgetSnapshot.swift */; };
+		41B1002C2F78EE8E007D270C /* HomeWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B1002A2F78EE8E007D270C /* HomeWidgetSnapshot.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		41A2B40C2F78EE8E007D270C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 411640002F78EE8D007D270C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 411640072F78EE8E007D270C;
+			remoteInfo = Investtrust;
+		};
+		41C7EA782F9E4708007AEEED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 411640002F78EE8D007D270C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 41B100222F78EE8E007D270C;
+			remoteInfo = InvesttrustWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		41B100282F78EE8E007D270C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				41B100292F78EE8E007D270C /* InvesttrustWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		411640082F78EE8E007D270C /* Investtrust.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Investtrust.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		41A2B4012F78EE8E007D270C /* InvesttrustTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InvesttrustTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		41B100202F78EE8E007D270C /* InvesttrustWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InvesttrustWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		41B1002A2F78EE8E007D270C /* HomeWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeWidgetSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +62,40 @@
 			path = Investtrust;
 			sourceTree = "<group>";
 		};
+		41A2B4002F78EE8E007D270C /* InvesttrustTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = InvesttrustTests;
+			sourceTree = "<group>";
+		};
+		41B100212F78EE8E007D270C /* InvesttrustWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = InvesttrustWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		411640052F78EE8E007D270C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4116401A2F78EE8E007D270C /* FirebaseAuth in Frameworks */,
+				4116401B2F78EE8E007D270C /* FirebaseCore in Frameworks */,
+				411640202F78EE8E007D270C /* FirebaseFirestore in Frameworks */,
+				411640222F78EE8E007D270C /* FirebaseStorage in Frameworks */,
+				411640272F78EE8E007D270C /* NSFWDetector in Frameworks */,
+				4116401F2F78EE8E007D270C /* GoogleSignIn in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41A2B4042F78EE8E007D270C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41B100242F78EE8E007D270C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +109,9 @@
 			isa = PBXGroup;
 			children = (
 				4116400A2F78EE8E007D270C /* Investtrust */,
+				41B100212F78EE8E007D270C /* InvesttrustWidget */,
+				41B100302F78EE8E007D270C /* WidgetShared */,
+				41A2B4002F78EE8E007D270C /* InvesttrustTests */,
 				411640092F78EE8E007D270C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +120,18 @@
 			isa = PBXGroup;
 			children = (
 				411640082F78EE8E007D270C /* Investtrust.app */,
+				41B100202F78EE8E007D270C /* InvesttrustWidgetExtension.appex */,
+				41A2B4012F78EE8E007D270C /* InvesttrustTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		41B100302F78EE8E007D270C /* WidgetShared */ = {
+			isa = PBXGroup;
+			children = (
+				41B1002A2F78EE8E007D270C /* HomeWidgetSnapshot.swift */,
+			);
+			path = WidgetShared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -55,20 +144,73 @@
 				411640042F78EE8E007D270C /* Sources */,
 				411640052F78EE8E007D270C /* Frameworks */,
 				411640062F78EE8E007D270C /* Resources */,
+				41B100282F78EE8E007D270C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				41B100272F78EE8E007D270C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4116400A2F78EE8E007D270C /* Investtrust */,
 			);
 			name = Investtrust;
 			packageProductDependencies = (
+				411640182F78EE8E007D270C /* FirebaseAuth */,
+				411640192F78EE8E007D270C /* FirebaseCore */,
+				411640212F78EE8E007D270C /* FirebaseFirestore */,
+				411640232F78EE8E007D270C /* FirebaseStorage */,
+				411640262F78EE8E007D270C /* NSFWDetector */,
+				4116401D2F78EE8E007D270C /* GoogleSignIn */,
 			);
 			productName = Investtrust;
 			productReference = 411640082F78EE8E007D270C /* Investtrust.app */;
 			productType = "com.apple.product-type.application";
+		};
+		41A2B4022F78EE8E007D270C /* InvesttrustTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 41A2B40A2F78EE8E007D270C /* Build configuration list for PBXNativeTarget "InvesttrustTests" */;
+			buildPhases = (
+				41A2B4032F78EE8E007D270C /* Sources */,
+				41A2B4042F78EE8E007D270C /* Frameworks */,
+				41A2B4052F78EE8E007D270C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				41A2B4072F78EE8E007D270C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				41A2B4002F78EE8E007D270C /* InvesttrustTests */,
+			);
+			name = InvesttrustTests;
+			packageProductDependencies = (
+			);
+			productName = InvesttrustTests;
+			productReference = 41A2B4012F78EE8E007D270C /* InvesttrustTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		41B100222F78EE8E007D270C /* InvesttrustWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 41B1002D2F78EE8E007D270C /* Build configuration list for PBXNativeTarget "InvesttrustWidgetExtension" */;
+			buildPhases = (
+				41B100232F78EE8E007D270C /* Sources */,
+				41B100242F78EE8E007D270C /* Frameworks */,
+				41B100252F78EE8E007D270C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				41B100212F78EE8E007D270C /* InvesttrustWidget */,
+			);
+			name = InvesttrustWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = InvesttrustWidgetExtension;
+			productReference = 41B100202F78EE8E007D270C /* InvesttrustWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -83,6 +225,13 @@
 					411640072F78EE8E007D270C = {
 						CreatedOnToolsVersion = 26.2;
 					};
+					41A2B4022F78EE8E007D270C = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 411640072F78EE8E007D270C;
+					};
+					41B100222F78EE8E007D270C = {
+						CreatedOnToolsVersion = 26.2;
+					};
 				};
 			};
 			buildConfigurationList = 411640032F78EE8D007D270C /* Build configuration list for PBXProject "Investtrust" */;
@@ -94,18 +243,39 @@
 			);
 			mainGroup = 41163FFF2F78EE8D007D270C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				411640252F78EE8E007D270C /* XCRemoteSwiftPackageReference "NSFWDetector" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 411640092F78EE8E007D270C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				411640072F78EE8E007D270C /* Investtrust */,
+				41B100222F78EE8E007D270C /* InvesttrustWidgetExtension */,
+				41A2B4022F78EE8E007D270C /* InvesttrustTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		411640062F78EE8E007D270C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41A2B4052F78EE8E007D270C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41B100252F78EE8E007D270C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -119,10 +289,39 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				41B1002B2F78EE8E007D270C /* HomeWidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41A2B4032F78EE8E007D270C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41B100232F78EE8E007D270C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				41B1002C2F78EE8E007D270C /* HomeWidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		41A2B4072F78EE8E007D270C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 411640072F78EE8E007D270C /* Investtrust */;
+			targetProxy = 41A2B40C2F78EE8E007D270C /* PBXContainerItemProxy */;
+		};
+		41B100272F78EE8E007D270C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 41B100222F78EE8E007D270C /* InvesttrustWidgetExtension */;
+			targetProxy = 41C7EA782F9E4708007AEEED /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		411640112F78EE8E007D270C /* Debug */ = {
@@ -249,10 +448,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Investtrust/Investtrust.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Investtrust-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -263,7 +464,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-52.Investtrust";
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -280,10 +481,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Investtrust/Investtrust.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Investtrust-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -294,9 +497,109 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-52.Investtrust";
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		41A2B40E2F78EE8E007D270C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust.InvesttrustTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Investtrust.app/Investtrust";
+			};
+			name = Debug;
+		};
+		41A2B40F2F78EE8E007D270C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust.InvesttrustTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Investtrust.app/Investtrust";
+			};
+			name = Release;
+		};
+		41B1002E2F78EE8E007D270C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = InvesttrustWidget/InvesttrustWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "InvesttrustWidgetExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Investtrust;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		41B1002F2F78EE8E007D270C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = InvesttrustWidget/InvesttrustWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "InvesttrustWidgetExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = Investtrust;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = investtrust.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -327,7 +630,85 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		41A2B40A2F78EE8E007D270C /* Build configuration list for PBXNativeTarget "InvesttrustTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				41A2B40E2F78EE8E007D270C /* Debug */,
+				41A2B40F2F78EE8E007D270C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		41B1002D2F78EE8E007D270C /* Build configuration list for PBXNativeTarget "InvesttrustWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				41B1002E2F78EE8E007D270C /* Debug */,
+				41B1002F2F78EE8E007D270C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+		4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+		411640252F78EE8E007D270C /* XCRemoteSwiftPackageReference "NSFWDetector" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lovoo/NSFWDetector.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		411640182F78EE8E007D270C /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		411640192F78EE8E007D270C /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		4116401D2F78EE8E007D270C /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4116401C2F78EE8E007D270C /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		411640212F78EE8E007D270C /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		411640232F78EE8E007D270C /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640162F78EE8E007D270C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+		411640262F78EE8E007D270C /* NSFWDetector */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 411640252F78EE8E007D270C /* XCRemoteSwiftPackageReference "NSFWDetector" */;
+			productName = NSFWDetector;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 411640002F78EE8D007D270C /* Project object */;
 }
