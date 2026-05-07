@@ -10,11 +10,13 @@ import SwiftUI
 private enum SeekerOpportunitySegment: String, CaseIterable {
     case open
     case ongoing
+    case completed
 
     var title: String {
         switch self {
         case .open: return "Open"
         case .ongoing: return "Ongoing"
+        case .completed: return "Completed"
         }
     }
 }
@@ -36,7 +38,18 @@ struct SeekerDashboardView: View {
         Set(seekerInvestments.compactMap { inv in
             guard let oid = inv.opportunityId, !oid.isEmpty else { return nil }
             let status = inv.status.lowercased()
-            if status == "accepted" || status == "active" || status == "completed" || inv.agreementStatus != .none {
+            if status == "accepted" || status == "active" || inv.agreementStatus == .active || inv.agreementStatus == .pending_signatures {
+                return oid
+            }
+            return nil
+        })
+    }
+
+    private var completedOpportunityIds: Set<String> {
+        Set(seekerInvestments.compactMap { inv in
+            guard let oid = inv.opportunityId, !oid.isEmpty else { return nil }
+            let status = inv.status.lowercased()
+            if status == "completed" || inv.fundingStatus == .closed {
                 return oid
             }
             return nil
@@ -44,24 +57,37 @@ struct SeekerDashboardView: View {
     }
 
     private var openOpportunities: [OpportunityListing] {
-        myOpportunities.filter { !ongoingOpportunityIds.contains($0.id) }
+        myOpportunities.filter {
+            !ongoingOpportunityIds.contains($0.id) && !completedOpportunityIds.contains($0.id)
+        }
     }
 
     private var ongoingOpportunities: [OpportunityListing] {
-        myOpportunities.filter { ongoingOpportunityIds.contains($0.id) }
+        myOpportunities.filter {
+            ongoingOpportunityIds.contains($0.id) && !completedOpportunityIds.contains($0.id)
+        }
+    }
+
+    private var completedOpportunities: [OpportunityListing] {
+        myOpportunities.filter { completedOpportunityIds.contains($0.id) }
     }
 
     private var displayedOpportunities: [OpportunityListing] {
-        selectedSegment == .open ? openOpportunities : ongoingOpportunities
+        switch selectedSegment {
+        case .open:
+            return openOpportunities
+        case .ongoing:
+            return ongoingOpportunities
+        case .completed:
+            return completedOpportunities
+        }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                    if myOpportunities.isEmpty {
-                        headerCard
-                    }
+                    headerCard
 
                     if !myOpportunities.isEmpty {
                         Picker("Opportunity status", selection: $selectedSegment) {
@@ -72,9 +98,7 @@ struct SeekerDashboardView: View {
                         .pickerStyle(.segmented)
                         .padding(.top, 4)
                     } else {
-                        Text("Opportunities")
-                            .font(.headline)
-                            .padding(.top, 4)
+                        EmptyView()
                     }
 
                     if let loadError {
@@ -92,17 +116,17 @@ struct SeekerDashboardView: View {
                             .padding(20)
                     } else if myOpportunities.isEmpty {
                         StatusBlock(
-                            icon: "plus.app",
+                            icon: "tray",
                             title: "No listings yet",
                             message: "Tap Add opportunity to publish your first investment request."
                         )
                     } else if displayedOpportunities.isEmpty {
                         StatusBlock(
-                            icon: selectedSegment == .open ? "tray" : "hourglass",
-                            title: selectedSegment == .open ? "No open opportunities" : "No ongoing opportunities",
+                            icon: "tray",
+                            title: selectedSegment == .open ? "No open opportunities" : (selectedSegment == .ongoing ? "No ongoing opportunities" : "No completed opportunities"),
                             message: selectedSegment == .open
-                                ? "Accepted deals will move to the Ongoing tab."
-                                : "Once a request is accepted, it will appear here."
+                                ? "Open listings will appear here."
+                                : (selectedSegment == .ongoing ? "Accepted deals in progress appear here." : "Finished deals appear here.")
                         )
                     } else {
                         LazyVStack(spacing: 10) {

@@ -106,16 +106,6 @@ struct SeekerHomeDashboardView: View {
                     } else {
                         pipelineOverviewCard
 
-                        if !homeInsightLines.isEmpty {
-                            insightsCard
-                        }
-
-                        if !opportunitiesNeedingAttention.isEmpty {
-                            attentionSection
-                        }
-
-                        investorActivitySection
-
                         Text("Your listings")
                             .font(.title3.weight(.bold))
                             .padding(.top, 4)
@@ -160,7 +150,7 @@ struct SeekerHomeDashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greetingLine)
                 .font(.title2.bold())
-            Text("See your pipeline, investor activity, and listings in one place.")
+            Text("Seeker dashboard")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -184,93 +174,47 @@ struct SeekerHomeDashboardView: View {
 
     private var pipelineOverviewCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Pipeline overview")
+            Text("Overview")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("Track listing momentum and deal progress.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 10) {
                 metricTile(
                     value: "\(openListingsCount)",
-                    label: "Open listings",
-                    icon: "leaf.fill",
-                    tint: .green
+                    label: "Open listings"
                 )
                 metricTile(
                     value: "\(pendingReviewCount)",
-                    label: "Pending requests",
-                    icon: "tray.full.fill",
-                    tint: .orange
+                    label: "Pending requests"
                 )
                 metricTile(
                     value: "\(awaitingSignaturesCount)",
-                    label: "Awaiting signatures",
-                    icon: "signature",
-                    tint: .blue
+                    label: "Awaiting signatures"
                 )
             }
 
             HStack(spacing: 10) {
                 metricTile(
                     value: "\(liveDealsCount)",
-                    label: "Active agreements",
-                    icon: "checkmark.shield.fill",
-                    tint: .green
+                    label: "Active agreements"
                 )
                 metricTile(
                     value: "\(principalConfirmationNeededCount)",
-                    label: "Need principal confirm",
-                    icon: "banknote.fill",
-                    tint: .orange
+                    label: "Principal pending"
                 )
                 metricTile(
                     value: "\(completedDealsCount)",
-                    label: "Completed deals",
-                    icon: "flag.checkered",
-                    tint: auth.accentColor
+                    label: "Completed deals"
                 )
             }
         }
         .padding(AppTheme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [auth.accentColor.opacity(0.12), AppTheme.cardBackground],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
-        )
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
-        .appCardShadow()
-    }
-
-    private var insightsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Insights", systemImage: "lightbulb.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(auth.accentColor)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(homeInsightLines, id: \.self) { line in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text(line)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
-        .padding(AppTheme.cardPadding)
-        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
         .appCardShadow()
     }
 
@@ -308,11 +252,8 @@ struct SeekerHomeDashboardView: View {
         .appCardShadow()
     }
 
-    private func metricTile(value: String, label: String, icon: String, tint: Color) -> some View {
+    private func metricTile(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(tint)
             Text(value)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.primary)
@@ -329,60 +270,6 @@ struct SeekerHomeDashboardView: View {
             RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                 .strokeBorder(Color(uiColor: .separator).opacity(0.25), lineWidth: 1)
         )
-    }
-
-    private var homeInsightLines: [String] {
-        var lines: [String] = []
-        if openListingsCount == 0, !myOpportunities.isEmpty {
-            lines.append("All your listings are currently closed. Open a new listing to attract fresh requests.")
-        }
-        if pendingReviewCount > 0 {
-            lines.append("You have \(pendingReviewCount) pending \(pendingReviewCount == 1 ? "request" : "requests") waiting for your response.")
-        }
-        if awaitingSignaturesCount > 0 {
-            lines.append("\(awaitingSignaturesCount) \(awaitingSignaturesCount == 1 ? "deal is" : "deals are") waiting on signatures to go live.")
-        }
-        if principalConfirmationNeededCount > 0 {
-            lines.append("\(principalConfirmationNeededCount) loan \(principalConfirmationNeededCount == 1 ? "deal needs" : "deals need") principal confirmation before repayments start.")
-        }
-        if lines.isEmpty, liveDealsCount > 0 {
-            lines.append("Your active agreements are healthy. Keep tracking milestones and investor communication.")
-        }
-        return Array(lines.prefix(3))
-    }
-
-    // MARK: - Investor activity
-
-    private var investorActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Investor activity")
-                    .font(.title3.weight(.bold))
-                Spacer(minLength: 8)
-                Text("\(sortedInvestments.count) \(sortedInvestments.count == 1 ? "record" : "records")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text("Every request and deal with amounts and current status.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            if sortedInvestments.isEmpty {
-                Text("Investor requests and deal progress will appear here.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(AppTheme.cardPadding)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
-                    .appCardShadow()
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(sortedInvestments) { inv in
-                        investmentDealRow(inv)
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -605,8 +492,6 @@ struct SeekerHomeDashboardView: View {
         let committed = committedPrincipal(for: item.id)
 
         return VStack(alignment: .leading, spacing: 12) {
-            homeRowMedia(item)
-
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.title)
@@ -679,7 +564,7 @@ struct SeekerHomeDashboardView: View {
                 Text(item.description)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
 
             HStack {
@@ -716,27 +601,6 @@ struct SeekerHomeDashboardView: View {
             .foregroundStyle(fg)
     }
 
-    @ViewBuilder
-    private func homeRowMedia(_ item: OpportunityListing) -> some View {
-        if let first = item.imageStoragePaths.first {
-            StorageBackedAsyncImage(
-                reference: first,
-                height: 180,
-                cornerRadius: 16,
-                feedThumbnail: true
-            )
-        } else {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.systemGray5))
-                .frame(height: 180)
-                .overlay {
-                    Image(systemName: item.effectiveVideoReference != nil ? "play.rectangle.fill" : "photo")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                }
-        }
-    }
-
     private func formatLKR(_ v: Double) -> String {
         let n = NSNumber(value: v)
         let f = NumberFormatter()
@@ -750,6 +614,7 @@ struct SeekerHomeDashboardView: View {
         guard id.count > 10 else { return id }
         return "\(id.prefix(6))…\(id.suffix(4))"
     }
+
 }
 
 #Preview {

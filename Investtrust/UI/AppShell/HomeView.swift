@@ -11,6 +11,9 @@ struct HomeView: View {
     @StateObject private var tabRouter = MainTabRouter()
 
     @State private var lastSyncedSessionEpoch = -1
+    @State private var notifications: [InAppNotification] = []
+    @State private var showNotifications = false
+    private let notificationService = InAppNotificationService()
 
     var body: some View {
         TabView(selection: tabSelection) {
@@ -49,6 +52,28 @@ struct HomeView: View {
                     tabRouter.selectedTab = .dashboard
                 }
             }
+            Task { await refreshNotifications() }
+        }
+        .onChange(of: auth.activeProfile) { _, _ in
+            Task { await refreshNotifications() }
+        }
+        .onChange(of: tabRouter.selectedTab) { _, _ in
+            Task { await refreshNotifications() }
+        }
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Spacer(minLength: 0)
+                notificationBell
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 2)
+        }
+        .sheet(isPresented: $showNotifications) {
+            InAppNotificationsView(notifications: notifications) {
+                await refreshNotifications()
+            } onTapNotification: { note in
+                handleNotificationTap(note)
+            }
         }
         .accessibilityLabel(tabAccessibilitySummary)
     }
@@ -73,6 +98,79 @@ struct HomeView: View {
         auth.activeProfile == .investor
             ? "Investor mode. Tabs: Home, Invest, Chat, Settings."
             : "Opportunity builder mode. Tabs: Home, Opportunity, Chat, Settings."
+    }
+
+    private var actionableCount: Int {
+        notifications.filter { $0.kind == .actionRequired }.count
+    }
+
+    private var notificationBell: some View {
+        Button {
+            showNotifications = true
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bell")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: Circle())
+                if actionableCount > 0 {
+                    Text("\(min(actionableCount, 9))")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Color.red, in: Capsule())
+                        .offset(x: 5, y: -5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func refreshNotifications() async {
+        guard let userId = auth.currentUserID else {
+            await MainActor.run { notifications = [] }
+            return
+        }
+        do {
+            let rows = try await notificationService.fetchNotifications(
+                userId: userId,
+                activeProfile: auth.activeProfile
+            )
+            await MainActor.run { notifications = rows }
+        } catch {
+            await MainActor.run { notifications = [] }
+        }
+    }
+
+    private func handleNotificationTap(_ note: InAppNotification) {
+        guard let route = note.route else { return }
+        switch route {
+        case .dashboard:
+            tabRouter.selectedTab = .dashboard
+        case .actionExplore:
+            tabRouter.selectedTab = .action
+            if auth.activeProfile == .investor {
+                tabRouter.investorInvestSegment = .explore
+            }
+        case .actionMyRequests:
+            tabRouter.selectedTab = .action
+            if auth.activeProfile == .investor {
+                tabRouter.investorInvestSegment = .myRequests
+            }
+        case .actionOngoing:
+            tabRouter.selectedTab = .action
+            if auth.activeProfile == .investor {
+                tabRouter.investorInvestSegment = .ongoing
+            }
+        case .actionCompleted:
+            tabRouter.selectedTab = .action
+            if auth.activeProfile == .investor {
+                tabRouter.investorInvestSegment = .completed
+            }
+        case .actionSeekerOpportunity:
+            tabRouter.selectedTab = .action
+        }
     }
 }
 

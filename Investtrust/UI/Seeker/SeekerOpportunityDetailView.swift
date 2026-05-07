@@ -3,7 +3,9 @@
 //  Investtrust
 //
 
+import PhotosUI
 import SwiftUI
+import VisionKit
 
 struct SeekerOpportunityDetailView: View {
     @Environment(AuthService.self) private var auth
@@ -25,6 +27,11 @@ struct SeekerOpportunityDetailView: View {
     @State private var showRequestsSheet = false
     @State private var shouldAutoOpenRequestsSheet = false
     @State private var principalConfirmBusyId: String?
+    @State private var principalProofBusyId: String?
+    @State private var showPrincipalProofLibrary = false
+    @State private var showPrincipalProofCamera = false
+    @State private var principalProofLibraryItem: PhotosPickerItem?
+    @State private var principalProofTargetInvestmentId: String?
 
     private let investmentService = InvestmentService()
     private let opportunityService = OpportunityService()
@@ -343,9 +350,43 @@ struct SeekerOpportunityDetailView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("Investor marked principal sent — confirm when you’ve received it.")
+                            Text("Attach receiving proof, then confirm principal.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if !inv.principalInvestorProofImageURLs.isEmpty {
+                                principalProofStrip(urls: inv.principalInvestorProofImageURLs)
+                            }
+                            if !inv.principalSeekerProofImageURLs.isEmpty {
+                                principalProofStrip(urls: inv.principalSeekerProofImageURLs)
+                            }
+                            if inv.principalSeekerProofImageURLs.isEmpty {
+                                Menu {
+                                    if VNDocumentCameraViewController.isSupported {
+                                        Button {
+                                            principalProofTargetInvestmentId = inv.id
+                                            showPrincipalProofCamera = true
+                                        } label: {
+                                            Label("Scan proof", systemImage: "doc.viewfinder")
+                                        }
+                                    }
+                                    Button {
+                                        principalProofTargetInvestmentId = inv.id
+                                        showPrincipalProofLibrary = true
+                                    } label: {
+                                        Label("Upload from photos", systemImage: "photo")
+                                    }
+                                } label: {
+                                    Label(
+                                        principalProofBusyId == inv.id ? "Uploading..." : "Attach receiving proof",
+                                        systemImage: "paperclip"
+                                    )
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(principalProofBusyId != nil)
+                            }
                             if inv.principalSentByInvestorAt != nil {
                                 Button {
                                     Task { await confirmPrincipalReceived(investmentId: inv.id) }
@@ -365,12 +406,79 @@ struct SeekerOpportunityDetailView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(auth.accentColor)
-                                .disabled(principalConfirmBusyId != nil)
+                                .disabled(principalConfirmBusyId != nil || inv.principalSeekerProofImageURLs.isEmpty)
                             }
                         }
                     }
                     .padding(12)
                     .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                }
+            }
+        }
+        .sheet(isPresented: $showPrincipalProofLibrary) {
+            NavigationStack {
+                VStack(spacing: 16) {
+                    Text("Choose proof of receiving the principal transfer.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    PhotosPicker(selection: $principalProofLibraryItem, matching: .images) {
+                        Label("Choose from library", systemImage: "photo.on.rectangle.angled")
+                            .font(.headline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(auth.accentColor)
+                }
+                .padding(AppTheme.screenPadding)
+                .navigationTitle("Principal proof")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            principalProofLibraryItem = nil
+                            principalProofTargetInvestmentId = nil
+                            showPrincipalProofLibrary = false
+                        }
+                    }
+                }
+                .onChange(of: principalProofLibraryItem) { _, item in
+                    guard let item, let id = principalProofTargetInvestmentId else { return }
+                    showPrincipalProofLibrary = false
+                    principalProofTargetInvestmentId = nil
+                    Task {
+                        await uploadPrincipalProofFromPicker(item: item, investmentId: id)
+                        await MainActor.run { principalProofLibraryItem = nil }
+                    }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showPrincipalProofCamera) {
+            Group {
+                if VNDocumentCameraViewController.isSupported {
+                    DocumentCameraView { images in
+                        showPrincipalProofCamera = false
+                        guard let id = principalProofTargetInvestmentId else { return }
+                        principalProofTargetInvestmentId = nil
+                        Task { await uploadPrincipalProofScans(images, investmentId: id) }
+                    }
+                } else {
+                    NavigationStack {
+                        ContentUnavailableView(
+                            "Scanner unavailable",
+                            systemImage: "doc.viewfinder",
+                            description: Text("Use upload from photos instead.")
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") {
+                                    showPrincipalProofCamera = false
+                                    principalProofTargetInvestmentId = nil
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -390,6 +498,64 @@ struct SeekerOpportunityDetailView: View {
                 actionError = d
             } else {
                 actionError = (error as NSError).localizedDescription
+            }
+        }
+    }
+
+    private func uploadPrincipalProofFromPicker(item: PhotosPickerItem, investmentId: String) async {
+        guard let uid = auth.currentUserID else { return }
+        principalProofBusyId = investmentId
+        defer { principalProofBusyId = nil }
+        guard let raw = try? await item.loadTransferable(type: Data.self), !raw.isEmpty else {
+            actionError = "Couldn’t read that image."
+            return
+        }
+        let jpeg = ImageJPEGUploadPayload.jpegForUpload(from: raw)
+        guard !jpeg.isEmpty else {
+            actionError = "Couldn’t convert that image."
+            return
+        }
+        do {
+            try await investmentService.attachPrincipalDisbursementProof(
+                investmentId: investmentId,
+                userId: uid,
+                imageJPEG: jpeg
+            )
+            await loadInvestments()
+            await MainActor.run { onMutate() }
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+        }
+    }
+
+    private func uploadPrincipalProofScans(_ scans: [Data], investmentId: String) async {
+        guard let uid = auth.currentUserID else { return }
+        principalProofBusyId = investmentId
+        defer { principalProofBusyId = nil }
+        for scan in scans {
+            let jpeg = ImageJPEGUploadPayload.jpegForUpload(from: scan)
+            guard !jpeg.isEmpty else { continue }
+            do {
+                try await investmentService.attachPrincipalDisbursementProof(
+                    investmentId: investmentId,
+                    userId: uid,
+                    imageJPEG: jpeg
+                )
+            } catch {
+                actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+            }
+        }
+        await loadInvestments()
+        await MainActor.run { onMutate() }
+    }
+
+    private func principalProofStrip(urls: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(urls, id: \.self) { url in
+                    StorageBackedAsyncImage(reference: url, height: 72, cornerRadius: 10, feedThumbnail: true)
+                        .frame(width: 72, height: 72)
+                }
             }
         }
     }

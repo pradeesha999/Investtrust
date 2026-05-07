@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Investor deals that are fully signed and live.
+/// Investor deals that are fully signed and still in progress.
 struct InvestorOngoingDealsView: View {
     @Environment(AuthService.self) private var auth
 
@@ -12,12 +12,16 @@ struct InvestorOngoingDealsView: View {
     private let investmentService = InvestmentService()
 
     private var ongoingInvestments: [InvestmentListing] {
-        let rows = investments.filter { inv in
-            inv.agreementStatus == .active || inv.status.lowercased() == "active" || inv.status.lowercased() == "completed"
-        }
+        let rows = investments.filter { InvestorPortfolioMetrics.isOngoingDeal($0) }
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return rows }
         return rows.filter { $0.opportunityTitle.lowercased().contains(query) }
+    }
+
+    private var totalRemainingToBePaid: Double {
+        ongoingInvestments.reduce(0) { partial, inv in
+            partial + remainingAmount(for: inv)
+        }
     }
 
     var body: some View {
@@ -41,10 +45,11 @@ struct InvestorOngoingDealsView: View {
                         icon: "checkmark.seal",
                         title: searchText.isEmpty ? "No ongoing deals yet" : "No matches",
                         message: searchText.isEmpty
-                            ? "Deals appear here after all signatures are completed and agreements are active."
+                            ? "Live investments in progress appear here."
                             : "Try a different search term."
                     )
                 } else {
+                    remainingHeaderCard
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(ongoingInvestments) { inv in
                             InvestmentCard(inv: inv) {
@@ -64,6 +69,25 @@ struct InvestorOngoingDealsView: View {
         .refreshable { await load() }
     }
 
+    private var remainingHeaderCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Amount remaining to be paid")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("LKR \(formatAmount(totalRemainingToBePaid))")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(auth.accentColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .stroke(Color(.separator).opacity(0.2), lineWidth: 1)
+        )
+        .appCardShadow()
+    }
+
     private func load() async {
         loadError = nil
         isLoading = true
@@ -77,6 +101,30 @@ struct InvestorOngoingDealsView: View {
         } catch {
             loadError = (error as NSError).localizedDescription
         }
+    }
+
+    private func remainingAmount(for inv: InvestmentListing) -> Double {
+        if !inv.loanInstallments.isEmpty {
+            return inv.loanInstallments
+                .filter { $0.status != .confirmed_paid }
+                .reduce(0) { $0 + $1.totalDue }
+        }
+        if !inv.revenueSharePeriods.isEmpty {
+            return inv.revenueSharePeriods
+                .filter { $0.status != .confirmed_paid }
+                .reduce(0) { partial, period in
+                    partial + max(0, period.expectedShareAmount ?? period.actualPaidAmount ?? 0)
+                }
+        }
+        return 0
+    }
+
+    private func formatAmount(_ value: Double) -> String {
+        let n = NSNumber(value: max(0, value))
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: n) ?? String(format: "%.0f", max(0, value))
     }
 }
 

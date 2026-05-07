@@ -25,12 +25,14 @@ enum InvestorInvestSegment: String, CaseIterable, Hashable {
     case explore
     case myRequests
     case ongoing
+    case completed
 
     var title: String {
         switch self {
         case .myRequests: return "My requests"
         case .explore: return "Explore"
         case .ongoing: return "Ongoing"
+        case .completed: return "Completed"
         }
     }
 }

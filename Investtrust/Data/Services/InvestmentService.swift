@@ -44,6 +44,9 @@ final class InvestmentService {
         case agreementUnavailable
         case seekerPaymentProofRequired
         case seekerMustConfirmPaymentFirst
+        case installmentOutOfOrder
+        case principalProofRequiredBeforeSend
+        case disputeReasonTooShort
         case revenuePeriodNotFound
         case notRevenueShareOrNoSchedule
         case revenueDeclarationMissing
@@ -106,6 +109,12 @@ final class InvestmentService {
                 return "Attach at least one payment slip or transfer screenshot before confirming you sent this installment."
             case .seekerMustConfirmPaymentFirst:
                 return "Wait until the seeker confirms they sent this payment before you acknowledge receipt."
+            case .installmentOutOfOrder:
+                return "Complete the currently due installment first before updating a later one."
+            case .principalProofRequiredBeforeSend:
+                return "Attach principal transfer proof before marking the principal as sent."
+            case .disputeReasonTooShort:
+                return "Add a short reason before reporting payment not received."
             case .revenuePeriodNotFound:
                 return "That revenue-share period was not found."
             case .notRevenueShareOrNoSchedule:
@@ -738,6 +747,8 @@ final class InvestmentService {
                 rowUpdates["fundingStatus"] = FundingStatus.awaiting_disbursement.rawValue
                 rowUpdates["principalSentByInvestorAt"] = FieldValue.delete()
                 rowUpdates["principalReceivedBySeekerAt"] = FieldValue.delete()
+                rowUpdates["principalInvestorProofImageURLs"] = FieldValue.delete()
+                rowUpdates["principalSeekerProofImageURLs"] = FieldValue.delete()
                 let months = max(1, row.finalTimelineMonths ?? agreement.termsSnapshot.repaymentTimelineMonths ?? 1)
                 let rate = row.finalInterestRate ?? agreement.termsSnapshot.interestRate ?? 0
                 let plan = agreement.loanRepaymentPlan
@@ -756,6 +767,8 @@ final class InvestmentService {
                 rowUpdates["fundingStatus"] = FundingStatus.disbursed.rawValue
                 rowUpdates["principalSentByInvestorAt"] = FieldValue.delete()
                 rowUpdates["principalReceivedBySeekerAt"] = FieldValue.delete()
+                rowUpdates["principalInvestorProofImageURLs"] = FieldValue.delete()
+                rowUpdates["principalSeekerProofImageURLs"] = FieldValue.delete()
                 let months = max(1, row.finalTimelineMonths ?? agreement.termsSnapshot.maxDurationMonths ?? 1)
                 let start = row.acceptedAt ?? now
                 let periods = RevenueShareScheduleGenerator.generatePeriods(
@@ -841,6 +854,9 @@ final class InvestmentService {
         guard inv.fundingStatus == .awaiting_disbursement else {
             throw InvestmentServiceError.fundingStatusNotAwaitingDisbursement
         }
+        guard !inv.principalInvestorProofImageURLs.isEmpty else {
+            throw InvestmentServiceError.principalProofRequiredBeforeSend
+        }
 
         let now = Date()
         try await invRef.updateData([
@@ -877,6 +893,48 @@ final class InvestmentService {
         ])
     }
 
+    /// Upload proof for initial principal disbursement so both parties can review evidence.
+    func attachPrincipalDisbursementProof(investmentId: String, userId: String, imageJPEG: Data) async throws {
+        let payload = ImageJPEGUploadPayload.jpegForUpload(from: imageJPEG)
+        guard !payload.isEmpty else {
+            throw NSError(domain: "Investtrust", code: 400, userInfo: [NSLocalizedDescriptionKey: "Could not read this image. Try another photo or take a new picture."])
+        }
+        guard payload.count <= Self.maxProofBytes else {
+            throw NSError(domain: "Investtrust", code: 400, userInfo: [NSLocalizedDescriptionKey: "Image is too large."])
+        }
+        try await InappropriateImageGate.validateImageDataForUpload(payload)
+
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .loan else {
+            throw InvestmentServiceError.notLoanOrNoSchedule
+        }
+        guard inv.agreementStatus == .active else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
+        guard inv.fundingStatus == .awaiting_disbursement || inv.fundingStatus == .disbursed else {
+            throw InvestmentServiceError.principalDisbursementNotReady
+        }
+        guard userId == inv.investorId || userId == inv.seekerId else {
+            throw InvestmentServiceError.wrongPartyForInstallmentAction
+        }
+
+        let filename = "principal-proof-\(investmentId)-\(UUID().uuidString.prefix(8)).jpg"
+        let asset = try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
+        let url = asset.secureURL
+
+        var updates: [String: Any] = ["updatedAt": Timestamp(date: Date())]
+        if userId == inv.investorId {
+            updates["principalInvestorProofImageURLs"] = FieldValue.arrayUnion([url])
+        } else {
+            updates["principalSeekerProofImageURLs"] = FieldValue.arrayUnion([url])
+        }
+        try await invRef.updateData(updates)
+    }
+
     /// Investor confirms they **received** this repayment (optionally after uploading receipt proof). Requires seeker to have confirmed payment sent first.
     func markLoanInstallmentPaidByInvestor(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
@@ -890,16 +948,43 @@ final class InvestmentService {
         }
     }
 
+    /// Investor reports this installment as not received and sends a reason back to seeker.
+    /// This resets seeker confirmation and seeker proof so seeker must re-upload proof and confirm again.
+    func markLoanInstallmentNotReceivedByInvestor(
+        investmentId: String,
+        installmentNo: Int,
+        userId: String,
+        reason: String
+    ) async throws {
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedReason.count >= 6 else {
+            throw InvestmentServiceError.disputeReasonTooShort
+        }
+        try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
+            guard userId == inv.investorId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
+            guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
+            guard row.seekerMarkedReceivedAt != nil else { throw InvestmentServiceError.seekerMustConfirmPaymentFirst }
+            var next = row
+            next.status = .disputed
+            next.investorMarkedPaidAt = nil
+            next.seekerMarkedReceivedAt = nil
+            next.seekerProofImageURLs = []
+            next.latestDisputeReason = trimmedReason
+            next.latestDisputedAt = Date()
+            return next
+        }
+    }
+
     /// Seeker confirms they **sent** this installment payment. Requires at least one seeker payment proof image.
     func markLoanInstallmentReceivedBySeeker(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
             guard userId == inv.seekerId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
             guard row.status != .confirmed_paid else { throw InvestmentServiceError.installmentAlreadyComplete }
-            let hasSlip = !row.seekerProofImageURLs.isEmpty
-            let investorAlreadyAcked = row.investorMarkedPaidAt != nil
-            guard hasSlip || investorAlreadyAcked else { throw InvestmentServiceError.seekerPaymentProofRequired }
+            guard !row.seekerProofImageURLs.isEmpty else { throw InvestmentServiceError.seekerPaymentProofRequired }
             var next = row
             next.seekerMarkedReceivedAt = Date()
+            next.latestDisputeReason = nil
+            next.latestDisputedAt = nil
             if next.investorMarkedPaidAt != nil {
                 next.status = .confirmed_paid
             } else {
@@ -944,6 +1029,9 @@ final class InvestmentService {
         guard let idx = rows.firstIndex(where: { $0.installmentNo == installmentNo }) else {
             throw InvestmentServiceError.installmentNotFound
         }
+        guard Self.isInstallmentActionOrderValid(installmentNo: installmentNo, rows: rows) else {
+            throw InvestmentServiceError.installmentOutOfOrder
+        }
 
         let filename = "proof-\(investmentId)-\(installmentNo)-\(UUID().uuidString.prefix(8)).jpg"
         let asset = try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
@@ -987,6 +1075,9 @@ final class InvestmentService {
         guard let idx = rows.firstIndex(where: { $0.installmentNo == installmentNo }) else {
             throw InvestmentServiceError.installmentNotFound
         }
+        guard Self.isInstallmentActionOrderValid(installmentNo: installmentNo, rows: rows) else {
+            throw InvestmentServiceError.installmentOutOfOrder
+        }
         let updated = try transform(rows[idx], inv)
         rows[idx] = updated
 
@@ -1017,6 +1108,13 @@ final class InvestmentService {
 
     private static func sumConfirmedReceived(rows: [LoanInstallment]) -> Double {
         rows.filter { $0.status == .confirmed_paid }.reduce(0) { $0 + $1.totalDue }
+    }
+
+    private static func isInstallmentActionOrderValid(installmentNo: Int, rows: [LoanInstallment]) -> Bool {
+        guard let nextOpen = rows.first(where: { $0.status != .confirmed_paid }) else {
+            return false
+        }
+        return nextOpen.installmentNo == installmentNo
     }
 
     private static func computeFundingStatus(previous: FundingStatus, rows: [LoanInstallment], now: Date) -> FundingStatus {

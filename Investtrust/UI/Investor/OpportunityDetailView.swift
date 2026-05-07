@@ -88,14 +88,34 @@ struct OpportunityDetailView: View {
         }
         .sheet(isPresented: $showInvestSheet) {
             if let opportunity {
-                InvestProposalSheet(opportunity: opportunity) {
+                InvestProposalSheet(opportunity: opportunity) { submission in
                     guard let uid = auth.currentUserID else {
                         throw InvestmentService.InvestmentServiceError.notSignedIn
                     }
-                    let created = try await investmentService.createInvestmentRequest(
-                        opportunity: opportunity,
-                        investorId: uid
-                    )
+                    let created: InvestmentListing
+                    let requestKindLabel: String
+                    let noteText: String
+                    switch submission {
+                    case .standardRequest:
+                        created = try await investmentService.createInvestmentRequest(
+                            opportunity: opportunity,
+                            investorId: uid
+                        )
+                        requestKindLabel = "Investment request"
+                        noteText = "Default investment request from listing."
+                    case .negotiatedOffer(let amount, let interestRate, let timelineMonths, let note):
+                        created = try await investmentService.createOrUpdateOfferRequest(
+                            opportunity: opportunity,
+                            investorId: uid,
+                            proposedAmount: amount,
+                            proposedInterestRate: interestRate,
+                            proposedTimelineMonths: timelineMonths,
+                            description: note,
+                            source: .detail_sheet
+                        )
+                        requestKindLabel = "Offer request"
+                        noteText = note.isEmpty ? "Negotiated offer from listing." : note
+                    }
                     let chatId = try await chatService.getOrCreateChat(
                         opportunityId: opportunity.id,
                         seekerId: opportunity.ownerId,
@@ -109,8 +129,8 @@ struct OpportunityDetailView: View {
                         amountText: Self.lkrText(created.investmentAmount),
                         interestRateText: created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—",
                         timelineText: created.finalTimelineMonths.map { "\($0) months" } ?? "—",
-                        note: "Default investment request from listing.",
-                        requestKindLabel: "Investment request"
+                        note: noteText,
+                        requestKindLabel: requestKindLabel
                     )
                     _ = try await chatService.sendInvestmentRequestCard(
                         chatId: chatId,
@@ -272,6 +292,7 @@ struct OpportunityDetailView: View {
         title: String,
         subtitle: String?,
         systemImage: String?,
+        trailingHeaderText: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -294,6 +315,11 @@ struct OpportunityDetailView: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    if let trailingHeaderText, !trailingHeaderText.isEmpty {
+                        Text(trailingHeaderText)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -343,44 +369,38 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func overviewSection(for o: OpportunityListing) -> some View {
-        infoCard(title: "Overview", subtitle: nil, systemImage: "rectangle.and.text.magnifyingglass") {
-            VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
                 Text(o.title)
-                    .font(.title2.bold())
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if !o.category.isEmpty {
-                    Text(o.category)
+                Spacer(minLength: 8)
+                if let created = o.createdAt {
+                    Text(created.formatted(date: .abbreviated, time: .omitted))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
+            }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        chip(o.investmentType.displayName, tint: auth.accentColor, filled: true)
-                        if o.verificationStatus == .verified {
-                            chip("Verified", tint: .green, filled: true)
-                        }
-                        let statusLower = o.status.lowercased()
-                        if statusLower != "open" && !statusLower.isEmpty {
-                            chip(o.status.capitalized)
-                        }
-                    }
-                }
-
-                if let listed = o.createdAt {
-                    Text("Listed \(Self.mediumDate(listed))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-
-                if !o.description.isEmpty {
-                    Text(o.description)
-                        .font(.body)
+            HStack(spacing: 8) {
+                if !o.category.isEmpty {
+                    Text(o.category)
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                if o.verificationStatus == .verified {
+                    chip("Verified", tint: .blue, filled: true)
+                }
+                chip(o.investmentType.displayName)
+                Spacer(minLength: 0)
+            }
+
+            if !o.description.isEmpty {
+                Text(o.description)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -390,27 +410,30 @@ struct OpportunityDetailView: View {
         let ticket = o.minimumInvestment
         let ticketText = (o.maximumInvestors ?? 1) <= 1 ? "LKR \(o.formattedAmountLKR) (full round)" : "LKR \(o.formattedMinimumLKR) (min. ticket)"
 
-        infoCard(title: "Key numbers", subtitle: "Illustrative — not financial advice", systemImage: "chart.bar.fill") {
-            VStack(alignment: .leading, spacing: 14) {
-                keyNumbersPrimaryMetric(for: o, ticket: ticket)
-                Group {
-                    switch o.investmentType {
-                    case .loan:
-                        loanReturnsSnapshot(for: o, ticket: ticket, ticketText: ticketText)
-                    case .equity:
+        VStack(alignment: .leading, spacing: 12) {
+            // Primary metrics should stand on their own (outside a "Key numbers" card).
+            keyNumbersPrimaryMetric(for: o, ticket: ticket)
+            Group {
+                switch o.investmentType {
+                case .loan:
+                    loanReturnsSnapshot(for: o, ticket: ticket, ticketText: ticketText)
+                case .equity:
+                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
                         investorEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
-                    case .revenue_share:
+                    }
+                case .revenue_share:
+                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
                         investorRevenueShareValueBody(o: o)
-                    case .project:
+                    }
+                case .project:
+                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
                         investorProjectValueBody(o: o)
-                    case .custom:
+                    }
+                case .custom:
+                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
                         investorCustomValueBody(o: o)
                     }
                 }
-                Text("Figures follow the simple-interest model used in agreements; final numbers are fixed when you invest.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -427,49 +450,28 @@ struct OpportunityDetailView: View {
                termMonths: months,
                plan: LoanRepaymentPlan.from(t.repaymentFrequency)
            ) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Loan return snapshot")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Amount to be paid")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                    spacing: 10
-                ) {
-                    metricTile(
-                        title: "Investment amount",
-                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(ticket))",
-                        tint: .primary
-                    )
-                    metricTile(
-                        title: "Final amount returned",
-                        value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))",
-                        tint: .green
-                    )
-                }
-
+                Text("LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
                 Text("Based on \(ticketText) over \(months) months.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.2), lineWidth: 1)
+            )
+            .appCardShadow()
         } else {
             investorLoanValueBody(o: o, ticket: ticket, ticketText: ticketText)
         }
-    }
-
-    private func metricTile(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(tint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     @ViewBuilder
@@ -492,12 +494,12 @@ struct OpportunityDetailView: View {
                         )
                         heroLoanMetric(
                             title: "Timeline",
-                            value: "\(months) months",
+                            value: "\(months) mo",
                             tint: .primary
                         )
                         heroLoanMetric(
                             title: "Final profit",
-                            value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
+                            value: OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount),
                             tint: .green
                         )
                     }
@@ -595,14 +597,18 @@ struct OpportunityDetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(tint)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
         .padding(12)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+        )
     }
 
     @ViewBuilder
@@ -638,21 +644,8 @@ struct OpportunityDetailView: View {
                     }
                 }
 
-                calloutRow(title: "Investment timeline", value: investmentTimelineSummary(for: o))
             }
         }
-    }
-
-    private func investmentTimelineSummary(for o: OpportunityListing) -> String {
-        var parts: [String] = [o.repaymentLabel]
-        if o.investmentType == .loan, let f = o.terms.repaymentFrequency {
-            parts.append(f.displayName)
-        }
-        return parts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0 != "—" }.joined(separator: " · ")
-    }
-
-    private func hasLegacyMilestoneDates(_ o: OpportunityListing) -> Bool {
-        o.milestones.contains { $0.dueDaysAfterAcceptance == nil && $0.expectedDate != nil }
     }
 
     private func canShowResolvedMilestoneCalendarDates(for o: OpportunityListing) -> Bool {
@@ -666,22 +659,7 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func milestonesTimelineContent(for o: OpportunityListing) -> some View {
-        let showResolved = canShowResolvedMilestoneCalendarDates(for: o)
-        let acceptedAt = myLatestRequest?.acceptedAt
-
         VStack(alignment: .leading, spacing: 14) {
-            Text("Day 0 is when your investment is accepted on the platform.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if hasLegacyMilestoneDates(o) {
-                Text("Some milestones use legacy calendar dates from when the listing was created.")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             if !o.milestones.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(o.milestones.enumerated()), id: \.offset) { index, m in
@@ -701,26 +679,18 @@ struct OpportunityDetailView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(m.title.isEmpty ? "Milestone" : m.title)
                                     .font(.subheadline.weight(.semibold))
-                                if !m.description.isEmpty {
-                                    Text(m.description)
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                if let days = m.dueDaysAfterAcceptance {
-                                    Text("+\(days) days from acceptance")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(Color.green)
-                                    if showResolved, let acc = acceptedAt,
-                                       let due = Calendar.current.date(byAdding: .day, value: days, to: acc) {
-                                        Text("On your timeline: \(Self.mediumDate(due))")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } else if let d = m.expectedDate {
-                                    Text(Self.mediumDate(d))
+                                if let due = milestoneDueDate(m, for: o) {
+                                    Text(Self.mediumDate(due))
                                         .font(.caption.weight(.medium))
                                         .foregroundStyle(auth.accentColor)
+                                } else if let days = m.dueDaysAfterAcceptance {
+                                    Text("+\(days) days from acceptance")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Date to be confirmed")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                             .padding(.bottom, index < o.milestones.count - 1 ? 4 : 0)
@@ -733,6 +703,14 @@ struct OpportunityDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func milestoneDueDate(_ milestone: OpportunityMilestone, for opportunity: OpportunityListing) -> Date? {
+        if let fixed = milestone.expectedDate { return fixed }
+        guard canShowResolvedMilestoneCalendarDates(for: opportunity),
+              let acceptedAt = myLatestRequest?.acceptedAt,
+              let days = milestone.dueDaysAfterAcceptance else { return nil }
+        return Calendar.current.date(byAdding: .day, value: days, to: acceptedAt)
     }
 
     @ViewBuilder
@@ -910,8 +888,28 @@ struct OpportunityDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
             .appCardShadow()
+        } else if status == "completed" {
+            statusShell(
+                tint: .green,
+                icon: "checkmark.circle.fill",
+                title: "Investment completed",
+                message: "All scheduled payments are confirmed and this deal is fully closed."
+            )
         } else if let r = req, r.agreementStatus == .active || status == "active" {
-            statusShell(tint: .green, icon: "checkmark.seal.fill", title: "Agreement active", message: "The memorandum is fully signed. Use Chat to coordinate funding outside the platform.")
+            VStack(alignment: .leading, spacing: 12) {
+                statusHeader(tint: .green, icon: "checkmark.seal.fill", title: "Agreement active", message: "The memorandum is fully signed. Use Chat to coordinate funding outside the platform.")
+                if let timeline = activeAgreementTimeline(for: r) {
+                    HStack(spacing: 10) {
+                        calloutRow(title: "Started", value: Self.mediumDate(timeline.start))
+                        calloutRow(title: "Expected end", value: Self.mediumDate(timeline.end))
+                    }
+                    calloutRow(title: "Time remaining", value: timeline.daysLeft > 0 ? "\(timeline.daysLeft) days left" : "Completed")
+                }
+            }
+            .padding(AppTheme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
         } else if let r = req, r.agreementStatus == .pending_signatures {
             VStack(alignment: .leading, spacing: 12) {
                 statusHeader(tint: .blue, icon: "signature", title: "Awaiting signatures", message: r.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review and sign the agreement to continue." : "You’ve signed. Waiting for the seeker to sign.")
@@ -1001,6 +999,15 @@ struct OpportunityDetailView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    private func activeAgreementTimeline(for req: InvestmentListing) -> (start: Date, end: Date, daysLeft: Int)? {
+        let start = req.acceptedAt ?? req.agreementGeneratedAt ?? req.createdAt
+        let months = req.finalTimelineMonths ?? req.agreement?.termsSnapshot.effectiveTimelineMonths
+        guard let start, let months, months > 0 else { return nil }
+        guard let end = Calendar.current.date(byAdding: .month, value: months, to: start) else { return nil }
+        let rawDays = Calendar.current.dateComponents([.day], from: Date(), to: end).day ?? 0
+        return (start, end, max(0, rawDays))
     }
 
     private func dealTermsSubtitle(for o: OpportunityListing) -> String {

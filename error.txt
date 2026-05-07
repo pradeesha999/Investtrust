@@ -1,0 +1,896 @@
+-------------------------------------
+Translated Report (Full Report Below)
+-------------------------------------
+Process:             Investtrust [91041]
+Path:                /Users/USER/Library/Developer/CoreSimulator/Devices/51000584-5F1C-4BC4-8626-3164414F1E30/data/Containers/Bundle/Application/72E097D3-287A-4361-859E-4B65AF9DA9A1/Investtrust.app/Investtrust
+Identifier:          investtrust
+Version:             1.0 (1)
+Code Type:           ARM-64 (Native)
+Role:                Foreground
+Parent Process:      launchd_sim [64972]
+Coalition:           com.apple.CoreSimulator.SimDevice.51000584-5F1C-4BC4-8626-3164414F1E30 [16567]
+Responsible Process: SimulatorTrampoline [650]
+User ID:             502
+
+Date/Time:           2026-04-12 20:53:22.0508 +0530
+Launch Time:         2026-04-12 20:52:52.8445 +0530
+Hardware Model:      Mac15,4
+OS Version:          macOS 26.3.1 (25D2128)
+Release Type:        User
+
+Crash Reporter Key:  A7E1C1EB-292F-DFB9-9E88-F341D3BB65C4
+Incident Identifier: EC1E7FAF-80F9-4312-9FB0-C02E09180B8E
+
+Time Awake Since Boot: 800000 seconds
+
+System Integrity Protection: enabled
+
+Triggered by Thread: 0, Dispatch Queue: com.apple.main-thread
+
+Exception Type:    EXC_BAD_ACCESS (SIGSEGV)
+Exception Subtype: KERN_PROTECTION_FAILURE at 0x000000016ec0bfe0
+Exception Message: Thread stack size exceeded due to excessive recursion
+Exception Codes:   0x0000000000000002, 0x000000016ec0bfe0
+
+Termination Reason:  Namespace SIGNAL, Code 11, Segmentation fault: 11
+Terminating Process: exc handler [91041]
+
+
+External Modification Warnings:
+Debugger attached to process.
+
+VM Region Info: 0x16ec0bfe0 is in 0x16b408000-0x16ec0c000;  bytes after start: 58736608  bytes before end: 31
+      REGION TYPE                    START - END         [ VSIZE] PRT/MAX SHRMOD  REGION DETAIL
+      VM_ALLOCATE                 11c6f0000-11d2f0000    [ 12.0M] rw-/rwx SM=PRV  
+      GAP OF 0x4e118000 BYTES
+--->  STACK GUARD                 16b408000-16ec0c000    [ 56.0M] ---/rwx SM=NUL  stack guard for thread 0
+      Stack                       16ec0c000-16f408000    [ 8176K] rw-/rwx SM=SHM  thread 0
+
+Kernel Triage:
+VM - (arg = 0x3) mach_vm_allocate_kernel failed within call to vm_map_enter
+
+
+Thread 0 Crashed::  Dispatch queue: com.apple.main-thread
+0     libswiftCore.dylib            	       0x19769c4d0 std::__1::enable_if<is_hashable_data<char const>::value, __swift::__runtime::llvm::hash_code>::type __swift::__runtime::llvm::hashing::detail::hash_combine_range_impl<char const>(char const*, char const*) + 4
+1     libswiftCore.dylib            	       0x197667008 __swift::__runtime::llvm::hash_code __swift::__runtime::llvm::hash_combine<__swift::__runtime::llvm::hash_code, __swift::__runtime::llvm::StringRef>(__swift::__runtime::llvm::hash_code const&, __swift::__runtime::llvm::StringRef const&) + 104
+2     libswiftCore.dylib            	       0x197666e60 std::__1::pair<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>*, unsigned int> swift::ConcurrentReadableHashMap<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>, swift::Mutex>::find<(anonymous namespace)::TupleCacheEntry::Key>((anonymous namespace)::TupleCacheEntry::Key const&, swift::ConcurrentReadableHashMap<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>, swift::Mutex>::IndexStorage, unsigned long, swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>*) + 112
+3     libswiftCore.dylib            	       0x1976533d0 std::__1::pair<(anonymous namespace)::TupleCacheEntry*, swift::MetadataResponse> swift::LockingConcurrentMap<(anonymous namespace)::TupleCacheEntry, (anonymous namespace)::TupleCacheStorage>::getOrInsert<(anonymous namespace)::TupleCacheEntry::Key, swift::MetadataRequest&, swift::TargetValueWitnessTable<swift::InProcess> const*&>((anonymous namespace)::TupleCacheEntry::Key, swift::MetadataRequest&, swift::TargetValueWitnessTable<swift::InProcess> const*&) + 348
+4     libswiftCore.dylib            	       0x197653070 swift_getTupleTypeMetadata + 92
+5     libswiftCore.dylib            	       0x1976542dc swift_getTupleTypeMetadata2 + 44
+6     SwiftUICore                   	       0x1db4648fc BodyAccessor.makeBody(container:inputs:fields:) + 232
+7     SwiftUICore                   	       0x1db33e07c static View.makeBody(view:inputs:fields:) + 176
+8     SwiftUICore                   	       0x1db33ddd0 static View.makeViewList(view:inputs:) + 156
+9     SwiftUICore                   	       0x1db33d8a4 static View._makeViewList(view:inputs:) + 28
+10    SwiftUICore                   	       0x1db33de60 static View.makeViewList(view:inputs:) + 300
+11    SwiftUICore                   	       0x1db33d8a4 static View._makeViewList(view:inputs:) + 28
+12    SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+13    SwiftUICore                   	       0x1db91f1cc static MultiViewModifier._makeViewList(modifier:inputs:body:) + 52
+14    SwiftUICore                   	       0x1db928ce4 protocol witness for static ViewModifier._makeViewList(modifier:inputs:body:) in conformance _BackgroundStyleModifier<A> + 20
+15    SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 5216
+16    SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+17    SwiftUICore                   	       0x1db91f1cc static MultiViewModifier._makeViewList(modifier:inputs:body:) + 52
+18    SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 5215
+19    SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+20    SwiftUICore                   	       0x1db91f1cc static MultiViewModifier._makeViewList(modifier:inputs:body:) + 52
+21    SwiftUICore                   	       0x1db923e00 protocol witness for static ViewModifier._makeViewList(modifier:inputs:body:) in conformance _PreferenceTransformModifier<A> + 20
+22    SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 5214
+--------
+-------- ELIDED 5210 LEVELS OF RECURSION THROUGH 0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+--------
+52103 SwiftUICore                   	       0x1db26bbd8 <deduplicated_symbol> + 208
+52104 SwiftUICore                   	       0x1db846a04 TypeConformance<>.visitType<A>(visitor:) + 44
+52105 SwiftUICore                   	       0x1db26b654 static TupleView._makeViewList(view:inputs:) + 256
+52106 SwiftUICore                   	       0x1db33de60 static View.makeViewList(view:inputs:) + 300
+52107 SwiftUICore                   	       0x1db33d8a4 static View._makeViewList(view:inputs:) + 28
+52108 Investtrust.debug.dylib       	       0x10443f31c protocol witness for static View._makeViewList(view:inputs:) in conformance InvestmentAgreementReviewView + 12
+52109 SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+52110 SwiftUICore                   	       0x1db190158 static ViewModifierContentProvider.providerMakeViewList(view:inputs:) + 120
+52111 SwiftUICore                   	       0x1db1900cc static _ViewModifier_Content._makeViewList(view:inputs:) + 84
+52112 SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+52113 SwiftUICore                   	       0x1db9200b4 static ViewModifier<>._makeViewList(modifier:inputs:body:) + 112
+52114 SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 3
+52115 SwiftUICore                   	       0x1db927ebc closure #2 in static ModifiedContent<>._makeViewList(view:inputs:) + 176
+52116 SwiftUICore                   	       0x1db190158 static ViewModifierContentProvider.providerMakeViewList(view:inputs:) + 120
+52117 SwiftUICore                   	       0x1db1900cc static _ViewModifier_Content._makeViewList(view:inputs:) + 84
+52118 SwiftUICore                   	       0x1db32d10c static StaticIf<>._makeViewList(view:inputs:) + 364
+52119 SwiftUICore                   	       0x1db192184 static ViewModifier.makeViewList(modifier:inputs:body:) + 392
+52120 SwiftUICore                   	       0x1db191ff0 static ViewModifier._makeViewList(modifier:inputs:body:) + 28
+52121 SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 2
+52122 SwiftUICore                   	       0x1db192184 static ViewModifier.makeViewList(modifier:inputs:body:) + 392
+52123 SwiftUICore                   	       0x1db191ff0 static ViewModifier._makeViewList(modifier:inputs:body:) + 28
+52124 SwiftUICore                   	       0x1db927dd4 static ModifiedContent<>._makeViewList(view:inputs:) + 244
+-------- RECURSION 1, LEVEL 1
+52125 SwiftUICore                   	       0x1db8f6ce8 static View.makeDebuggableViewList(view:inputs:) + 100
+52126 SwiftUI                       	       0x1daa62ea0 static SourceFormula.makeViewList<A>(view:source:inputs:) + 360
+52127 SwiftUI                       	       0x1daa62f64 protocol witness for static AnySourceFormula.makeViewList<A>(view:source:inputs:) in conformance SourceFormula<A> + 36
+52128 SwiftUI                       	       0x1daa5f094 specialized static ViewAlias._makeViewList(view:inputs:) + 320
+52129 SwiftUI                       	       0x1daa611ec protocol witness for static View._makeViewList(view:inputs:) in conformance _NavigationStackStyleConfiguration.Root + 44
+52130 SwiftUICore                   	       0x1db45f25c closure #2 in static _VariadicView.Tree<>._makeView(view:inputs:) + 408
+52131 SwiftUICore                   	       0x1db45e0a4 static _VariadicView_ViewRoot.makeView(root:inputs:body:) + 160
+52132 SwiftUICore                   	       0x1db45d09c static _VariadicView_ViewRoot._makeView(root:inputs:body:) + 28
+52133 SwiftUICore                   	       0x1db45f04c static _VariadicView.Tree<>._makeView(view:inputs:) + 396
+52134 SwiftUICore                   	       0x1db8f6bd8 static View.makeDebuggableView(view:inputs:) + 276
+52135 SwiftUI                       	       0x1daa02c48 static NavigationStackCore._makeView(view:inputs:) + 1428
+52136 SwiftUICore                   	       0x1db6edf24 static StyleModifierType.makeView<A>(view:modifier:inputs:) + 600
+52137 SwiftUICore                   	       0x1db6ebca4 static StyleableView._makeView(view:inputs:) + 464
+52138 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52139 SwiftUICore                   	       0x1db6ed7c0 static StyleModifier._makeView(modifier:inputs:body:) + 400
+52140 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 27
+52141 SwiftUICore                   	       0x1db6ec03c static StyleableView._makeView(view:inputs:) + 1384
+52142 SwiftUICore                   	       0x1db6ebe84 static StyleableView._makeView(view:inputs:) + 944
+52143 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52144 SwiftUICore                   	       0x1db91ffcc static ViewModifier<>._makeView(modifier:inputs:body:) + 232
+52145 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 26
+52146 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52147 SwiftUICore                   	       0x1db5f9ffc static _PreferenceWritingModifier._makeView(modifier:inputs:body:) + 228
+52148 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 25
+--------
+-------- ELIDED 21 LEVELS OF RECURSION THROUGH 0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+--------
+52232 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52233 SwiftUICore                   	       0x1db91ffcc static ViewModifier<>._makeView(modifier:inputs:body:) + 232
+52234 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 3
+52235 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52236 SwiftUICore                   	       0x1db91ffcc static ViewModifier<>._makeView(modifier:inputs:body:) + 232
+52237 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 2
+52238 SwiftUICore                   	       0x1db33dc60 static View.makeView(view:inputs:) + 576
+52239 SwiftUICore                   	       0x1db33d874 static View._makeView(view:inputs:) + 28
+52240 SwiftUICore                   	       0x1db927c34 closure #2 in static ModifiedContent<>._makeView(view:inputs:) + 348
+52241 SwiftUICore                   	       0x1db91ffcc static ViewModifier<>._makeView(modifier:inputs:body:) + 232
+52242 SwiftUICore                   	       0x1db927a24 static ModifiedContent<>._makeView(view:inputs:) + 408
+-------- RECURSION 2, LEVEL 1
+52243 SwiftUICore                   	       0x1db8edd84 AnyViewStorage.makeChildView(view:inputs:) + 616
+52244 SwiftUICore                   	       0x1db0c8f80 specialized DynamicViewContainer.updateValue() + 816
+52245 SwiftUICore                   	       0x1db0d4eb4 specialized implicit closure #1 in closure #1 in closure #1 in Attribute.init<A>(_:) + 20
+52246 AttributeGraph                	       0x1c4794728 AG::Graph::UpdateStack::update() + 492
+52247 AttributeGraph                	       0x1c4794e18 AG::Graph::update_attribute(AG::data::ptr<AG::Node>, unsigned int) + 352
+52248 AttributeGraph                	       0x1c47acc70 AG::AttributeID::resolve_slow(unsigned int) const + 136
+52249 AttributeGraph                	       0x1c479bd20 AG::Graph::value_ref(AG::AttributeID, unsigned int, AGSwiftMetadata const*, unsigned char&) + 460
+52250 AttributeGraph                	       0x1c47b450c AGGraphGetWeakValue + 368
+52251 SwiftUICore                   	       0x1db697ee8 GraphHost.preferenceValue<A>(_:) + 504
+52252 SwiftUICore                   	       0x1dba8a100 partial apply for closure #1 in ViewGraphRootValueUpdater._preferenceValue<A>(_:) + 32
+52253 SwiftUICore                   	       0x1dba87068 ViewGraphRootValueUpdater._updateViewGraph<A>(body:) + 200
+52254 SwiftUICore                   	       0x1dba84e4c ViewGraphRootValueUpdater._preferenceValue<A>(_:) + 180
+52255 SwiftUI                       	       0x1da1e66b4 specialized PresentationHostingController.setupDelayIfNeeded() + 140
+52256 SwiftUI                       	       0x1da1070e4 SheetBridge.present(_:from:animated:existingPresentedVC:isPreempting:) + 1008
+52257 SwiftUI                       	       0x1da1089c8 SheetBridge.contingentlyPresent(_:from:animated:) + 1364
+52258 SwiftUI                       	       0x1da016d60 specialized SheetBridge.preferencesDidChange(_:) + 5504
+52259 SwiftUI                       	       0x1da012024 _UIHostingView.preferencesDidChange() + 1136
+52260 SwiftUICore                   	       0x1dba917bc specialized update #1 () in ViewGraph.updateOutputs(async:) + 304
+52261 SwiftUICore                   	       0x1dba8bf94 ViewGraph.updateOutputs(at:) + 484
+52262 SwiftUICore                   	       0x1dba8612c closure #1 in ViewGraphRootValueUpdater.render(interval:updateDisplayList:targetTimestamp:) + 644
+52263 SwiftUICore                   	       0x1dba84858 ViewGraphRootValueUpdater.render(interval:updateDisplayList:targetTimestamp:) + 420
+52264 UIKitCore                     	       0x1852f9198 0x18519e000 + 1421720
+52265 SwiftUI                       	       0x1dab25470 _UIHostingView.layoutSubviews() + 80
+52266 SwiftUI                       	       0x1dab254a4 @objc _UIHostingView.layoutSubviews() + 32
+52267 UIKitCore                     	       0x18558294c 0x18519e000 + 4081996
+52268 UIKitCore                     	       0x185582ce0 0x18519e000 + 4082912
+52269 UIKitCore                     	       0x1869151c8 -[UIView(CALayerDelegate) layoutSublayersOfLayer:] + 2656
+52270 QuartzCore                    	       0x18c7e7ff8 CA::Layer::perform_update_(CA::Layer*, CALayer*, unsigned int, CA::LayerUpdateReason, CA::Transaction*) + 452
+52271 QuartzCore                    	       0x18c7e7848 CA::Layer::update_if_needed_(CA::Transaction*, CA::LayerUpdateReason) + 600
+52272 QuartzCore                    	       0x18c7f34d8 CA::Layer::layout_and_display_if_needed(CA::Transaction*) + 152
+52273 QuartzCore                    	       0x18c7089fc CA::Context::commit_transaction(CA::Transaction*, double, double*) + 544
+52274 QuartzCore                    	       0x18c738b54 CA::Transaction::commit() + 636
+52275 QuartzCore                    	       0x18c73a3fc CA::Transaction::flush_as_runloop_observer(bool) + 68
+52276 UIKitCore                     	       0x186346ca0 _UIApplicationFlushCATransaction + 48
+52277 UIKitCore                     	       0x186263c48 __setupUpdateSequence_block_invoke_2 + 372
+52278 UIKitCore                     	       0x18582f378 _UIUpdateSequenceRunNext + 120
+52279 UIKitCore                     	       0x1862640a4 schedulerStepScheduledMainSectionContinue + 56
+52280 UpdateCycle                   	       0x2501912b4 UC::DriverCore::continueProcessing() + 80
+52281 CoreFoundation                	       0x18041a4ac __CFMachPortPerform + 164
+52282 CoreFoundation                	       0x180456aa8 __CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE1_PERFORM_FUNCTION__ + 56
+52283 CoreFoundation                	       0x1804560c0 __CFRunLoopDoSource1 + 480
+52284 CoreFoundation                	       0x180455188 __CFRunLoopRun + 2100
+52285 CoreFoundation                	       0x18044fcec _CFRunLoopRunSpecificWithOptions + 496
+52286 GraphicsServices              	       0x192a669bc GSEventRunModal + 116
+52287 UIKitCore                     	       0x186348574 -[UIApplication _run] + 772
+52288 UIKitCore                     	       0x18634c79c UIApplicationMain + 124
+52289 SwiftUI                       	       0x1da58d620 closure #1 in KitRendererCommon(_:) + 164
+52290 SwiftUI                       	       0x1da58d368 runApp<A>(_:) + 180
+52291 SwiftUI                       	       0x1da31b42c static App.main() + 148
+52292 Investtrust.debug.dylib       	       0x1041d55dc static InvesttrustApp.$main() + 40
+52293 Investtrust.debug.dylib       	       0x1041d5688 __debug_main_executable_dylib_entry_point + 12
+52294 ???                           	       0x100aa93d0 ???
+52295 dyld                          	       0x100c28d54 start + 7184
+
+Thread 1:
+
+Thread 2::  Dispatch queue: com.google.firebase.firestore.rpc
+0   libsystem_kernel.dylib        	       0x100b6c958 poll + 8
+1   Investtrust.debug.dylib       	       0x104ceb574 pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp) + 1388
+2   Investtrust.debug.dylib       	       0x104cee5c8 pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp) + 84
+3   Investtrust.debug.dylib       	       0x104cb8bb0 cq_next(grpc_completion_queue*, gpr_timespec, void*) + 408
+4   Investtrust.debug.dylib       	       0x104be99b0 grpc::CompletionQueue::AsyncNextInternal(void**, bool*, gpr_timespec) + 60
+5   Investtrust.debug.dylib       	       0x104a45e9c firebase::firestore::remote::Datastore::PollGrpcQueue() + 84
+6   Investtrust.debug.dylib       	       0x104b688c8 firebase::firestore::util::Task::ExecuteAndRelease() + 188
+7   libdispatch.dylib             	       0x10157d9dc _dispatch_client_callout + 12
+8   libdispatch.dylib             	       0x10156c494 _dispatch_lane_serial_drain + 888
+9   libdispatch.dylib             	       0x10156d0f8 _dispatch_lane_invoke + 428
+10  libdispatch.dylib             	       0x101579294 _dispatch_root_queue_drain_deferred_wlh + 324
+11  libdispatch.dylib             	       0x1015787f0 _dispatch_workloop_worker_thread + 752
+12  libsystem_pthread.dylib       	       0x100bd2b8c _pthread_wqthread + 288
+13  libsystem_pthread.dylib       	       0x100bd198c start_wqthread + 8
+
+Thread 3:: com.apple.uikit.eventfetch-thread
+0   libsystem_kernel.dylib        	       0x100b64b70 mach_msg2_trap + 8
+1   libsystem_kernel.dylib        	       0x100b7590c mach_msg2_internal + 72
+2   libsystem_kernel.dylib        	       0x100b6cc10 mach_msg_overwrite + 480
+3   libsystem_kernel.dylib        	       0x100b64ee4 mach_msg + 20
+4   CoreFoundation                	       0x180455c04 __CFRunLoopServiceMachPort + 156
+5   CoreFoundation                	       0x180454dbc __CFRunLoopRun + 1128
+6   CoreFoundation                	       0x18044fcec _CFRunLoopRunSpecificWithOptions + 496
+7   Foundation                    	       0x18110be48 -[NSRunLoop(NSRunLoop) runMode:beforeDate:] + 208
+8   Foundation                    	       0x18110c068 -[NSRunLoop(NSRunLoop) runUntilDate:] + 60
+9   UIKitCore                     	       0x18609fc50 -[UIEventFetcher threadMain] + 392
+10  Foundation                    	       0x181132d14 __NSThread__start__ + 716
+11  libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+12  libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 4:
+
+Thread 5:: com.apple.UIKit.inProcessAnimationManager
+0   libsystem_kernel.dylib        	       0x100b64aec semaphore_wait_trap + 8
+1   libdispatch.dylib             	       0x101565bb8 _dispatch_sema4_wait + 24
+2   libdispatch.dylib             	       0x101566140 _dispatch_semaphore_wait_slow + 128
+3   UIKitCore                     	       0x1856619c0 0x18519e000 + 4995520
+4   UIKitCore                     	       0x185665e88 0x18519e000 + 5013128
+5   UIKitCore                     	       0x1852f85d0 0x18519e000 + 1418704
+6   Foundation                    	       0x181132d14 __NSThread__start__ + 716
+7   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+8   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 6:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91698 gpr_cv_wait + 160
+3   Investtrust.debug.dylib       	       0x104cf9a88 grpc_core::Executor::ThreadMain(void*) + 192
+4   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+5   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+6   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 7:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91698 gpr_cv_wait + 160
+3   Investtrust.debug.dylib       	       0x104cf9a88 grpc_core::Executor::ThreadMain(void*) + 192
+4   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+5   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+6   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 8:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104eaace4 timer_thread(void*) + 556
+4   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+5   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+6   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 9:: com.apple.NSURLConnectionLoader
+0   libsystem_kernel.dylib        	       0x100b64b70 mach_msg2_trap + 8
+1   libsystem_kernel.dylib        	       0x100b7590c mach_msg2_internal + 72
+2   libsystem_kernel.dylib        	       0x100b6cc10 mach_msg_overwrite + 480
+3   libsystem_kernel.dylib        	       0x100b64ee4 mach_msg + 20
+4   CoreFoundation                	       0x180455c04 __CFRunLoopServiceMachPort + 156
+5   CoreFoundation                	       0x180454dbc __CFRunLoopRun + 1128
+6   CoreFoundation                	       0x18044fcec _CFRunLoopRunSpecificWithOptions + 496
+7   CFNetwork                     	       0x184eccd6c +[__CFN_CoreSchedulingSetRunnable _run:] + 368
+8   Foundation                    	       0x181132d14 __NSThread__start__ + 716
+9   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+10  libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 10:
+
+Thread 11:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 12:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 13:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ea9908 grpc_event_engine::experimental::TimerManager::WaitUntil(grpc_core::Timestamp) + 280
+4   Investtrust.debug.dylib       	       0x104eaa490 void absl::lts_20240722::internal_any_invocable::RemoteInvoker<false, void, grpc_event_engine::experimental::TimerManager::MainLoop()::$_0&>(absl::lts_20240722::internal_any_invocable::TypeErasedState*) + 40
+5   Investtrust.debug.dylib       	       0x104c0f22c grpc_event_engine::experimental::SelfDeletingClosure::Run() + 32
+6   Investtrust.debug.dylib       	       0x104ed126c grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 376
+7   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+8   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+9   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+10  libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+11  libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 14:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 15:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 16:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 17:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 18:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed147c grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration) + 124
+4   Investtrust.debug.dylib       	       0x104ed11e8 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step() + 244
+5   Investtrust.debug.dylib       	       0x104ed0e94 grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody() + 148
+6   Investtrust.debug.dylib       	       0x104ed176c grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*) + 20
+7   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 19:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91688 gpr_cv_wait + 144
+3   Investtrust.debug.dylib       	       0x104ed0854 grpc_core::Notification::WaitForNotificationWithTimeout(absl::lts_20240722::Duration) + 220
+4   Investtrust.debug.dylib       	       0x104ed0738 grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::Lifeguard::LifeguardMain() + 160
+5   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+6   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+7   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 20:: com.apple.CFStream.LegacyThread
+0   libsystem_kernel.dylib        	       0x100b64b70 mach_msg2_trap + 8
+1   libsystem_kernel.dylib        	       0x100b7590c mach_msg2_internal + 72
+2   libsystem_kernel.dylib        	       0x100b6cc10 mach_msg_overwrite + 480
+3   libsystem_kernel.dylib        	       0x100b64ee4 mach_msg + 20
+4   CoreFoundation                	       0x180455c04 __CFRunLoopServiceMachPort + 156
+5   CoreFoundation                	       0x180454dbc __CFRunLoopRun + 1128
+6   CoreFoundation                	       0x18044fcec _CFRunLoopRunSpecificWithOptions + 496
+7   CoreFoundation                	       0x180474184 _legacyStreamRunLoop_workThread + 260
+8   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+9   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 21:: com.apple.CFSocket.private
+0   libsystem_kernel.dylib        	       0x100b6ef80 __select + 8
+1   CoreFoundation                	       0x1804648ac __CFSocketManager + 680
+2   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+3   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 22:
+0   libsystem_kernel.dylib        	       0x100b68020 __psynch_cvwait + 8
+1   libsystem_pthread.dylib       	       0x100bd6a74 _pthread_cond_wait + 976
+2   Investtrust.debug.dylib       	       0x104e91698 gpr_cv_wait + 160
+3   Investtrust.debug.dylib       	       0x104eaace4 timer_thread(void*) + 556
+4   Investtrust.debug.dylib       	       0x104ea401c grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*) + 140
+5   libsystem_pthread.dylib       	       0x100bd65ac _pthread_start + 104
+6   libsystem_pthread.dylib       	       0x100bd1998 thread_start + 8
+
+Thread 23:
+
+Thread 24::  Dispatch queue: com.apple.network.connections
+0   Network                       	       0x18871b010 0x1886c0000 + 372752
+1   Network                       	       0x188a32298 0x1886c0000 + 3613336
+2   Network                       	       0x188a32350 0x1886c0000 + 3613520
+3   libswiftCore.dylib            	       0x197646a84 _swift_release_dealloc + 28
+4   libswiftCore.dylib            	       0x197647548 bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int) + 148
+5   Network                       	       0x1886d7684 0x1886c0000 + 95876
+6   Network                       	       0x1886f7a88 0x1886c0000 + 227976
+7   Network                       	       0x1886f7ab8 0x1886c0000 + 228024
+8   libswiftCore.dylib            	       0x197646a84 _swift_release_dealloc + 28
+9   libswiftCore.dylib            	       0x197647548 bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int) + 148
+10  libswiftCore.dylib            	       0x19762edec swift_cvw_destroyImpl(swift::OpaqueValue*, swift::TargetMetadata<swift::InProcess> const*) + 120
+11  Network                       	       0x1886d4f44 0x1886c0000 + 85828
+12  Network                       	       0x1886d1268 0x1886c0000 + 70248
+13  libswiftCore.dylib            	       0x197646a84 _swift_release_dealloc + 28
+14  libswiftCore.dylib            	       0x197647548 bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int) + 148
+15  Network                       	       0x188967e1c 0x1886c0000 + 2784796
+16  libobjc.A.dylib               	       0x180075fc8 object_cxxDestructFromClass(objc_object*, objc_class*) + 112
+17  libobjc.A.dylib               	       0x18008fe60 objc_destructInstance_nonnull_realized(objc_object*) + 72
+18  libobjc.A.dylib               	       0x180097f48 _objc_rootDealloc + 56
+19  Network                       	       0x188967dc4 0x1886c0000 + 2784708
+20  Network                       	       0x188967dec 0x1886c0000 + 2784748
+21  libobjc.A.dylib               	       0x180075fc8 object_cxxDestructFromClass(objc_object*, objc_class*) + 112
+22  libobjc.A.dylib               	       0x18008fe60 objc_destructInstance_nonnull_realized(objc_object*) + 72
+23  libobjc.A.dylib               	       0x180097f48 _objc_rootDealloc + 56
+24  Network                       	       0x18930f218 -[NWConcrete_nw_path_evaluator dealloc] + 40
+25  Network                       	       0x1895100b8 invocation function for block in nw_association_schedule_deactivation(NWConcrete_nw_association*) + 896
+26  libdispatch.dylib             	       0x10157d9dc _dispatch_client_callout + 12
+27  libdispatch.dylib             	       0x101567728 _dispatch_continuation_pop + 740
+28  libdispatch.dylib             	       0x10157c7c8 _dispatch_source_invoke + 1932
+29  libdispatch.dylib             	       0x10156de48 _dispatch_workloop_invoke + 760
+30  libdispatch.dylib             	       0x101579294 _dispatch_root_queue_drain_deferred_wlh + 324
+31  libdispatch.dylib             	       0x1015787f0 _dispatch_workloop_worker_thread + 752
+32  libsystem_pthread.dylib       	       0x100bd2b8c _pthread_wqthread + 288
+33  libsystem_pthread.dylib       	       0x100bd198c start_wqthread + 8
+
+Thread 25:
+
+
+Thread 0 crashed with ARM Thread State (64-bit):
+    x0: 0x0000000000000000   x1: 0x0000000000000000   x2: 0xff51afd7ed558ccd   x3: 0x00000001029c5e08
+    x4: 0x0000000000000000   x5: 0x0000000102a36730   x6: 0x0000000102a35828   x7: 0x0000000102a356c8
+    x8: 0xff51afd7ed558ccd   x9: 0x17d7bf4d5efe485b  x10: 0x0ef800000000f42c  x11: 0x9ddfea08eb382d69
+   x12: 0x0000000102a367f0  x13: 0x0000000102a353c8  x14: 0x0000000027d4eb2d  x15: 0x0000000000000001
+   x16: 0x00000001976542b0  x17: 0x0000000102a36730  x18: 0x0000000000000000  x19: 0x000000016ec0c030
+   x20: 0x00000000000002f7  x21: 0x00000001028b4402  x22: 0x000000016ec0c250  x23: 0x0000000000000000
+   x24: 0x000000016ec0c370  x25: 0x0000000102a353e8  x26: 0x000000016ec0c500  x27: 0x000000016ec0c51c
+   x28: 0x000000016ec0c378   fp: 0x000000016ec0c0d0   lr: 0x0000000197667008
+    sp: 0x000000016ec0bfd0   pc: 0x000000019769c4d0 cpsr: 0x60001000
+   far: 0x000000016ec0bfe0  esr: 0x92000047 (Data Abort) byte write Translation fault
+
+Binary Images:
+       0x100c20000 -        0x100cbffff dyld (*) <044cd67e-3a0a-3ca4-8bb3-a9687d5328fe> /usr/lib/dyld
+       0x1009f8000 -        0x1009fbfff investtrust (1.0) <78f80879-0012-3dcd-b777-1eafe2ba617e> /Users/USER/Library/Developer/CoreSimulator/Devices/51000584-5F1C-4BC4-8626-3164414F1E30/data/Containers/Bundle/Application/72E097D3-287A-4361-859E-4B65AF9DA9A1/Investtrust.app/Investtrust
+       0x100a24000 -        0x100a27fff libLogRedirect.dylib (*) <6de309ef-3434-318a-b6d1-f91eda806f38> /Volumes/VOLUME/*/libLogRedirect.dylib
+       0x100a50000 -        0x100a57fff libBacktraceRecording.dylib (*) <44a152b5-fe02-303f-8247-2dffc17c909c> /Volumes/VOLUME/*/libBacktraceRecording.dylib
+       0x100d54000 -        0x100d97fff libMainThreadChecker.dylib (*) <e85f9456-275b-3519-961a-47ae6a51d962> /Volumes/VOLUME/*/libMainThreadChecker.dylib
+       0x100ea8000 -        0x100f43fff libRPAC.dylib (*) <139a52e3-2b0d-39ed-ad36-0fabddb28519> /Volumes/VOLUME/*/libRPAC.dylib
+       0x1041d0000 -        0x105397fff Investtrust.debug.dylib (*) <b5a97110-c4c0-3e6d-9928-0c3758bb1675> /Users/USER/Library/Developer/CoreSimulator/Devices/51000584-5F1C-4BC4-8626-3164414F1E30/data/Containers/Bundle/Application/72E097D3-287A-4361-859E-4B65AF9DA9A1/Investtrust.app/Investtrust.debug.dylib
+       0x101560000 -        0x1015abfff libdispatch.dylib (*) <eb7be2df-b21f-39f2-bf41-d375397983e0> /Volumes/VOLUME/*/libdispatch.dylib
+       0x100a68000 -        0x100a6ffff libsystem_platform.dylib (*) <9463fc06-cc7c-38e8-ad3c-1b9f2617df53> /usr/lib/system/libsystem_platform.dylib
+       0x100b64000 -        0x100b9ffff libsystem_kernel.dylib (*) <2dcc78fc-b5ed-31f4-8a49-4c7bacf50780> /usr/lib/system/libsystem_kernel.dylib
+       0x100bd0000 -        0x100bdffff libsystem_pthread.dylib (*) <b1095734-2a4d-3e8c-839e-b10ae9598d61> /usr/lib/system/libsystem_pthread.dylib
+       0x104100000 -        0x10410bfff libobjc-trampolines.dylib (*) <997b234d-5c24-3e21-97d6-33b6853818c0> /Volumes/VOLUME/*/libobjc-trampolines.dylib
+       0x197628000 -        0x197acd4df libswiftCore.dylib (*) <c62f8d53-88b1-335b-991e-5bc56d71d347> /Volumes/VOLUME/*/libswiftCore.dylib
+       0x1daf5b000 -        0x1dbc8651f com.apple.SwiftUICore (7.2.5.1.102) <f7e2bb37-d266-38fc-b8cc-80664c89f0b4> /Volumes/VOLUME/*/SwiftUICore.framework/SwiftUICore
+       0x1d9dd4000 -        0x1daf5a47f com.apple.SwiftUI (7.2.5.1.102) <719cf349-8c4a-3054-9536-23eb53648ee0> /Volumes/VOLUME/*/SwiftUI.framework/SwiftUI
+       0x1c4789000 -        0x1c47ca07f com.apple.AttributeGraph (7.0.80) <bfbc22b3-f2d6-39cf-8d0e-1d09fbcca27c> /Volumes/VOLUME/*/AttributeGraph.framework/AttributeGraph
+       0x18519e000 -        0x1873c071f com.apple.UIKitCore (1.0) <196154ff-ba04-33cd-9277-98f9aa0b7499> /Volumes/VOLUME/*/UIKitCore.framework/UIKitCore
+       0x18c611000 -        0x18c93f91f com.apple.QuartzCore (1193.47.1) <886d5a00-871b-360c-9b22-4d902b80f230> /Volumes/VOLUME/*/QuartzCore.framework/QuartzCore
+       0x250190000 -        0x250191e9f com.apple.UpdateCycle (1) <e2e29a67-7d1d-333d-9227-e405451edb7d> /Volumes/VOLUME/*/UpdateCycle.framework/UpdateCycle
+       0x1803c3000 -        0x1807df37f com.apple.CoreFoundation (6.9) <4f6d050d-95ee-3a95-969c-3a98b29df6ff> /Volumes/VOLUME/*/CoreFoundation.framework/CoreFoundation
+       0x192a64000 -        0x192a6bdbf com.apple.GraphicsServices (1.0) <4e5b0462-6170-3367-9475-4ff8b8dfe4e6> /Volumes/VOLUME/*/GraphicsServices.framework/GraphicsServices
+               0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+       0x18085f000 -        0x1815d18df com.apple.Foundation (6.9) <c153116f-dd31-3fa9-89bb-04b47c1fa83d> /Volumes/VOLUME/*/Foundation.framework/Foundation
+       0x184ccc000 -        0x18503e15f com.apple.CFNetwork (1.0) <1bb7d015-7687-34a6-93c8-7cc24655033a> /Volumes/VOLUME/*/CFNetwork.framework/CFNetwork
+       0x1886c0000 -        0x1898f8f3f com.apple.Network (1.0) <856b83d8-5963-3278-a45a-334a9232deda> /Volumes/VOLUME/*/Network.framework/Network
+       0x180070000 -        0x1800ad297 libobjc.A.dylib (*) <880f8664-cd53-3912-bdd5-5e3159295f7d> /Volumes/VOLUME/*/libobjc.A.dylib
+
+External Modification Summary:
+  Calls made by other processes targeting this process:
+    task_for_pid: 1
+    thread_create: 0
+    thread_set_state: 32
+  Calls made by this process:
+    task_for_pid: 0
+    thread_create: 0
+    thread_set_state: 0
+  Calls made by all processes on this machine:
+    task_for_pid: 95
+    thread_create: 0
+    thread_set_state: 3102
+
+-----------
+Full Report
+-----------
+
+{"app_name":"Investtrust","timestamp":"2026-04-12 20:53:31.00 +0530","app_version":"1.0","slice_uuid":"78f80879-0012-3dcd-b777-1eafe2ba617e","build_version":"1","platform":7,"bundleID":"investtrust","share_with_app_devs":0,"is_first_party":0,"bug_type":"309","os_version":"macOS 26.3.1 (25D2128)","roots_installed":0,"name":"Investtrust","incident_id":"EC1E7FAF-80F9-4312-9FB0-C02E09180B8E"}
+{
+  "uptime" : 800000,
+  "procRole" : "Foreground",
+  "version" : 2,
+  "userID" : 502,
+  "deployVersion" : 210,
+  "modelCode" : "Mac15,4",
+  "coalitionID" : 16567,
+  "osVersion" : {
+    "train" : "macOS 26.3.1",
+    "build" : "25D2128",
+    "releaseType" : "User"
+  },
+  "captureTime" : "2026-04-12 20:53:22.0508 +0530",
+  "codeSigningMonitor" : 2,
+  "incident" : "EC1E7FAF-80F9-4312-9FB0-C02E09180B8E",
+  "pid" : 91041,
+  "translated" : false,
+  "cpuType" : "ARM-64",
+  "procLaunch" : "2026-04-12 20:52:52.8445 +0530",
+  "procStartAbsTime" : 19302839840293,
+  "procExitAbsTime" : 19303540680302,
+  "procName" : "Investtrust",
+  "procPath" : "\/Users\/USER\/Library\/Developer\/CoreSimulator\/Devices\/51000584-5F1C-4BC4-8626-3164414F1E30\/data\/Containers\/Bundle\/Application\/72E097D3-287A-4361-859E-4B65AF9DA9A1\/Investtrust.app\/Investtrust",
+  "bundleInfo" : {"CFBundleShortVersionString":"1.0","CFBundleVersion":"1","CFBundleIdentifier":"investtrust"},
+  "storeInfo" : {"deviceIdentifierForVendor":"DA048DF7-335E-5EA0-8F5D-2EDF7BED69DC","thirdParty":true},
+  "parentProc" : "launchd_sim",
+  "parentPid" : 64972,
+  "coalitionName" : "com.apple.CoreSimulator.SimDevice.51000584-5F1C-4BC4-8626-3164414F1E30",
+  "crashReporterKey" : "A7E1C1EB-292F-DFB9-9E88-F341D3BB65C4",
+  "appleIntelligenceStatus" : {"reasons":["assetIsNotReady","notOptedIn","siriAssetIsNotReady"],"state":"unavailable"},
+  "developerMode" : 1,
+  "bootProgressRegister" : "0x2f000000",
+  "responsiblePid" : 650,
+  "responsibleProc" : "SimulatorTrampoline",
+  "codeSigningID" : "investtrust",
+  "codeSigningTeamID" : "",
+  "codeSigningFlags" : 838861345,
+  "codeSigningValidationCategory" : 10,
+  "codeSigningTrustLevel" : 4294967295,
+  "codeSigningAuxiliaryInfo" : 0,
+  "instructionByteStream" : {"beforePC":"4AefGgIAABQgAIBS\/XtEqfRPQ6n\/QwGRwANf1gEAAYsBAAAU\/wMB0Q==","atPC":"9lcBqfRPAqn9ewOp\/cMAkegDAaopwy2wKYEnkSnBvzipGQA2KcMtsA=="},
+  "bootSessionUUID" : "EAF3D354-96D0-47C2-81B0-AE84AF318615",
+  "sip" : "enabled",
+  "vmRegionInfo" : "0x16ec0bfe0 is in 0x16b408000-0x16ec0c000;  bytes after start: 58736608  bytes before end: 31\n      REGION TYPE                    START - END         [ VSIZE] PRT\/MAX SHRMOD  REGION DETAIL\n      VM_ALLOCATE                 11c6f0000-11d2f0000    [ 12.0M] rw-\/rwx SM=PRV  \n      GAP OF 0x4e118000 BYTES\n--->  STACK GUARD                 16b408000-16ec0c000    [ 56.0M] ---\/rwx SM=NUL  stack guard for thread 0\n      Stack                       16ec0c000-16f408000    [ 8176K] rw-\/rwx SM=SHM  thread 0",
+  "exception" : {"codes":"0x0000000000000002, 0x000000016ec0bfe0","message":"Thread stack size exceeded due to excessive recursion","rawCodes":[2,6153093088],"type":"EXC_BAD_ACCESS","signal":"SIGSEGV","subtype":"KERN_PROTECTION_FAILURE at 0x000000016ec0bfe0"},
+  "termination" : {"flags":0,"code":11,"namespace":"SIGNAL","indicator":"Segmentation fault: 11","byProc":"exc handler","byPid":91041},
+  "ktriageinfo" : "VM - (arg = 0x3) mach_vm_allocate_kernel failed within call to vm_map_enter\n",
+  "vmregioninfo" : "0x16ec0bfe0 is in 0x16b408000-0x16ec0c000;  bytes after start: 58736608  bytes before end: 31\n      REGION TYPE                    START - END         [ VSIZE] PRT\/MAX SHRMOD  REGION DETAIL\n      VM_ALLOCATE                 11c6f0000-11d2f0000    [ 12.0M] rw-\/rwx SM=PRV  \n      GAP OF 0x4e118000 BYTES\n--->  STACK GUARD                 16b408000-16ec0c000    [ 56.0M] ---\/rwx SM=NUL  stack guard for thread 0\n      Stack                       16ec0c000-16f408000    [ 8176K] rw-\/rwx SM=SHM  thread 0",
+  "extMods" : {"caller":{"thread_create":0,"thread_set_state":0,"task_for_pid":0},"system":{"thread_create":0,"thread_set_state":3102,"task_for_pid":95},"targeted":{"thread_create":0,"thread_set_state":32,"task_for_pid":1},"warnings":1},
+  "faultingThread" : 0,
+  "threads" : [{"frames":[{"imageOffset":476368,"symbol":"std::__1::enable_if<is_hashable_data<char const>::value, __swift::__runtime::llvm::hash_code>::type __swift::__runtime::llvm::hashing::detail::hash_combine_range_impl<char const>(char const*, char const*)","symbolLocation":4,"imageIndex":12},{"imageOffset":258056,"symbol":"__swift::__runtime::llvm::hash_code __swift::__runtime::llvm::hash_combine<__swift::__runtime::llvm::hash_code, __swift::__runtime::llvm::StringRef>(__swift::__runtime::llvm::hash_code const&, __swift::__runtime::llvm::StringRef const&)","symbolLocation":104,"imageIndex":12},{"imageOffset":257632,"symbol":"std::__1::pair<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>*, unsigned int> swift::ConcurrentReadableHashMap<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>, swift::Mutex>::find<(anonymous namespace)::TupleCacheEntry::Key>((anonymous namespace)::TupleCacheEntry::Key const&, swift::ConcurrentReadableHashMap<swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>, swift::Mutex>::IndexStorage, unsigned long, swift::HashMapElementWrapper<(anonymous namespace)::TupleCacheEntry>*)","symbolLocation":112,"imageIndex":12},{"imageOffset":177104,"symbol":"std::__1::pair<(anonymous namespace)::TupleCacheEntry*, swift::MetadataResponse> swift::LockingConcurrentMap<(anonymous namespace)::TupleCacheEntry, (anonymous namespace)::TupleCacheStorage>::getOrInsert<(anonymous namespace)::TupleCacheEntry::Key, swift::MetadataRequest&, swift::TargetValueWitnessTable<swift::InProcess> const*&>((anonymous namespace)::TupleCacheEntry::Key, swift::MetadataRequest&, swift::TargetValueWitnessTable<swift::InProcess> const*&)","symbolLocation":348,"imageIndex":12},{"imageOffset":176240,"symbol":"swift_getTupleTypeMetadata","symbolLocation":92,"imageIndex":12},{"imageOffset":180956,"symbol":"swift_getTupleTypeMetadata2","symbolLocation":44,"imageIndex":12},{"imageOffset":5282044,"symbol":"BodyAccessor.makeBody(container:inputs:fields:)","symbolLocation":232,"imageIndex":13},{"imageOffset":4075644,"symbol":"static View.makeBody(view:inputs:fields:)","symbolLocation":176,"imageIndex":13},{"imageOffset":4074960,"symbol":"static View.makeViewList(view:inputs:)","symbolLocation":156,"imageIndex":13},{"imageOffset":4073636,"symbol":"static View._makeViewList(view:inputs:)","symbolLocation":28,"imageIndex":13},{"imageOffset":4075104,"symbol":"static View.makeViewList(view:inputs:)","symbolLocation":300,"imageIndex":13},{"imageOffset":4073636,"symbol":"static View._makeViewList(view:inputs:)","symbolLocation":28,"imageIndex":13},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":10240460,"symbol":"static MultiViewModifier._makeViewList(modifier:inputs:body:)","symbolLocation":52,"imageIndex":13},{"imageOffset":10280164,"symbol":"protocol witness for static ViewModifier._makeViewList(modifier:inputs:body:) in conformance _BackgroundStyleModifier<A>","symbolLocation":20,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":10240460,"symbol":"static MultiViewModifier._makeViewList(modifier:inputs:body:)","symbolLocation":52,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":10240460,"symbol":"static MultiViewModifier._makeViewList(modifier:inputs:body:)","symbolLocation":52,"imageIndex":13},{"imageOffset":10259968,"symbol":"protocol witness for static ViewModifier._makeViewList(modifier:inputs:body:) in conformance _PreferenceTransformModifier<A>","symbolLocation":20,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":3214296,"symbol":"<deduplicated_symbol>","symbolLocation":208,"imageIndex":13},{"imageOffset":9353732,"symbol":"TypeConformance<>.visitType<A>(visitor:)","symbolLocation":44,"imageIndex":13},{"imageOffset":3212884,"symbol":"static TupleView._makeViewList(view:inputs:)","symbolLocation":256,"imageIndex":13},{"imageOffset":4075104,"symbol":"static View.makeViewList(view:inputs:)","symbolLocation":300,"imageIndex":13},{"imageOffset":4073636,"symbol":"static View._makeViewList(view:inputs:)","symbolLocation":28,"imageIndex":13},{"imageOffset":2552604,"sourceFile":"\/<compiler-generated>","symbol":"protocol witness for static View._makeViewList(view:inputs:) in conformance InvestmentAgreementReviewView","symbolLocation":12,"imageIndex":6},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":2314584,"symbol":"static ViewModifierContentProvider.providerMakeViewList(view:inputs:)","symbolLocation":120,"imageIndex":13},{"imageOffset":2314444,"symbol":"static _ViewModifier_Content._makeViewList(view:inputs:)","symbolLocation":84,"imageIndex":13},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":10244276,"symbol":"static ViewModifier<>._makeViewList(modifier:inputs:body:)","symbolLocation":112,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":10276540,"symbol":"closure #2 in static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":176,"imageIndex":13},{"imageOffset":2314584,"symbol":"static ViewModifierContentProvider.providerMakeViewList(view:inputs:)","symbolLocation":120,"imageIndex":13},{"imageOffset":2314444,"symbol":"static _ViewModifier_Content._makeViewList(view:inputs:)","symbolLocation":84,"imageIndex":13},{"imageOffset":4006156,"symbol":"static StaticIf<>._makeViewList(view:inputs:)","symbolLocation":364,"imageIndex":13},{"imageOffset":2322820,"symbol":"static ViewModifier.makeViewList(modifier:inputs:body:)","symbolLocation":392,"imageIndex":13},{"imageOffset":2322416,"symbol":"static ViewModifier._makeViewList(modifier:inputs:body:)","symbolLocation":28,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":2322820,"symbol":"static ViewModifier.makeViewList(modifier:inputs:body:)","symbolLocation":392,"imageIndex":13},{"imageOffset":2322416,"symbol":"static ViewModifier._makeViewList(modifier:inputs:body:)","symbolLocation":28,"imageIndex":13},{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13},{"imageOffset":10075368,"symbol":"static View.makeDebuggableViewList(view:inputs:)","symbolLocation":100,"imageIndex":13},{"imageOffset":13168288,"symbol":"static SourceFormula.makeViewList<A>(view:source:inputs:)","symbolLocation":360,"imageIndex":14},{"imageOffset":13168484,"symbol":"protocol witness for static AnySourceFormula.makeViewList<A>(view:source:inputs:) in conformance SourceFormula<A>","symbolLocation":36,"imageIndex":14},{"imageOffset":13152404,"symbol":"specialized static ViewAlias._makeViewList(view:inputs:)","symbolLocation":320,"imageIndex":14},{"imageOffset":13160940,"symbol":"protocol witness for static View._makeViewList(view:inputs:) in conformance _NavigationStackStyleConfiguration.Root","symbolLocation":44,"imageIndex":14},{"imageOffset":5259868,"symbol":"closure #2 in static _VariadicView.Tree<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":5255332,"symbol":"static _VariadicView_ViewRoot.makeView(root:inputs:body:)","symbolLocation":160,"imageIndex":13},{"imageOffset":5251228,"symbol":"static _VariadicView_ViewRoot._makeView(root:inputs:body:)","symbolLocation":28,"imageIndex":13},{"imageOffset":5259340,"symbol":"static _VariadicView.Tree<>._makeView(view:inputs:)","symbolLocation":396,"imageIndex":13},{"imageOffset":10075096,"symbol":"static View.makeDebuggableView(view:inputs:)","symbolLocation":276,"imageIndex":13},{"imageOffset":12774472,"symbol":"static NavigationStackCore._makeView(view:inputs:)","symbolLocation":1428,"imageIndex":14},{"imageOffset":7941924,"symbol":"static StyleModifierType.makeView<A>(view:modifier:inputs:)","symbolLocation":600,"imageIndex":13},{"imageOffset":7933092,"symbol":"static StyleableView._makeView(view:inputs:)","symbolLocation":464,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":7940032,"symbol":"static StyleModifier._makeView(modifier:inputs:body:)","symbolLocation":400,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":7934012,"symbol":"static StyleableView._makeView(view:inputs:)","symbolLocation":1384,"imageIndex":13},{"imageOffset":7933572,"symbol":"static StyleableView._makeView(view:inputs:)","symbolLocation":944,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":10244044,"symbol":"static ViewModifier<>._makeView(modifier:inputs:body:)","symbolLocation":232,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":6942716,"symbol":"static _PreferenceWritingModifier._makeView(modifier:inputs:body:)","symbolLocation":228,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":10244044,"symbol":"static ViewModifier<>._makeView(modifier:inputs:body:)","symbolLocation":232,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":10244044,"symbol":"static ViewModifier<>._makeView(modifier:inputs:body:)","symbolLocation":232,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":4074592,"symbol":"static View.makeView(view:inputs:)","symbolLocation":576,"imageIndex":13},{"imageOffset":4073588,"symbol":"static View._makeView(view:inputs:)","symbolLocation":28,"imageIndex":13},{"imageOffset":10275892,"symbol":"closure #2 in static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":348,"imageIndex":13},{"imageOffset":10244044,"symbol":"static ViewModifier<>._makeView(modifier:inputs:body:)","symbolLocation":232,"imageIndex":13},{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13},{"imageOffset":10038660,"symbol":"AnyViewStorage.makeChildView(view:inputs:)","symbolLocation":616,"imageIndex":13},{"imageOffset":1499008,"symbol":"specialized DynamicViewContainer.updateValue()","symbolLocation":816,"imageIndex":13},{"imageOffset":1547956,"symbol":"specialized implicit closure #1 in closure #1 in closure #1 in Attribute.init<A>(_:)","symbolLocation":20,"imageIndex":13},{"imageOffset":46888,"symbol":"AG::Graph::UpdateStack::update()","symbolLocation":492,"imageIndex":15},{"imageOffset":48664,"symbol":"AG::Graph::update_attribute(AG::data::ptr<AG::Node>, unsigned int)","symbolLocation":352,"imageIndex":15},{"imageOffset":146544,"symbol":"AG::AttributeID::resolve_slow(unsigned int) const","symbolLocation":136,"imageIndex":15},{"imageOffset":77088,"symbol":"AG::Graph::value_ref(AG::AttributeID, unsigned int, AGSwiftMetadata const*, unsigned char&)","symbolLocation":460,"imageIndex":15},{"imageOffset":177420,"symbol":"AGGraphGetWeakValue","symbolLocation":368,"imageIndex":15},{"imageOffset":7589608,"symbol":"GraphHost.preferenceValue<A>(_:)","symbolLocation":504,"imageIndex":13},{"imageOffset":11727104,"symbol":"partial apply for closure #1 in ViewGraphRootValueUpdater._preferenceValue<A>(_:)","symbolLocation":32,"imageIndex":13},{"imageOffset":11714664,"symbol":"ViewGraphRootValueUpdater._updateViewGraph<A>(body:)","symbolLocation":200,"imageIndex":13},{"imageOffset":11705932,"symbol":"ViewGraphRootValueUpdater._preferenceValue<A>(_:)","symbolLocation":180,"imageIndex":13},{"imageOffset":4269748,"symbol":"specialized PresentationHostingController.setupDelayIfNeeded()","symbolLocation":140,"imageIndex":14},{"imageOffset":3354852,"symbol":"SheetBridge.present(_:from:animated:existingPresentedVC:isPreempting:)","symbolLocation":1008,"imageIndex":14},{"imageOffset":3361224,"symbol":"SheetBridge.contingentlyPresent(_:from:animated:)","symbolLocation":1364,"imageIndex":14},{"imageOffset":2370912,"symbol":"specialized SheetBridge.preferencesDidChange(_:)","symbolLocation":5504,"imageIndex":14},{"imageOffset":2351140,"symbol":"_UIHostingView.preferencesDidChange()","symbolLocation":1136,"imageIndex":14},{"imageOffset":11757500,"symbol":"specialized update #1 () in ViewGraph.updateOutputs(async:)","symbolLocation":304,"imageIndex":13},{"imageOffset":11734932,"symbol":"ViewGraph.updateOutputs(at:)","symbolLocation":484,"imageIndex":13},{"imageOffset":11710764,"symbol":"closure #1 in ViewGraphRootValueUpdater.render(interval:updateDisplayList:targetTimestamp:)","symbolLocation":644,"imageIndex":13},{"imageOffset":11704408,"symbol":"ViewGraphRootValueUpdater.render(interval:updateDisplayList:targetTimestamp:)","symbolLocation":420,"imageIndex":13},{"imageOffset":1421720,"imageIndex":16},{"imageOffset":13964400,"symbol":"_UIHostingView.layoutSubviews()","symbolLocation":80,"imageIndex":14},{"imageOffset":13964452,"symbol":"@objc _UIHostingView.layoutSubviews()","symbolLocation":32,"imageIndex":14},{"imageOffset":4081996,"imageIndex":16},{"imageOffset":4082912,"imageIndex":16},{"imageOffset":24605128,"symbol":"-[UIView(CALayerDelegate) layoutSublayersOfLayer:]","symbolLocation":2656,"imageIndex":16},{"imageOffset":1929208,"symbol":"CA::Layer::perform_update_(CA::Layer*, CALayer*, unsigned int, CA::LayerUpdateReason, CA::Transaction*)","symbolLocation":452,"imageIndex":17},{"imageOffset":1927240,"symbol":"CA::Layer::update_if_needed_(CA::Transaction*, CA::LayerUpdateReason)","symbolLocation":600,"imageIndex":17},{"imageOffset":1975512,"symbol":"CA::Layer::layout_and_display_if_needed(CA::Transaction*)","symbolLocation":152,"imageIndex":17},{"imageOffset":1014268,"symbol":"CA::Context::commit_transaction(CA::Transaction*, double, double*)","symbolLocation":544,"imageIndex":17},{"imageOffset":1211220,"symbol":"CA::Transaction::commit()","symbolLocation":636,"imageIndex":17},{"imageOffset":1217532,"symbol":"CA::Transaction::flush_as_runloop_observer(bool)","symbolLocation":68,"imageIndex":17},{"imageOffset":18517152,"symbol":"_UIApplicationFlushCATransaction","symbolLocation":48,"imageIndex":16},{"imageOffset":17587272,"symbol":"__setupUpdateSequence_block_invoke_2","symbolLocation":372,"imageIndex":16},{"imageOffset":6886264,"symbol":"_UIUpdateSequenceRunNext","symbolLocation":120,"imageIndex":16},{"imageOffset":17588388,"symbol":"schedulerStepScheduledMainSectionContinue","symbolLocation":56,"imageIndex":16},{"imageOffset":4788,"symbol":"UC::DriverCore::continueProcessing()","symbolLocation":80,"imageIndex":18},{"imageOffset":357548,"symbol":"__CFMachPortPerform","symbolLocation":164,"imageIndex":19},{"imageOffset":604840,"symbol":"__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE1_PERFORM_FUNCTION__","symbolLocation":56,"imageIndex":19},{"imageOffset":602304,"symbol":"__CFRunLoopDoSource1","symbolLocation":480,"imageIndex":19},{"imageOffset":598408,"symbol":"__CFRunLoopRun","symbolLocation":2100,"imageIndex":19},{"imageOffset":576748,"symbol":"_CFRunLoopRunSpecificWithOptions","symbolLocation":496,"imageIndex":19},{"imageOffset":10684,"symbol":"GSEventRunModal","symbolLocation":116,"imageIndex":20},{"imageOffset":18523508,"symbol":"-[UIApplication _run]","symbolLocation":772,"imageIndex":16},{"imageOffset":18540444,"symbol":"UIApplicationMain","symbolLocation":124,"imageIndex":16},{"imageOffset":8099360,"symbol":"closure #1 in KitRendererCommon(_:)","symbolLocation":164,"imageIndex":14},{"imageOffset":8098664,"symbol":"runApp<A>(_:)","symbolLocation":180,"imageIndex":14},{"imageOffset":5534764,"symbol":"static App.main()","symbolLocation":148,"imageIndex":14},{"imageOffset":21980,"sourceFile":"\/<compiler-generated>","symbol":"static InvesttrustApp.$main()","symbolLocation":40,"imageIndex":6},{"imageOffset":22152,"sourceFile":"InvesttrustApp.swift","symbol":"__debug_main_executable_dylib_entry_point","symbolLocation":12,"imageIndex":6},{"imageOffset":4306146256,"imageIndex":21},{"imageOffset":36180,"symbol":"start","symbolLocation":7184,"imageIndex":0}],"id":15485506,"recursionInfoArray":[{"hottestElided":23,"coldestElided":52102,"depth":5216,"keyFrame":{"imageOffset":10276308,"symbol":"static ModifiedContent<>._makeViewList(view:inputs:)","symbolLocation":244,"imageIndex":13}},{"hottestElided":52149,"coldestElided":52231,"depth":27,"keyFrame":{"imageOffset":10275364,"symbol":"static ModifiedContent<>._makeView(view:inputs:)","symbolLocation":408,"imageIndex":13}}],"originalLength":52297,"triggered":true,"threadState":{"x":[{"value":0},{"value":0},{"value":18397679294719823053},{"value":4338769416},{"value":0},{"value":4339230512},{"value":4339226664},{"value":4339226312},{"value":18397679294719823053},{"value":1718052121892243547},{"value":1078612110755296300},{"value":11376068507788127593},{"value":4339230704},{"value":4339225544},{"value":668265261},{"value":1},{"value":6834963120,"symbolLocation":0,"symbol":"swift_getTupleTypeMetadata2"},{"value":4339230512},{"value":0},{"value":6153093168},{"value":759},{"value":4337648642},{"value":6153093712},{"value":0},{"value":6153094000},{"value":4339225576},{"value":6153094400},{"value":6153094428},{"value":6153094008}],"flavor":"ARM_THREAD_STATE64","lr":{"value":6835040264},"cpsr":{"value":1610616832},"fp":{"value":6153093328},"sp":{"value":6153093072},"esr":{"value":2449473607,"description":"(Data Abort) byte write Translation fault"},"pc":{"value":6835258576,"matchesCrashFrame":1},"far":{"value":6153093088}},"queue":"com.apple.main-thread"},{"id":15485898,"frames":[],"threadState":{"x":[{"value":6163165184},{"value":8963},{"value":6162628608},{"value":0},{"value":409604},{"value":18446744073709551615},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":0},"cpsr":{"value":4096},"fp":{"value":0},"sp":{"value":6163165184},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4307360132},"far":{"value":0}}},{"id":15485899,"threadState":{"x":[{"value":4},{"value":0},{"value":4294967295},{"value":4375635316,"symbolLocation":0,"symbol":"pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp)"},{"value":4375415320,"symbolLocation":0,"symbol":"cq_next(grpc_completion_queue*, gpr_timespec, void*)"},{"value":0},{"value":0},{"value":1027},{"value":4306946384,"symbolLocation":0,"symbol":"poll"},{"value":4398046512130},{"value":4398046512128},{"value":4398046512130},{"value":1024},{"value":4398046512128},{"value":3257469199},{"value":3255369993},{"value":230},{"value":105553176847712},{"value":0},{"value":0},{"value":1},{"value":6163735136},{"value":4319232744},{"value":6163735136},{"value":1},{"value":4384435176,"symbolLocation":0,"symbol":"grpc_core::api_trace"},{"value":9223372036854775807},{"value":6163731296},{"value":4294967295}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4375623028},"cpsr":{"value":2684358656},"fp":{"value":6163736000},"sp":{"value":6163731104},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306946392},"far":{"value":0}},"queue":"com.google.firebase.firestore.rpc","frames":[{"imageOffset":35160,"symbol":"poll","symbolLocation":8,"imageIndex":9},{"imageOffset":11646324,"symbol":"pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp)","symbolLocation":1388,"imageIndex":6},{"imageOffset":11658696,"symbol":"pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp)","symbolLocation":84,"imageIndex":6},{"imageOffset":11439024,"symbol":"cq_next(grpc_completion_queue*, gpr_timespec, void*)","symbolLocation":408,"imageIndex":6},{"imageOffset":10590640,"symbol":"grpc::CompletionQueue::AsyncNextInternal(void**, bool*, gpr_timespec)","symbolLocation":60,"imageIndex":6},{"imageOffset":8871580,"symbol":"firebase::firestore::remote::Datastore::PollGrpcQueue()","symbolLocation":84,"imageIndex":6},{"imageOffset":10062024,"symbol":"firebase::firestore::util::Task::ExecuteAndRelease()","symbolLocation":188,"imageIndex":6},{"imageOffset":121308,"symbol":"_dispatch_client_callout","symbolLocation":12,"imageIndex":7},{"imageOffset":50324,"symbol":"_dispatch_lane_serial_drain","symbolLocation":888,"imageIndex":7},{"imageOffset":53496,"symbol":"_dispatch_lane_invoke","symbolLocation":428,"imageIndex":7},{"imageOffset":103060,"symbol":"_dispatch_root_queue_drain_deferred_wlh","symbolLocation":324,"imageIndex":7},{"imageOffset":100336,"symbol":"_dispatch_workloop_worker_thread","symbolLocation":752,"imageIndex":7},{"imageOffset":11148,"symbol":"_pthread_wqthread","symbolLocation":288,"imageIndex":10},{"imageOffset":6540,"symbol":"start_wqthread","symbolLocation":8,"imageIndex":10}]},{"id":15485955,"name":"com.apple.uikit.eventfetch-thread","threadState":{"x":[{"value":268451845},{"value":21592279046},{"value":8589934592},{"value":58287001174016},{"value":0},{"value":58287001174016},{"value":2},{"value":4294967295},{"value":0},{"value":17179869184},{"value":0},{"value":2},{"value":0},{"value":0},{"value":13571},{"value":3072},{"value":18446744073709551569},{"value":2},{"value":0},{"value":4294967295},{"value":2},{"value":58287001174016},{"value":0},{"value":58287001174016},{"value":6164880776},{"value":8589934592},{"value":21592279046},{"value":18446744073709550527},{"value":4412409862}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4306983180},"cpsr":{"value":4096},"fp":{"value":6164880624},"sp":{"value":6164880544},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306914160},"far":{"value":0}},"frames":[{"imageOffset":2928,"symbol":"mach_msg2_trap","symbolLocation":8,"imageIndex":9},{"imageOffset":71948,"symbol":"mach_msg2_internal","symbolLocation":72,"imageIndex":9},{"imageOffset":35856,"symbol":"mach_msg_overwrite","symbolLocation":480,"imageIndex":9},{"imageOffset":3812,"symbol":"mach_msg","symbolLocation":20,"imageIndex":9},{"imageOffset":601092,"symbol":"__CFRunLoopServiceMachPort","symbolLocation":156,"imageIndex":19},{"imageOffset":597436,"symbol":"__CFRunLoopRun","symbolLocation":1128,"imageIndex":19},{"imageOffset":576748,"symbol":"_CFRunLoopRunSpecificWithOptions","symbolLocation":496,"imageIndex":19},{"imageOffset":9096776,"symbol":"-[NSRunLoop(NSRunLoop) runMode:beforeDate:]","symbolLocation":208,"imageIndex":22},{"imageOffset":9097320,"symbol":"-[NSRunLoop(NSRunLoop) runUntilDate:]","symbolLocation":60,"imageIndex":22},{"imageOffset":15735888,"symbol":"-[UIEventFetcher threadMain]","symbolLocation":392,"imageIndex":16},{"imageOffset":9256212,"symbol":"__NSThread__start__","symbolLocation":716,"imageIndex":22},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}]},{"id":15485960,"frames":[],"threadState":{"x":[{"value":6165458944},{"value":19203},{"value":6164922368},{"value":0},{"value":409604},{"value":18446744073709551615},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":0},"cpsr":{"value":4096},"fp":{"value":0},"sp":{"value":6165458944},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4307360132},"far":{"value":0}}},{"id":15486017,"name":"com.apple.UIKit.inProcessAnimationManager","threadState":{"x":[{"value":14},{"value":18446744073709551615},{"value":35627},{"value":35627},{"value":17179869187},{"value":6},{"value":17179869187},{"value":6},{"value":36611},{"value":18446744073709551615},{"value":1},{"value":0},{"value":1},{"value":0},{"value":4317806632,"symbolLocation":0,"symbol":"OBJC_CLASS_$_OS_dispatch_semaphore"},{"value":4317806632,"symbolLocation":0,"symbol":"OBJC_CLASS_$_OS_dispatch_semaphore"},{"value":18446744073709551580},{"value":4317400268,"symbolLocation":0,"symbol":"-[OS_object retain]"},{"value":0},{"value":105553151342160},{"value":105553151342096},{"value":18446744073709551615},{"value":4324463936},{"value":8512434176,"objc-selector":"OfBytesUsingEncoding:"},{"value":8512434176,"objc-selector":"OfBytesUsingEncoding:"},{"value":105553151342096},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4317404088},"cpsr":{"value":1610616832},"fp":{"value":6167178304},"sp":{"value":6167178288},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306914028},"far":{"value":0}},"frames":[{"imageOffset":2796,"symbol":"semaphore_wait_trap","symbolLocation":8,"imageIndex":9},{"imageOffset":23480,"symbol":"_dispatch_sema4_wait","symbolLocation":24,"imageIndex":7},{"imageOffset":24896,"symbol":"_dispatch_semaphore_wait_slow","symbolLocation":128,"imageIndex":7},{"imageOffset":4995520,"imageIndex":16},{"imageOffset":5013128,"imageIndex":16},{"imageOffset":1418704,"imageIndex":16},{"imageOffset":9256212,"symbol":"__NSThread__start__","symbolLocation":716,"imageIndex":22},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}]},{"id":15486018,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375128,"symbol":"gpr_cv_wait","symbolLocation":160,"imageIndex":6},{"imageOffset":11704968,"symbol":"grpc_core::Executor::ThreadMain(void*)","symbolLocation":192,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":260},{"value":0},{"value":0},{"value":0},{"value":0},{"value":160},{"value":0},{"value":0},{"value":6167752152},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":105553176117248},{"value":0},{"value":4354731520},{"value":4354731600},{"value":6167752928},{"value":0},{"value":0},{"value":0},{"value":1},{"value":256},{"value":4381615837,"symbolLocation":9338,"symbol":"jsonenc_bytes.base64"},{"value":4381231521}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6167752272},"sp":{"value":6167752128},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486019,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375128,"symbol":"gpr_cv_wait","symbolLocation":160,"imageIndex":6},{"imageOffset":11704968,"symbol":"grpc_core::Executor::ThreadMain(void*)","symbolLocation":192,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":260},{"value":0},{"value":0},{"value":0},{"value":0},{"value":160},{"value":0},{"value":0},{"value":6168325592},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":105553176101280},{"value":0},{"value":4354255360},{"value":4354255440},{"value":6168326368},{"value":0},{"value":0},{"value":0},{"value":1},{"value":256},{"value":4381615837,"symbolLocation":9338,"symbol":"jsonenc_bytes.base64"},{"value":4381231521}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6168325712},"sp":{"value":6168325568},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486020,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13479140,"symbol":"timer_thread(void*)","symbolLocation":556,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":3584},{"value":0},{"value":0},{"value":160},{"value":1},{"value":814000},{"value":6168898984},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":105553176101072},{"value":0},{"value":4384414112,"symbolLocation":0,"symbol":"g_mu"},{"value":4384414176,"symbolLocation":0,"symbol":"g_cv_wait"},{"value":6168899808},{"value":814000},{"value":1},{"value":3584},{"value":3585},{"value":3840},{"value":6168899328},{"value":9223372036854775807}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6168899104},"sp":{"value":6168898960},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486025,"name":"com.apple.NSURLConnectionLoader","threadState":{"x":[{"value":268451845},{"value":21592279046},{"value":8589934592},{"value":274890791845888},{"value":0},{"value":274890791845888},{"value":2},{"value":4294967295},{"value":0},{"value":17179869184},{"value":0},{"value":2},{"value":0},{"value":0},{"value":64003},{"value":3072},{"value":18446744073709551569},{"value":1099511628034},{"value":0},{"value":4294967295},{"value":2},{"value":274890791845888},{"value":0},{"value":274890791845888},{"value":6169468232},{"value":8589934592},{"value":21592279046},{"value":18446744073709550527},{"value":4412409862}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4306983180},"cpsr":{"value":4096},"fp":{"value":6169468080},"sp":{"value":6169468000},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306914160},"far":{"value":0}},"frames":[{"imageOffset":2928,"symbol":"mach_msg2_trap","symbolLocation":8,"imageIndex":9},{"imageOffset":71948,"symbol":"mach_msg2_internal","symbolLocation":72,"imageIndex":9},{"imageOffset":35856,"symbol":"mach_msg_overwrite","symbolLocation":480,"imageIndex":9},{"imageOffset":3812,"symbol":"mach_msg","symbolLocation":20,"imageIndex":9},{"imageOffset":601092,"symbol":"__CFRunLoopServiceMachPort","symbolLocation":156,"imageIndex":19},{"imageOffset":597436,"symbol":"__CFRunLoopRun","symbolLocation":1128,"imageIndex":19},{"imageOffset":576748,"symbol":"_CFRunLoopRunSpecificWithOptions","symbolLocation":496,"imageIndex":19},{"imageOffset":2100588,"symbol":"+[__CFN_CoreSchedulingSetRunnable _run:]","symbolLocation":368,"imageIndex":23},{"imageOffset":9256212,"symbol":"__NSThread__start__","symbolLocation":716,"imageIndex":22},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}]},{"id":15486031,"frames":[],"threadState":{"x":[{"value":6170046464},{"value":45091},{"value":6169509888},{"value":0},{"value":409604},{"value":18446744073709551615},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":0},"cpsr":{"value":4096},"fp":{"value":0},"sp":{"value":6170046464},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4307360132},"far":{"value":0}}},{"id":15486034,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":3},{"value":0},{"value":6170619384},{"value":0},{"value":12800},{"value":54975581401602},{"value":54975581401602},{"value":12800},{"value":0},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6170620128},{"value":0},{"value":3},{"value":124928},{"value":126208},{"value":128000},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6170619504},"sp":{"value":6170619360},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486035,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":0},{"value":14999000},{"value":6171192824},{"value":0},{"value":12544},{"value":53876069773570},{"value":53876069773570},{"value":12544},{"value":0},{"value":53876069773568},{"value":305},{"value":105553176897904},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6171193568},{"value":14999000},{"value":0},{"value":124928},{"value":124928},{"value":126464},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6171192944},"sp":{"value":6171192800},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486036,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13474056,"symbol":"grpc_event_engine::experimental::TimerManager::WaitUntil(grpc_core::Timestamp)","symbolLocation":280,"imageIndex":6},{"imageOffset":13477008,"symbol":"void absl::lts_20240722::internal_any_invocable::RemoteInvoker<false, void, grpc_event_engine::experimental::TimerManager::MainLoop()::$_0&>(absl::lts_20240722::internal_any_invocable::TypeErasedState*)","symbolLocation":40,"imageIndex":6},{"imageOffset":10744364,"symbol":"grpc_event_engine::experimental::SelfDeletingClosure::Run()","symbolLocation":32,"imageIndex":6},{"imageOffset":13636204,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":376,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":260},{"value":0},{"value":5632},{"value":0},{"value":0},{"value":160},{"value":1},{"value":0},{"value":6171766184},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":4320273832},{"value":0},{"value":4320229968},{"value":4320230032},{"value":6171767008},{"value":0},{"value":1},{"value":5632},{"value":8449},{"value":8704},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6171766304},"sp":{"value":6171766160},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486037,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":4320273744},{"value":54975581401600},{"value":4256},{"value":1},{"value":527000000},{"value":6172339704},{"value":12800},{"value":12800},{"value":53876069773826},{"value":53876069773826},{"value":12800},{"value":256},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6172340448},{"value":527000000},{"value":1},{"value":124928},{"value":125441},{"value":126720},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6172339824},"sp":{"value":6172339680},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486038,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":3},{"value":0},{"value":6172913144},{"value":0},{"value":12800},{"value":54975581401602},{"value":54975581401602},{"value":12800},{"value":0},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6172913888},{"value":0},{"value":3},{"value":124928},{"value":125440},{"value":126976},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6172913264},"sp":{"value":6172913120},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486039,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":1},{"value":175000000},{"value":6173486584},{"value":0},{"value":12800},{"value":54975581401602},{"value":54975581401602},{"value":12800},{"value":0},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6173487328},{"value":175000000},{"value":1},{"value":124928},{"value":125696},{"value":127232},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6173486704},"sp":{"value":6173486560},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486040,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":1},{"value":174999000},{"value":6174060024},{"value":0},{"value":12800},{"value":54975581401602},{"value":54975581401602},{"value":12800},{"value":0},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6174060768},{"value":174999000},{"value":1},{"value":124928},{"value":125952},{"value":127488},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6174060144},"sp":{"value":6174060000},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486041,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13636732,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkSignal::WaitWithTimeout(grpc_core::Duration)","symbolLocation":124,"imageIndex":6},{"imageOffset":13636072,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::Step()","symbolLocation":244,"imageIndex":6},{"imageOffset":13635220,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::ThreadState::ThreadBody()","symbolLocation":148,"imageIndex":6},{"imageOffset":13637484,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::StartThread()::$_0::__invoke(void*)","symbolLocation":20,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":4},{"value":0},{"value":124928},{"value":0},{"value":0},{"value":160},{"value":1},{"value":527000000},{"value":6174633464},{"value":0},{"value":12800},{"value":54975581401602},{"value":54975581401602},{"value":12800},{"value":0},{"value":54975581401600},{"value":305},{"value":4320273832},{"value":0},{"value":4320273744},{"value":4320273808},{"value":6174634208},{"value":527000000},{"value":1},{"value":124928},{"value":126208},{"value":127744},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6174633584},"sp":{"value":6174633440},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486042,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375112,"symbol":"gpr_cv_wait","symbolLocation":144,"imageIndex":6},{"imageOffset":13633620,"symbol":"grpc_core::Notification::WaitForNotificationWithTimeout(absl::lts_20240722::Duration)","symbolLocation":220,"imageIndex":6},{"imageOffset":13633336,"symbol":"grpc_event_engine::experimental::WorkStealingThreadPool::WorkStealingThreadPoolImpl::Lifeguard::LifeguardMain()","symbolLocation":160,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":260},{"value":0},{"value":0},{"value":0},{"value":0},{"value":160},{"value":1},{"value":0},{"value":6175206920},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":105553162693336},{"value":0},{"value":105553162693248},{"value":105553162693312},{"value":6175207648},{"value":0},{"value":1},{"value":0},{"value":5889},{"value":6144},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6175207040},"sp":{"value":6175206896},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486044,"name":"com.apple.CFStream.LegacyThread","threadState":{"x":[{"value":268451845},{"value":21592279046},{"value":8589934592},{"value":208920094179328},{"value":0},{"value":208920094179328},{"value":2},{"value":4294967295},{"value":0},{"value":17179869184},{"value":0},{"value":2},{"value":0},{"value":0},{"value":48643},{"value":3072},{"value":18446744073709551569},{"value":2199023256066},{"value":0},{"value":4294967295},{"value":2},{"value":208920094179328},{"value":0},{"value":208920094179328},{"value":6175776776},{"value":8589934592},{"value":21592279046},{"value":18446744073709550527},{"value":4412409862}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4306983180},"cpsr":{"value":4096},"fp":{"value":6175776624},"sp":{"value":6175776544},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306914160},"far":{"value":0}},"frames":[{"imageOffset":2928,"symbol":"mach_msg2_trap","symbolLocation":8,"imageIndex":9},{"imageOffset":71948,"symbol":"mach_msg2_internal","symbolLocation":72,"imageIndex":9},{"imageOffset":35856,"symbol":"mach_msg_overwrite","symbolLocation":480,"imageIndex":9},{"imageOffset":3812,"symbol":"mach_msg","symbolLocation":20,"imageIndex":9},{"imageOffset":601092,"symbol":"__CFRunLoopServiceMachPort","symbolLocation":156,"imageIndex":19},{"imageOffset":597436,"symbol":"__CFRunLoopRun","symbolLocation":1128,"imageIndex":19},{"imageOffset":576748,"symbol":"_CFRunLoopRunSpecificWithOptions","symbolLocation":496,"imageIndex":19},{"imageOffset":725380,"symbol":"_legacyStreamRunLoop_workThread","symbolLocation":260,"imageIndex":19},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}]},{"id":15486045,"name":"com.apple.CFSocket.private","threadState":{"x":[{"value":4},{"value":0},{"value":105553116433312},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":6176354528},{"value":0},{"value":4321268416},{"value":31},{"value":22},{"value":4321268752},{"value":72057602400272553,"symbolLocation":72057594037927937,"symbol":"OBJC_CLASS_$___NSCFArray"},{"value":8362344616,"symbolLocation":0,"symbol":"OBJC_CLASS_$___NSCFArray"},{"value":93},{"value":6446906352,"symbolLocation":0,"symbol":"-[__NSCFArray objectAtIndex:]"},{"value":0},{"value":105553129144208},{"value":8362364928,"symbolLocation":48,"symbol":"cache"},{"value":32},{"value":8362367408,"symbolLocation":0,"symbol":"__CFActiveSocketsLock"},{"value":0},{"value":105553116433312},{"value":105553129329296},{"value":105553116437008},{"value":0},{"value":105553129328480}],"flavor":"ARM_THREAD_STATE64","lr":{"value":6447057068},"cpsr":{"value":1610616832},"fp":{"value":6176354240},"sp":{"value":6176320464},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306956160},"far":{"value":0}},"frames":[{"imageOffset":44928,"symbol":"__select","symbolLocation":8,"imageIndex":9},{"imageOffset":661676,"symbol":"__CFSocketManager","symbolLocation":680,"imageIndex":19},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}]},{"id":15486137,"frames":[{"imageOffset":16416,"symbol":"__psynch_cvwait","symbolLocation":8,"imageIndex":9},{"imageOffset":27252,"symbol":"_pthread_cond_wait","symbolLocation":976,"imageIndex":10},{"imageOffset":13375128,"symbol":"gpr_cv_wait","symbolLocation":160,"imageIndex":6},{"imageOffset":13479140,"symbol":"timer_thread(void*)","symbolLocation":556,"imageIndex":6},{"imageOffset":13451292,"symbol":"grpc_core::(anonymous namespace)::ThreadInternalsPosix::ThreadInternalsPosix(char const*, void (*)(void*), void*, bool*, grpc_core::Thread::Options const&)::'lambda'(void*)::__invoke(void*)","symbolLocation":140,"imageIndex":6},{"imageOffset":26028,"symbol":"_pthread_start","symbolLocation":104,"imageIndex":10},{"imageOffset":6552,"symbol":"thread_start","symbolLocation":8,"imageIndex":10}],"threadState":{"x":[{"value":260},{"value":0},{"value":3584},{"value":0},{"value":0},{"value":160},{"value":0},{"value":0},{"value":6162017704},{"value":0},{"value":0},{"value":2},{"value":2},{"value":0},{"value":0},{"value":0},{"value":305},{"value":105553176091136},{"value":0},{"value":4384414112,"symbolLocation":0,"symbol":"g_mu"},{"value":4384414176,"symbolLocation":0,"symbol":"g_cv_wait"},{"value":6162018528},{"value":0},{"value":0},{"value":3584},{"value":3584},{"value":4096},{"value":6162018048},{"value":9223372036854775807}],"flavor":"ARM_THREAD_STATE64","lr":{"value":4307380852},"cpsr":{"value":1610616832},"fp":{"value":6162017824},"sp":{"value":6162017680},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4306927648},"far":{"value":0}}},{"id":15486148,"frames":[],"threadState":{"x":[{"value":6164312064},{"value":86019},{"value":6163775488},{"value":0},{"value":409604},{"value":18446744073709551615},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":0},"cpsr":{"value":4096},"fp":{"value":0},"sp":{"value":6164312064},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4307360132},"far":{"value":0}}},{"id":15486180,"threadState":{"x":[{"value":4319428784},{"value":1152921504606846976},{"value":0},{"value":1},{"value":105553176077568},{"value":8161873048,"symbolLocation":1552,"symbol":"block_descriptor.6"},{"value":0},{"value":3152},{"value":1152921504606846983},{"value":4294967295},{"value":3},{"value":4294967299},{"value":2043},{"value":2045},{"value":3204472878},{"value":3202373694},{"value":6834897860,"symbolLocation":0,"symbol":"swift_release"},{"value":46},{"value":0},{"value":4329825352},{"value":105553169806624},{"value":8187637264,"symbolLocation":72,"symbol":"vtable for std::__1::__function::__func<swift_cvw_singlePayloadEnumGeneric_getEnumTagImpl(swift::OpaqueValue*, swift::TargetMetadata<swift::InProcess> const*)::$_1, std::__1::allocator<swift_cvw_singlePayloadEnumGeneric_getEnumTagImpl(swift::OpaqueValue*, swift::TargetMetadata<swift::InProcess> const*)::$_1>, unsigned int (swift::TargetMetadata<swift::InProcess> const*, unsigned int, unsigned int, unsigned long, unsigned char)>"},{"value":6599168664,"symbolLocation":240,"symbol":"type_layout_string 7Network10ParametersV"},{"value":344},{"value":6442922048,"symbolLocation":0,"symbol":"_objc_msgForward_impcache"},{"value":8362164224,"symbolLocation":0,"symbol":"objc_debug_taggedpointer_classes"},{"value":8366333952,"symbolLocation":80,"symbol":"nw_protocol_webtransport_http2_stream_callbacks()::protocol_callbacks"},{"value":8366333952,"symbolLocation":80,"symbol":"nw_protocol_webtransport_http2_stream_callbacks()::protocol_callbacks"},{"value":8366215168,"symbolLocation":0,"symbol":"OBJC_IVAR_$_NWConcrete_nw_endpoint_flow.flow_registration"}],"flavor":"ARM_THREAD_STATE64","lr":{"value":6587359896},"cpsr":{"value":4096},"fp":{"value":6166028880},"sp":{"value":6166028848},"esr":{"value":2449473547,"description":"(Data Abort) byte read Access flag fault"},"pc":{"value":6584119312},"far":{"value":0}},"queue":"com.apple.network.connections","frames":[{"imageOffset":372752,"imageIndex":24},{"imageOffset":3613336,"imageIndex":24},{"imageOffset":3613520,"imageIndex":24},{"imageOffset":125572,"symbol":"_swift_release_dealloc","symbolLocation":28,"imageIndex":12},{"imageOffset":128328,"symbol":"bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int)","symbolLocation":148,"imageIndex":12},{"imageOffset":95876,"imageIndex":24},{"imageOffset":227976,"imageIndex":24},{"imageOffset":228024,"imageIndex":24},{"imageOffset":125572,"symbol":"_swift_release_dealloc","symbolLocation":28,"imageIndex":12},{"imageOffset":128328,"symbol":"bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int)","symbolLocation":148,"imageIndex":12},{"imageOffset":28140,"symbol":"swift_cvw_destroyImpl(swift::OpaqueValue*, swift::TargetMetadata<swift::InProcess> const*)","symbolLocation":120,"imageIndex":12},{"imageOffset":85828,"imageIndex":24},{"imageOffset":70248,"imageIndex":24},{"imageOffset":125572,"symbol":"_swift_release_dealloc","symbolLocation":28,"imageIndex":12},{"imageOffset":128328,"symbol":"bool swift::RefCounts<swift::RefCountBitsT<(swift::RefCountInlinedness)1>>::doDecrementSlow<(swift::PerformDeinit)1>(swift::RefCountBitsT<(swift::RefCountInlinedness)1>, unsigned int)","symbolLocation":148,"imageIndex":12},{"imageOffset":2784796,"imageIndex":24},{"imageOffset":24520,"symbol":"object_cxxDestructFromClass(objc_object*, objc_class*)","symbolLocation":112,"imageIndex":25},{"imageOffset":130656,"symbol":"objc_destructInstance_nonnull_realized(objc_object*)","symbolLocation":72,"imageIndex":25},{"imageOffset":163656,"symbol":"_objc_rootDealloc","symbolLocation":56,"imageIndex":25},{"imageOffset":2784708,"imageIndex":24},{"imageOffset":2784748,"imageIndex":24},{"imageOffset":24520,"symbol":"object_cxxDestructFromClass(objc_object*, objc_class*)","symbolLocation":112,"imageIndex":25},{"imageOffset":130656,"symbol":"objc_destructInstance_nonnull_realized(objc_object*)","symbolLocation":72,"imageIndex":25},{"imageOffset":163656,"symbol":"_objc_rootDealloc","symbolLocation":56,"imageIndex":25},{"imageOffset":12907032,"symbol":"-[NWConcrete_nw_path_evaluator dealloc]","symbolLocation":40,"imageIndex":24},{"imageOffset":15007928,"symbol":"invocation function for block in nw_association_schedule_deactivation(NWConcrete_nw_association*)","symbolLocation":896,"imageIndex":24},{"imageOffset":121308,"symbol":"_dispatch_client_callout","symbolLocation":12,"imageIndex":7},{"imageOffset":30504,"symbol":"_dispatch_continuation_pop","symbolLocation":740,"imageIndex":7},{"imageOffset":116680,"symbol":"_dispatch_source_invoke","symbolLocation":1932,"imageIndex":7},{"imageOffset":56904,"symbol":"_dispatch_workloop_invoke","symbolLocation":760,"imageIndex":7},{"imageOffset":103060,"symbol":"_dispatch_root_queue_drain_deferred_wlh","symbolLocation":324,"imageIndex":7},{"imageOffset":100336,"symbol":"_dispatch_workloop_worker_thread","symbolLocation":752,"imageIndex":7},{"imageOffset":11148,"symbol":"_pthread_wqthread","symbolLocation":288,"imageIndex":10},{"imageOffset":6540,"symbol":"start_wqthread","symbolLocation":8,"imageIndex":10}]},{"id":15486186,"frames":[],"threadState":{"x":[{"value":6166605824},{"value":66619},{"value":6166069248},{"value":0},{"value":409604},{"value":18446744073709551615},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0},{"value":0}],"flavor":"ARM_THREAD_STATE64","lr":{"value":0},"cpsr":{"value":4096},"fp":{"value":0},"sp":{"value":6166605824},"esr":{"value":1442840704,"description":"(Syscall)"},"pc":{"value":4307360132},"far":{"value":0}}}],
+  "usedImages" : [
+  {
+    "source" : "P",
+    "arch" : "arm64e",
+    "base" : 4307681280,
+    "size" : 655360,
+    "uuid" : "044cd67e-3a0a-3ca4-8bb3-a9687d5328fe",
+    "path" : "\/usr\/lib\/dyld",
+    "name" : "dyld"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4305420288,
+    "CFBundleShortVersionString" : "1.0",
+    "CFBundleIdentifier" : "investtrust",
+    "size" : 16384,
+    "uuid" : "78f80879-0012-3dcd-b777-1eafe2ba617e",
+    "path" : "\/Users\/USER\/Library\/Developer\/CoreSimulator\/Devices\/51000584-5F1C-4BC4-8626-3164414F1E30\/data\/Containers\/Bundle\/Application\/72E097D3-287A-4361-859E-4B65AF9DA9A1\/Investtrust.app\/Investtrust",
+    "name" : "Investtrust",
+    "CFBundleVersion" : "1"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4305600512,
+    "size" : 16384,
+    "uuid" : "6de309ef-3434-318a-b6d1-f91eda806f38",
+    "path" : "\/Volumes\/VOLUME\/*\/libLogRedirect.dylib",
+    "name" : "libLogRedirect.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4305780736,
+    "size" : 32768,
+    "uuid" : "44a152b5-fe02-303f-8247-2dffc17c909c",
+    "path" : "\/Volumes\/VOLUME\/*\/libBacktraceRecording.dylib",
+    "name" : "libBacktraceRecording.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4308942848,
+    "size" : 278528,
+    "uuid" : "e85f9456-275b-3519-961a-47ae6a51d962",
+    "path" : "\/Volumes\/VOLUME\/*\/libMainThreadChecker.dylib",
+    "name" : "libMainThreadChecker.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4310335488,
+    "size" : 638976,
+    "uuid" : "139a52e3-2b0d-39ed-ad36-0fabddb28519",
+    "path" : "\/Volumes\/VOLUME\/*\/libRPAC.dylib",
+    "name" : "libRPAC.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4363976704,
+    "size" : 18644992,
+    "uuid" : "b5a97110-c4c0-3e6d-9928-0c3758bb1675",
+    "path" : "\/Users\/USER\/Library\/Developer\/CoreSimulator\/Devices\/51000584-5F1C-4BC4-8626-3164414F1E30\/data\/Containers\/Bundle\/Application\/72E097D3-287A-4361-859E-4B65AF9DA9A1\/Investtrust.app\/Investtrust.debug.dylib",
+    "name" : "Investtrust.debug.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4317380608,
+    "size" : 311296,
+    "uuid" : "eb7be2df-b21f-39f2-bf41-d375397983e0",
+    "path" : "\/Volumes\/VOLUME\/*\/libdispatch.dylib",
+    "name" : "libdispatch.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4305879040,
+    "size" : 32768,
+    "uuid" : "9463fc06-cc7c-38e8-ad3c-1b9f2617df53",
+    "path" : "\/usr\/lib\/system\/libsystem_platform.dylib",
+    "name" : "libsystem_platform.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4306911232,
+    "size" : 245760,
+    "uuid" : "2dcc78fc-b5ed-31f4-8a49-4c7bacf50780",
+    "path" : "\/usr\/lib\/system\/libsystem_kernel.dylib",
+    "name" : "libsystem_kernel.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4307353600,
+    "size" : 65536,
+    "uuid" : "b1095734-2a4d-3e8c-839e-b10ae9598d61",
+    "path" : "\/usr\/lib\/system\/libsystem_pthread.dylib",
+    "name" : "libsystem_pthread.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 4363124736,
+    "size" : 49152,
+    "uuid" : "997b234d-5c24-3e21-97d6-33b6853818c0",
+    "path" : "\/Volumes\/VOLUME\/*\/libobjc-trampolines.dylib",
+    "name" : "libobjc-trampolines.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6834782208,
+    "size" : 4871392,
+    "uuid" : "c62f8d53-88b1-335b-991e-5bc56d71d347",
+    "path" : "\/Volumes\/VOLUME\/*\/libswiftCore.dylib",
+    "name" : "libswiftCore.dylib"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 7968501760,
+    "CFBundleShortVersionString" : "7.2.5.1.102",
+    "CFBundleIdentifier" : "com.apple.SwiftUICore",
+    "size" : 13808928,
+    "uuid" : "f7e2bb37-d266-38fc-b8cc-80664c89f0b4",
+    "path" : "\/Volumes\/VOLUME\/*\/SwiftUICore.framework\/SwiftUICore",
+    "name" : "SwiftUICore",
+    "CFBundleVersion" : "7.2.5.1.102"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 7950123008,
+    "CFBundleShortVersionString" : "7.2.5.1.102",
+    "CFBundleIdentifier" : "com.apple.SwiftUI",
+    "size" : 18375808,
+    "uuid" : "719cf349-8c4a-3054-9536-23eb53648ee0",
+    "path" : "\/Volumes\/VOLUME\/*\/SwiftUI.framework\/SwiftUI",
+    "name" : "SwiftUI",
+    "CFBundleVersion" : "7.2.5.1.102"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 7591202816,
+    "CFBundleShortVersionString" : "7.0.80",
+    "CFBundleIdentifier" : "com.apple.AttributeGraph",
+    "size" : 266368,
+    "uuid" : "bfbc22b3-f2d6-39cf-8d0e-1d09fbcca27c",
+    "path" : "\/Volumes\/VOLUME\/*\/AttributeGraph.framework\/AttributeGraph",
+    "name" : "AttributeGraph",
+    "CFBundleVersion" : "7.0.80"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6528032768,
+    "CFBundleShortVersionString" : "1.0",
+    "CFBundleIdentifier" : "com.apple.UIKitCore",
+    "size" : 35792672,
+    "uuid" : "196154ff-ba04-33cd-9277-98f9aa0b7499",
+    "path" : "\/Volumes\/VOLUME\/*\/UIKitCore.framework\/UIKitCore",
+    "name" : "UIKitCore",
+    "CFBundleVersion" : "9126.2.4.1.111"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6650138624,
+    "CFBundleShortVersionString" : "1193.47.1",
+    "CFBundleIdentifier" : "com.apple.QuartzCore",
+    "size" : 3336480,
+    "uuid" : "886d5a00-871b-360c-9b22-4d902b80f230",
+    "path" : "\/Volumes\/VOLUME\/*\/QuartzCore.framework\/QuartzCore",
+    "name" : "QuartzCore",
+    "CFBundleVersion" : "1193.47.1"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 9933750272,
+    "CFBundleShortVersionString" : "1",
+    "CFBundleIdentifier" : "com.apple.UpdateCycle",
+    "size" : 7840,
+    "uuid" : "e2e29a67-7d1d-333d-9227-e405451edb7d",
+    "path" : "\/Volumes\/VOLUME\/*\/UpdateCycle.framework\/UpdateCycle",
+    "name" : "UpdateCycle",
+    "CFBundleVersion" : "1"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6446395392,
+    "CFBundleShortVersionString" : "6.9",
+    "CFBundleIdentifier" : "com.apple.CoreFoundation",
+    "size" : 4309888,
+    "uuid" : "4f6d050d-95ee-3a95-969c-3a98b29df6ff",
+    "path" : "\/Volumes\/VOLUME\/*\/CoreFoundation.framework\/CoreFoundation",
+    "name" : "CoreFoundation",
+    "CFBundleVersion" : "4201"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6755336192,
+    "CFBundleShortVersionString" : "1.0",
+    "CFBundleIdentifier" : "com.apple.GraphicsServices",
+    "size" : 32192,
+    "uuid" : "4e5b0462-6170-3367-9475-4ff8b8dfe4e6",
+    "path" : "\/Volumes\/VOLUME\/*\/GraphicsServices.framework\/GraphicsServices",
+    "name" : "GraphicsServices",
+    "CFBundleVersion" : "1.0"
+  },
+  {
+    "size" : 0,
+    "source" : "A",
+    "base" : 0,
+    "uuid" : "00000000-0000-0000-0000-000000000000"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6451228672,
+    "CFBundleShortVersionString" : "6.9",
+    "CFBundleIdentifier" : "com.apple.Foundation",
+    "size" : 14100704,
+    "uuid" : "c153116f-dd31-3fa9-89bb-04b47c1fa83d",
+    "path" : "\/Volumes\/VOLUME\/*\/Foundation.framework\/Foundation",
+    "name" : "Foundation",
+    "CFBundleVersion" : "4201"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6522978304,
+    "CFBundleShortVersionString" : "1.0",
+    "CFBundleIdentifier" : "com.apple.CFNetwork",
+    "size" : 3613024,
+    "uuid" : "1bb7d015-7687-34a6-93c8-7cc24655033a",
+    "path" : "\/Volumes\/VOLUME\/*\/CFNetwork.framework\/CFNetwork",
+    "name" : "CFNetwork",
+    "CFBundleVersion" : "3860.300.31"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6583746560,
+    "CFBundleShortVersionString" : "1.0",
+    "CFBundleIdentifier" : "com.apple.Network",
+    "size" : 19107648,
+    "uuid" : "856b83d8-5963-3278-a45a-334a9232deda",
+    "path" : "\/Volumes\/VOLUME\/*\/Network.framework\/Network",
+    "name" : "Network",
+    "CFBundleVersion" : "5569.60.39.0.3"
+  },
+  {
+    "source" : "P",
+    "arch" : "arm64",
+    "base" : 6442909696,
+    "size" : 250520,
+    "uuid" : "880f8664-cd53-3912-bdd5-5e3159295f7d",
+    "path" : "\/Volumes\/VOLUME\/*\/libobjc.A.dylib",
+    "name" : "libobjc.A.dylib"
+  }
+],
+  "sharedCache" : {
+  "base" : 6442450944,
+  "size" : 4230184960,
+  "uuid" : "79743d05-2453-36cd-8d85-969f711c37ae"
+},
+  "legacyInfo" : {
+  "threadTriggered" : {
+    "queue" : "com.apple.main-thread"
+  }
+},
+  "logWritingSignature" : "0de8ef0a8a8fbfbc92ab2563830b95ce5e844025",
+  "bug_type" : "309",
+  "roots_installed" : 0,
+  "trmStatus" : 8192,
+  "trialInfo" : {
+  "rollouts" : [
+    {
+      "rolloutId" : "67181b10c68c361a728c7cfa",
+      "factorPackIds" : [
+
+      ],
+      "deploymentId" : 240000005
+    },
+    {
+      "rolloutId" : "639124e81d92412bfb4880b3",
+      "factorPackIds" : [
+
+      ],
+      "deploymentId" : 240000012
+    }
+  ],
+  "experiments" : [
+
+  ]
+}
+}
+
+Model: Mac15,4, BootROM 13822.81.10, proc 8:4:4:0 processors, 16 GB, SMC 
+Graphics: Apple M3, Apple M3, Built-In
+Display: iMac, Retina 4.5K (4480 x 2520), Main, MirrorOff, Online
+Memory Module: LPDDR5, Micron
+AirPort: spairport_wireless_card_type_wifi (0x14E4, 0x4388), wl0: Dec  6 2025 00:29:46 version 23.41.8.0.41.51.201 FWID 01-ad387f79
+IO80211_driverkit-1540.16 "IO80211_driverkit-1540.16" Jan 27 2026 21:02:00
+Bluetooth: Version (null), 0 services, 0 devices, 0 incoming serial ports
+Network Service: Ethernet, Ethernet, en0
+Thunderbolt Bus: iMac, Apple Inc.
+Thunderbolt Bus: iMac, Apple Inc.

@@ -23,6 +23,14 @@ struct SeekerLoanPaymentConfirmBlock: View {
         investment.loanInstallments.first { $0.installmentNo == installmentNo }
     }
 
+    private var nextOpenInstallmentNo: Int? {
+        investment.loanInstallments
+            .filter { $0.status != .confirmed_paid }
+            .sorted { $0.dueDate < $1.dueDate }
+            .first?
+            .installmentNo
+    }
+
     private var isSeeker: Bool {
         guard let uid = auth.currentUserID, let sid = investment.seekerId else { return false }
         return uid == sid
@@ -32,10 +40,33 @@ struct SeekerLoanPaymentConfirmBlock: View {
         Group {
             if let row, isSeeker, investment.loanRepaymentsUnlocked, row.status != .confirmed_paid {
                 VStack(alignment: .leading, spacing: 12) {
+                    if installmentNo == nextOpenInstallmentNo {
+                        Text("Current cycle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(auth.accentColor)
+                    } else {
+                        Text("Complete installment #\(nextOpenInstallmentNo ?? installmentNo) first.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+
                     if !row.seekerProofImageURLs.isEmpty {
-                        Label("\(row.seekerProofImageURLs.count) payment slip(s) attached", systemImage: "paperclip.circle.fill")
+                        Text("\(row.seekerProofImageURLs.count) proof file(s) attached")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                    }
+                    if row.status == .disputed, let reason = row.latestDisputeReason, !reason.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Investor reported not received")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            Text(reason)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     }
 
                     Button {
@@ -56,35 +87,31 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(auth.accentColor)
-                    .disabled(busy || (row.seekerProofImageURLs.isEmpty && row.investorMarkedPaidAt == nil))
+                    .disabled(busy || installmentNo != nextOpenInstallmentNo || row.seekerProofImageURLs.isEmpty)
 
                     Menu {
                         if VNDocumentCameraViewController.isSupported {
                             Button {
                                 showDocCamera = true
                             } label: {
-                                Label("Scan slip with camera", systemImage: "doc.viewfinder")
+                                Text("Scan with camera")
                             }
                         }
                         Button {
                             showLibrarySheet = true
                         } label: {
-                            Label("Upload from photos", systemImage: "photo.on.rectangle.angled")
+                            Text("Choose from photos")
                         }
                     } label: {
-                        Label("Attach payment slip", systemImage: "square.and.arrow.up")
+                        Text("Attach proof")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
                     .buttonStyle(.bordered)
                     .tint(auth.accentColor)
-                    .disabled(busy)
+                    .disabled(busy || installmentNo != nextOpenInstallmentNo)
 
-                    Text("Attach your bank receipt or transfer screenshot, then confirm you sent this installment. The investor will review and confirm they received it (they can add a receipt photo too).")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .sheet(isPresented: $showLibrarySheet) {
                     libraryPickerSheet
@@ -107,12 +134,8 @@ struct SeekerLoanPaymentConfirmBlock: View {
     private var libraryPickerSheet: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("Choose a photo of your payment slip or transfer confirmation.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
                 PhotosPicker(selection: $libraryItem, matching: .images) {
-                    Label("Choose from library", systemImage: "photo.on.rectangle.angled")
+                    Text("Choose from library")
                         .font(.headline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)

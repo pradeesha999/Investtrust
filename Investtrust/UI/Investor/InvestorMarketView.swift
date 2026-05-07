@@ -40,7 +40,7 @@ struct InvestorMarketView: View {
                         icon: "doc.richtext",
                         title: searchText.isEmpty ? "No requests yet" : "No matches",
                         message: searchText.isEmpty
-                            ? "Use Explore to find listings, then send a request. Statuses appear here."
+                            ? "Only pending requests appear here."
                             : "Try a different search term."
                     )
                 } else {

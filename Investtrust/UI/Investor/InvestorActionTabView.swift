@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Investor **Invest** tab: segmented **My requests** (statuses) vs **Explore** (market listings).
+/// Investor **Invest** tab: Explore, requests pipeline, live deals, and completed deals.
 struct InvestorActionTabView: View {
     @EnvironmentObject private var tabRouter: MainTabRouter
 
@@ -31,6 +31,8 @@ struct InvestorActionTabView: View {
                         MarketBrowseView(embeddedInInvestTab: true)
                     case .ongoing:
                         InvestorOngoingDealsView()
+                    case .completed:
+                        InvestorCompletedDealsView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

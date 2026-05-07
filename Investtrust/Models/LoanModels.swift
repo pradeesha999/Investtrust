@@ -52,6 +52,9 @@ struct LoanInstallment: Identifiable, Equatable, Hashable, Sendable {
     var seekerProofImageURLs: [String]
     /// Optional receipt or cash-deposit proof uploaded by the investor.
     var investorProofImageURLs: [String]
+    /// Latest investor dispute note when payment is reported as not received.
+    var latestDisputeReason: String?
+    var latestDisputedAt: Date?
 
     /// Combined list (seeker first, then investor). Matches legacy `proofImageURLs` in Firestore when not split.
     var proofImageURLs: [String] { seekerProofImageURLs + investorProofImageURLs }
@@ -97,7 +100,10 @@ extension LoanInstallment {
             investorMarkedPaidAt: invPaid,
             seekerMarkedReceivedAt: seekRec,
             seekerProofImageURLs: seekerProofs,
-            investorProofImageURLs: investorProofs
+            investorProofImageURLs: investorProofs,
+            latestDisputeReason: (m["latestDisputeReason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            latestDisputedAt: (m["latestDisputedAt"] as? Timestamp)?.dateValue()
         )
     }
 
@@ -113,6 +119,12 @@ extension LoanInstallment {
             "investorProofImageURLs": investorProofImageURLs,
             "proofImageURLs": proofImageURLs
         ]
+        if let latestDisputeReason, !latestDisputeReason.isEmpty {
+            o["latestDisputeReason"] = latestDisputeReason
+        }
+        if let latestDisputedAt {
+            o["latestDisputedAt"] = Timestamp(date: latestDisputedAt)
+        }
         if let investorMarkedPaidAt {
             o["investorMarkedPaidAt"] = Timestamp(date: investorMarkedPaidAt)
         }

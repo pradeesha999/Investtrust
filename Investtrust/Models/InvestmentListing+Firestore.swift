@@ -107,6 +107,8 @@ extension InvestmentListing {
         let agreementGeneratedAt: Date? = (data["agreementGeneratedAt"] as? Timestamp)?.dateValue()
         let principalSentByInvestorAt: Date? = (data["principalSentByInvestorAt"] as? Timestamp)?.dateValue()
         let principalReceivedBySeekerAt: Date? = (data["principalReceivedBySeekerAt"] as? Timestamp)?.dateValue()
+        let principalInvestorProofImageURLs: [String] = data["principalInvestorProofImageURLs"] as? [String] ?? []
+        let principalSeekerProofImageURLs: [String] = data["principalSeekerProofImageURLs"] as? [String] ?? []
 
         let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
 
@@ -213,7 +215,9 @@ extension InvestmentListing {
             investorSignatureImageURL: investorSignatureImageURL?.isEmpty == false ? investorSignatureImageURL : nil,
             seekerSignatureImageURL: seekerSignatureImageURL?.isEmpty == false ? seekerSignatureImageURL : nil,
             principalSentByInvestorAt: principalSentByInvestorAt,
-            principalReceivedBySeekerAt: principalReceivedBySeekerAt
+            principalReceivedBySeekerAt: principalReceivedBySeekerAt,
+            principalInvestorProofImageURLs: principalInvestorProofImageURLs,
+            principalSeekerProofImageURLs: principalSeekerProofImageURLs
         )
     }
 

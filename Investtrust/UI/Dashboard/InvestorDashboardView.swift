@@ -38,25 +38,12 @@ struct InvestorDashboardView: View {
                             action: { Task { await load() } }
                         )
                     } else {
-                        let phase = InvestorPortfolioMetrics.phase(rows: investments)
-
-                        if phase == .newUser {
-                            newUserCallout
+                        if investments.isEmpty {
+                            emptyStateCard
                         } else {
-                            if phase == .pendingOnly {
-                                pendingRibbon
-                            }
-                            if phase == .completedHeavy {
-                                completedRibbon
-                            }
                             portfolioSummarySection
-                        }
-
-                        if !investments.isEmpty {
                             activeInvestmentsSection
-                            upcomingSection
-                            alertsSection
-                            performanceChartSection
+                            completedInvestmentsSection
                         }
                     }
                 }
@@ -89,7 +76,7 @@ struct InvestorDashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(greetingLine)
                 .font(.title2.bold())
-            Text("Track your portfolio at a glance.")
+            Text("Investor dashboard")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -134,11 +121,11 @@ struct InvestorDashboardView: View {
         return ""
     }
 
-    private var newUserCallout: some View {
+    private var emptyStateCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("You haven’t invested yet")
+            Text("No investments yet")
                 .font(.headline)
-            Text("Browse open listings and send your first request.")
+            Text("Explore opportunities and send your first investment request.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -147,7 +134,7 @@ struct InvestorDashboardView: View {
                 tabRouter.selectedTab = .action
                 tabRouter.investorInvestSegment = .explore
             } label: {
-                Text("Explore opportunities")
+                    Text("Explore")
                     .font(.headline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: AppTheme.minTapTarget)
@@ -161,51 +148,9 @@ struct InvestorDashboardView: View {
         .appCardShadow()
     }
 
-    private var pendingRibbon: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "hourglass")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Waiting for approval")
-                    .font(.subheadline.weight(.semibold))
-                Text("You have requests pending seeker review.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-    }
-
-    private var completedRibbon: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
-                Text("You’ve completed \(InvestorPortfolioMetrics.completedDealsCount(investments)) deal(s).")
-                    .font(.subheadline.weight(.semibold))
-            }
-            Button {
-                tabRouter.selectedTab = .action
-                tabRouter.investorInvestSegment = .explore
-            } label: {
-                Text("Reinvest — explore opportunities")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: AppTheme.minTapTarget)
-            }
-            .buttonStyle(.bordered)
-            .tint(auth.accentColor)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-    }
-
     private var portfolioSummarySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Portfolio summary", subtitle: "Key numbers")
+            sectionTitle("Portfolio summary", subtitle: "Overview")
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
@@ -215,25 +160,25 @@ struct InvestorDashboardView: View {
                     icon: "banknote.fill",
                     title: "Total invested",
                     value: lkr(InvestorPortfolioMetrics.totalInvestedInBook(investments)),
-                    caption: "In accepted & active deals"
+                    caption: "In ongoing deals"
                 )
                 summaryTile(
                     icon: "arrow.up.forward.circle.fill",
-                    title: "Expected (projected)",
+                    title: "Expected return",
                     value: lkr(InvestorPortfolioMetrics.expectedReturnTotal(investments)),
-                    caption: "Maturity-style estimate"
+                    caption: "Projected"
                 )
                 summaryTile(
                     icon: "arrow.down.circle.fill",
                     title: "Received so far",
                     value: lkr(InvestorPortfolioMetrics.receivedTotal(investments)),
-                    caption: "Repayments credited"
+                    caption: "Confirmed repayments"
                 )
                 summaryTile(
                     icon: "briefcase.fill",
-                    title: "Active deals",
+                    title: "Ongoing deals",
                     value: "\(InvestorPortfolioMetrics.activeDealsCount(investments))",
-                    caption: "Accepted & active"
+                    caption: "Currently in progress"
                 )
             }
 
@@ -245,6 +190,20 @@ struct InvestorDashboardView: View {
                     Text(lkr(InvestorPortfolioMetrics.totalPendingAmount(investments)))
                         .font(.caption.weight(.semibold))
                 }
+            }
+            HStack {
+                Text("Completed:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("\(InvestorPortfolioMetrics.completedDealsCount(investments))")
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 0)
+                Button("Open completed") {
+                    tabRouter.selectedTab = .action
+                    tabRouter.investorInvestSegment = .completed
+                }
+                .font(.caption.weight(.semibold))
+                .tint(auth.accentColor)
             }
         }
     }
@@ -273,22 +232,39 @@ struct InvestorDashboardView: View {
 
     private var activeInvestmentsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Your investments", subtitle: "Status and progress")
+            sectionTitle("Ongoing investments", subtitle: "In progress")
 
             let visible = investments.filter { inv in
                 let s = inv.status.lowercased()
-                return !["declined", "rejected", "cancelled", "withdrawn"].contains(s)
+                if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) { return false }
+                return InvestorPortfolioMetrics.isOngoingDeal(inv)
             }
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
 
             if visible.isEmpty {
-                Text("No active rows to show.")
+                Text("No ongoing deals.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(visible) { inv in
                     DashboardInvestmentCard(investment: inv) {
                         await load()
+                    }
+                }
+            }
+        }
+    }
+
+    private var completedInvestmentsSection: some View {
+        let completed = InvestorPortfolioMetrics.rowsForCompletedTab(investments)
+        return Group {
+            if !completed.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("Completed investments", subtitle: "Closed deals")
+                    ForEach(completed) { inv in
+                        DashboardInvestmentCard(investment: inv) {
+                            await load()
+                        }
                     }
                 }
             }

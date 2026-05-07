@@ -47,9 +47,6 @@ struct InvestmentAgreementReviewView: View {
                     isSigning: $isSigning,
                     errorText: $errorText,
                     onSign: { png in
-                        try await BiometricAuthService.requireDeviceOwner(
-                            reason: "Confirm it’s you to sign this memorandum of agreement."
-                        )
                         try await onSign(png)
                         onDidFinishSigning?()
                         dismiss()

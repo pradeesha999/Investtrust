@@ -8,6 +8,12 @@
 	<string>Investtrust</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Investtrust needs photo library access to attach opportunity media.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Investtrust uses the camera to scan payment receipts and capture documents.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Investtrust uses Face ID so only you can confirm signing the memorandum of agreement.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Investtrust can add repayment due dates to your calendar with amounts and a reminder one day before each payment.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

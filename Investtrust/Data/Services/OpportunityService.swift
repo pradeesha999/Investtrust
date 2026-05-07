@@ -448,14 +448,23 @@ final class OpportunityService {
 
     func fetchSeekerListings(ownerId: String, limit: Int = 50) async throws -> [OpportunityListing] {
         let base = db.collection("opportunities")
-        // Avoid composite index (ownerId + createdAt): filter only, then sort in memory.
-        let snapshot = try await base
-            .whereField("ownerId", isEqualTo: ownerId)
-            .limit(to: limit)
-            .getDocuments()
-        return snapshot.documents
-            .map { OpportunityListing(document: $0) }
-            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        let cap = max(limit, 50)
+        // Legacy rows may have seeker ownership under different keys.
+        let ownerFields = ["ownerId", "owner", "userId", "seekerId"]
+        var merged: [OpportunityListing] = []
+        for field in ownerFields {
+            do {
+                let snapshot = try await base
+                    .whereField(field, isEqualTo: ownerId)
+                    .limit(to: cap)
+                    .getDocuments()
+                merged.append(contentsOf: snapshot.documents.map { OpportunityListing(document: $0) })
+            } catch {
+                continue
+            }
+        }
+        let deduped = Dictionary(grouping: merged, by: \.id).compactMap { $0.value.first }
+        return deduped.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
     /// Open listings from this seeker. With `refineByInvestorCapacity` (default), filters out listings at max

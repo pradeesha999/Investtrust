@@ -66,6 +66,8 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let seekerSignatureImageURL: String?
     let principalSentByInvestorAt: Date?
     let principalReceivedBySeekerAt: Date?
+    let principalInvestorProofImageURLs: [String]
+    let principalSeekerProofImageURLs: [String]
 
     /// Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
     var blocksSeekerFromManagingOpportunity: Bool {
@@ -93,13 +95,16 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     /// User-facing status line for list cards and detail (spec: pending / accepted / awaiting signatures / agreement active).
     var lifecycleDisplayTitle: String {
+        let s = status.lowercased()
+        if s == "completed" || fundingStatus == .closed {
+            return "Agreement completed"
+        }
         if agreementStatus == .active {
             return "Agreement active"
         }
         if agreementStatus == .pending_signatures {
             return "Awaiting signatures"
         }
-        let s = status.lowercased()
         switch s {
         case "pending":
             return "Waiting for seeker"

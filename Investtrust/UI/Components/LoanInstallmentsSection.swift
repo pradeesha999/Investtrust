@@ -36,11 +36,11 @@ struct LoanInstallmentsSection: View {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
-                        .fill(auth.accentColor.opacity(0.14))
+                        .fill(Color.blue.opacity(0.14))
                         .frame(width: 48, height: 48)
                     Image(systemName: "calendar.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(auth.accentColor)
+                        .foregroundStyle(Color.blue)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -68,7 +68,11 @@ struct LoanInstallmentsSection: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(AppTheme.cardPadding)
-            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                    .stroke(Color.blue.opacity(0.22), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }

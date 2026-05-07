@@ -27,10 +27,22 @@ enum InvestorPortfolioMetrics {
 
     // MARK: - Portfolio summary
 
+    static func isCompletedDeal(_ row: InvestmentListing) -> Bool {
+        let s = row.status.lowercased()
+        return s == "completed" || row.fundingStatus == .closed
+    }
+
+    static func isOngoingDeal(_ row: InvestmentListing) -> Bool {
+        if isCompletedDeal(row) { return false }
+        let s = row.status.lowercased()
+        if row.agreementStatus == .active { return true }
+        return s == "active"
+    }
+
     /// Principal in deals with a fully signed MOA (`agreementStatus == active`).
     static func totalInvestedInBook(_ rows: [InvestmentListing]) -> Double {
         rows.reduce(0) { sum, r in
-            guard r.agreementStatus == .active else { return sum }
+            guard isOngoingDeal(r) else { return sum }
             return sum + r.investmentAmount
         }
     }
@@ -44,7 +56,7 @@ enum InvestorPortfolioMetrics {
     /// Simple maturity-style total (projected — label in UI). Only counts fully signed agreements.
     static func expectedReturnTotal(_ rows: [InvestmentListing]) -> Double {
         rows.reduce(0) { sum, r in
-            guard r.agreementStatus == .active else { return sum }
+            guard isOngoingDeal(r) else { return sum }
             return sum + projectedMaturityValue(for: r)
         }
     }
@@ -64,28 +76,29 @@ enum InvestorPortfolioMetrics {
     }
 
     static func activeDealsCount(_ rows: [InvestmentListing]) -> Int {
-        rows.filter { $0.agreementStatus == .active }.count
+        rows.filter { isOngoingDeal($0) }.count
     }
 
     static func completedDealsCount(_ rows: [InvestmentListing]) -> Int {
-        rows.filter { $0.status.lowercased() == "completed" }.count
+        rows.filter { isCompletedDeal($0) }.count
     }
 
     // MARK: - Investor Invest tab (My requests vs Ongoing)
 
     /// Rows that belong in **Ongoing** — live MOA / operational deal. Not shown under **My requests**.
     static func isOngoingPortfolioRow(_ inv: InvestmentListing) -> Bool {
-        let s = inv.status.lowercased()
-        if inv.agreementStatus == .active { return true }
-        if s == "active" { return true }
-        if s == "completed" { return true }
-        return false
+        isOngoingDeal(inv)
     }
 
-    /// **My requests** list: pre-live pipeline only, and a single row per opportunity (newest `createdAt` wins).
-    /// Hides a superseded **declined** row after the investor submits a newer request for the same listing.
+    static func rowsForCompletedTab(_ rows: [InvestmentListing]) -> [InvestmentListing] {
+        rows
+            .filter { isCompletedDeal($0) }
+            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+    }
+
+    /// **My requests** list: pending requests only, one row per opportunity (newest wins).
     static func rowsForMyRequestsTab(_ rows: [InvestmentListing]) -> [InvestmentListing] {
-        let pipeline = rows.filter { !isOngoingPortfolioRow($0) }
+        let pipeline = rows.filter { $0.status.lowercased() == "pending" }
         let byOpp = Dictionary(grouping: pipeline) { inv -> String in
             if let oid = inv.opportunityId, !oid.isEmpty { return oid }
             return inv.id
@@ -100,7 +113,7 @@ enum InvestorPortfolioMetrics {
 
     static func phase(rows: [InvestmentListing]) -> DashboardPhase {
         if rows.isEmpty { return .newUser }
-        let hasActive = rows.contains { $0.agreementStatus == .active }
+        let hasActive = rows.contains { isOngoingDeal($0) }
         if hasActive { return .active }
         let onlyPending = rows.allSatisfy { $0.status.lowercased() == "pending" }
         if onlyPending { return .pendingOnly }
@@ -117,7 +130,7 @@ enum InvestorPortfolioMetrics {
         if row.agreementStatus == .pending_signatures { return 0.25 }
         if s == "declined" || s == "rejected" { return 0 }
         if s == "completed" { return 1 }
-        guard row.agreementStatus == .active else {
+        guard isOngoingDeal(row) else {
             if s == "accepted" || s == "active" { return 0.35 }
             return 0
         }
@@ -165,7 +178,7 @@ enum InvestorPortfolioMetrics {
         let horizon = Calendar.current.date(byAdding: .day, value: withinDays, to: Date()) ?? Date()
 
         for r in rows {
-            guard r.agreementStatus == .active else { continue }
+            guard isOngoingDeal(r) else { continue }
 
             switch r.investmentType {
             case .loan:
@@ -262,7 +275,7 @@ enum InvestorPortfolioMetrics {
                 guard t <= monthEnd else { return sum }
                 let s = r.status.lowercased()
                 if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) { return sum }
-                guard r.agreementStatus == .active else { return sum }
+                guard isOngoingDeal(r) else { return sum }
                 return sum + r.investmentAmount
             }
             let returned = rows.reduce(0.0) { sum, r in
