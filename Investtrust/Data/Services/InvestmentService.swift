@@ -50,6 +50,9 @@ final class InvestmentService {
         case revenuePeriodNotFound
         case notRevenueShareOrNoSchedule
         case revenueDeclarationMissing
+        case notEquityDeal
+        case updateMessageTooShort
+        case milestoneTitleMissing
 
         var errorDescription: String? {
             switch self {
@@ -121,6 +124,12 @@ final class InvestmentService {
                 return "This deal has no revenue-share schedule."
             case .revenueDeclarationMissing:
                 return "The seeker must submit period revenue before payment can be confirmed."
+            case .notEquityDeal:
+                return "This action is only available for equity deals."
+            case .updateMessageTooShort:
+                return "Write a short update with at least a few words."
+            case .milestoneTitleMissing:
+                return "Select a milestone before updating its status."
             }
         }
     }
@@ -738,6 +747,12 @@ final class InvestmentService {
             updates["moaUploadError"] = moaUploadErrorMessage
         }
 
+        let opportunityForEquity: OpportunityListing?
+        if let opportunityId = inv.opportunityId, !opportunityId.isEmpty {
+            opportunityForEquity = try? await opportunityService.fetchOpportunity(opportunityId: opportunityId)
+        } else {
+            opportunityForEquity = nil
+        }
         var finalizeRows: [(row: InvestmentListing, updates: [String: Any], loanSchedule: [LoanInstallment]?)] = []
         finalizeRows.reserveCapacity(linkedRows.count)
         for row in linkedRows {
@@ -777,6 +792,19 @@ final class InvestmentService {
                 )
                 rowUpdates["revenueSharePeriods"] = periods.map { $0.firestoreMap() }
                 rowUpdates["loanInstallments"] = []
+            } else if row.investmentType == .equity {
+                rowUpdates["fundingStatus"] = FundingStatus.disbursed.rawValue
+                rowUpdates["loanInstallments"] = []
+                rowUpdates["revenueSharePeriods"] = []
+                if let opportunityForEquity {
+                    rowUpdates["equityMilestones"] = buildInitialEquityMilestonePayload(
+                        from: opportunityForEquity.milestones,
+                        acceptedAt: row.acceptedAt ?? now
+                    )
+                } else {
+                    rowUpdates["equityMilestones"] = []
+                }
+                rowUpdates["equityUpdates"] = []
             }
             finalizeRows.append((row, rowUpdates, loanScheduleForCalendar))
         }
@@ -787,27 +815,8 @@ final class InvestmentService {
         }
         try await commitBatch.commit()
 
-        for item in finalizeRows {
-            if let schedule = item.loanSchedule {
-                let title = item.row.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? agreement.opportunityTitle
-                    : item.row.opportunityTitle
-                let rowId = item.row.id
-                let investor = item.row.investorId
-                let seeker = item.row.seekerId
-                let uid = triggeringUserId
-                Task { @MainActor in
-                    await LoanRepaymentCalendarSync.replaceInstallmentReminders(
-                        investmentId: rowId,
-                        opportunityTitle: title,
-                        installments: schedule,
-                        actingUserId: uid,
-                        investorId: investor,
-                        seekerId: seeker
-                    )
-                }
-            }
-        }
+        // Calendar sync is intentionally deferred until the user re-opens the app/opportunity
+        // and explicitly accepts consent, to avoid prompting during signing completion.
 
         // Rules require `senderId == request.auth.uid`. Finalization may be triggered by seeker or investor.
         // Chat is best-effort: if it fails, investment rows are already committed — don’t surface a false failure.
@@ -834,6 +843,98 @@ final class InvestmentService {
     }
 
     // MARK: - Loan installments
+
+    private func buildInitialEquityMilestonePayload(from milestones: [OpportunityMilestone], acceptedAt: Date) -> [[String: Any]] {
+        let sorted = OpportunityFirestoreCoding.sortedMilestonesChronologically(milestones)
+        return sorted.map { row in
+            let dueDate: Date? = {
+                if let days = row.dueDaysAfterAcceptance, days >= 0 {
+                    return Calendar.current.date(byAdding: .day, value: days, to: acceptedAt)
+                }
+                return row.expectedDate
+            }()
+            var payload: [String: Any] = [
+                "title": row.title,
+                "description": row.description,
+                "status": EquityMilestoneStatus.planned.rawValue
+            ]
+            if let dueDate { payload["dueDate"] = Timestamp(date: dueDate) }
+            return payload
+        }
+    }
+
+    func postEquityVentureUpdate(
+        investmentId: String,
+        seekerId: String,
+        title: String,
+        message: String,
+        ventureStage: VentureStage?,
+        growthMetric: String?,
+        attachmentURLs: [String] = []
+    ) async throws {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanMessage.count >= 8 else { throw InvestmentServiceError.updateMessageTooShort }
+        let ref = db.collection("investments").document(investmentId)
+        let snap = try await ref.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .equity else { throw InvestmentServiceError.notEquityDeal }
+        guard inv.seekerId == seekerId else { throw InvestmentServiceError.notOpportunityOwner }
+        guard inv.agreementStatus == .active else { throw InvestmentServiceError.agreementNotAwaitingSignatures }
+
+        let now = Date()
+        let payload: [String: Any] = [
+            "id": UUID().uuidString,
+            "title": cleanTitle.isEmpty ? "Venture update" : cleanTitle,
+            "message": cleanMessage,
+            "ventureStage": ventureStage?.rawValue as Any,
+            "growthMetric": growthMetric?.trimmingCharacters(in: .whitespacesAndNewlines) as Any,
+            "attachmentURLs": attachmentURLs,
+            "createdAt": Timestamp(date: now)
+        ]
+        try await ref.updateData([
+            "equityUpdates": FieldValue.arrayUnion([payload]),
+            "updatedAt": Timestamp(date: now)
+        ])
+    }
+
+    func updateEquityMilestoneStatus(
+        investmentId: String,
+        seekerId: String,
+        milestoneTitle: String,
+        status: EquityMilestoneStatus,
+        note: String?
+    ) async throws {
+        let cleanTitle = milestoneTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { throw InvestmentServiceError.milestoneTitleMissing }
+        let ref = db.collection("investments").document(investmentId)
+        let snap = try await ref.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .equity else { throw InvestmentServiceError.notEquityDeal }
+        guard inv.seekerId == seekerId else { throw InvestmentServiceError.notOpportunityOwner }
+        guard inv.agreementStatus == .active else { throw InvestmentServiceError.agreementNotAwaitingSignatures }
+        let now = Date()
+        let updatedMilestones = inv.equityMilestones.map { row -> [String: Any] in
+            let matches = row.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                .localizedCaseInsensitiveCompare(cleanTitle) == .orderedSame
+            return [
+                "title": row.title,
+                "description": row.description,
+                "dueDate": (row.dueDate.map { Timestamp(date: $0) } ?? NSNull()) as Any,
+                "status": (matches ? status : row.status).rawValue,
+                "updatedAt": (matches ? Timestamp(date: now) : (row.updatedAt.map { Timestamp(date: $0) } ?? NSNull())) as Any,
+                "note": (matches ? note?.trimmingCharacters(in: .whitespacesAndNewlines) : row.note) as Any
+            ]
+        }
+        try await ref.updateData([
+            "equityMilestones": updatedMilestones,
+            "updatedAt": Timestamp(date: now)
+        ])
+    }
 
     /// Investor marks that the principal has been sent after agreement activation.
     func markPrincipalSentByInvestor(investmentId: String, userId: String) async throws {

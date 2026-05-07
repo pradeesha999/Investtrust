@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 /// Investor home: portfolio tracking, not browsing (see `MarketBrowseView`).
@@ -42,8 +41,6 @@ struct InvestorDashboardView: View {
                             emptyStateCard
                         } else {
                             portfolioSummarySection
-                            activeInvestmentsSection
-                            completedInvestmentsSection
                         }
                     }
                 }
@@ -149,62 +146,79 @@ struct InvestorDashboardView: View {
     }
 
     private var portfolioSummarySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Portfolio summary", subtitle: "Overview")
+        let investedNow = InvestorPortfolioMetrics.totalInvestedInBook(investments)
+        let expectedCurrent = InvestorPortfolioMetrics.expectedReturnCurrentInvestments(investments)
+        let investedAll = InvestorPortfolioMetrics.totalInvestedAllTime(investments)
+        let pureProfit = InvestorPortfolioMetrics.pureProfitAllTime(investments)
+        let received = InvestorPortfolioMetrics.receivedTotal(investments)
+        let recoverRate = investedAll > 0 ? min(max(received / investedAll, 0), 1) : 0
+        let expectedGain = max(0, expectedCurrent - investedNow)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            sectionTitle("Investment overview", subtitle: "Your full money situation")
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Portfolio balance")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.84))
+                        Text(signedLkr(pureProfit))
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: pureProfit >= 0 ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(.white)
+                }
+
+                HStack(spacing: 12) {
+                    heroMiniPill("Current invested", lkr(investedNow))
+                    heroMiniPill("Expected gain", lkr(expectedGain))
+                }
+            }
+            .padding(16)
+            .background(
+                LinearGradient(
+                    colors: [auth.accentColor, auth.accentColor.opacity(0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+            )
+            .appCardShadow()
 
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
                 spacing: 12
             ) {
-                summaryTile(
-                    icon: "banknote.fill",
-                    title: "Total invested",
-                    value: lkr(InvestorPortfolioMetrics.totalInvestedInBook(investments)),
-                    caption: "In ongoing deals"
-                )
-                summaryTile(
-                    icon: "arrow.up.forward.circle.fill",
-                    title: "Expected return",
-                    value: lkr(InvestorPortfolioMetrics.expectedReturnTotal(investments)),
-                    caption: "Projected"
-                )
-                summaryTile(
-                    icon: "arrow.down.circle.fill",
-                    title: "Received so far",
-                    value: lkr(InvestorPortfolioMetrics.receivedTotal(investments)),
-                    caption: "Confirmed repayments"
-                )
-                summaryTile(
-                    icon: "briefcase.fill",
-                    title: "Ongoing deals",
-                    value: "\(InvestorPortfolioMetrics.activeDealsCount(investments))",
-                    caption: "Currently in progress"
-                )
+                summaryTile(icon: "banknote.fill", title: "Total investments now", value: lkr(investedNow), caption: "Currently in active deals")
+                summaryTile(icon: "arrow.up.forward.circle.fill", title: "Expected return (current)", value: lkr(expectedCurrent), caption: "Projected from active deals")
+                summaryTile(icon: "tray.full.fill", title: "Investments made so far", value: lkr(investedAll), caption: "\(InvestorPortfolioMetrics.allTimeDealsCount(investments)) total deals")
+                summaryTile(icon: "chart.line.uptrend.xyaxis.circle.fill", title: "Pure profit (all time)", value: signedLkr(pureProfit), caption: "Returned minus invested principal")
             }
 
-            if InvestorPortfolioMetrics.totalPendingAmount(investments) > 0 {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Pending approval:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(lkr(InvestorPortfolioMetrics.totalPendingAmount(investments)))
-                        .font(.caption.weight(.semibold))
+                    Text("Capital recovery")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text(percent(recoverRate))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(auth.accentColor)
                 }
-            }
-            HStack {
-                Text("Completed:")
-                    .font(.caption)
+                ProgressView(value: recoverRate)
+                    .tint(auth.accentColor)
+                Text("How much of all-time invested capital has already been recovered.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text("\(InvestorPortfolioMetrics.completedDealsCount(investments))")
-                    .font(.caption.weight(.semibold))
-                Spacer(minLength: 0)
-                Button("Open completed") {
-                    tabRouter.selectedTab = .action
-                    tabRouter.investorInvestSegment = .completed
-                }
-                .font(.caption.weight(.semibold))
-                .tint(auth.accentColor)
             }
+            .padding(14)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
         }
     }
 
@@ -230,45 +244,21 @@ struct InvestorDashboardView: View {
         .appCardShadow()
     }
 
-    private var activeInvestmentsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Ongoing investments", subtitle: "In progress")
-
-            let visible = investments.filter { inv in
-                let s = inv.status.lowercased()
-                if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) { return false }
-                return InvestorPortfolioMetrics.isOngoingDeal(inv)
-            }
-            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
-
-            if visible.isEmpty {
-                Text("No ongoing deals.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(visible) { inv in
-                    DashboardInvestmentCard(investment: inv) {
-                        await load()
-                    }
-                }
-            }
+    private func heroMiniPill(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.78))
+            Text(value)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-    }
-
-    private var completedInvestmentsSection: some View {
-        let completed = InvestorPortfolioMetrics.rowsForCompletedTab(investments)
-        return Group {
-            if !completed.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Completed investments", subtitle: "Closed deals")
-                    ForEach(completed) { inv in
-                        DashboardInvestmentCard(investment: inv) {
-                            await load()
-                        }
-                    }
-                }
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var upcomingSection: some View {
@@ -382,53 +372,6 @@ struct InvestorDashboardView: View {
         return Array(out.prefix(4))
     }
 
-    private var performanceChartSection: some View {
-        let points = InvestorPortfolioMetrics.chartPoints(monthsBack: 6, rows: investments)
-        return VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Performance overview", subtitle: "Invested vs returned over time")
-
-            Chart {
-                ForEach(points) { p in
-                    LineMark(
-                        x: .value("Month", p.periodEnd),
-                        y: .value("Invested", p.cumulativeInvested)
-                    )
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(auth.accentColor)
-
-                    LineMark(
-                        x: .value("Month", p.periodEnd),
-                        y: .value("Returned", p.cumulativeReturned)
-                    )
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(.green)
-                }
-            }
-            .chartXAxis {
-                AxisMarks(values: .automatic) { _ in
-                    AxisGridLine()
-                    AxisValueLabel(format: .dateTime.month(.abbreviated))
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .frame(height: 200)
-            .padding(12)
-            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
-            .appCardShadow()
-
-            HStack(spacing: 16) {
-                Label("Invested", systemImage: "circle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(auth.accentColor)
-                Label("Returned", systemImage: "circle.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.green)
-            }
-        }
-    }
-
     private func sectionTitle(_ title: String, subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -446,6 +389,15 @@ struct InvestorDashboardView: View {
         f.maximumFractionDigits = 0
         let s = f.string(from: n) ?? String(format: "%.0f", v)
         return "LKR \(s)"
+    }
+
+    private func signedLkr(_ v: Double) -> String {
+        let sign = v >= 0 ? "+" : "-"
+        return "\(sign)\(lkr(abs(v)))"
+    }
+
+    private func percent(_ p: Double) -> String {
+        "\(Int((p * 100).rounded()))%"
     }
 
     private func shortDate(_ d: Date) -> String {

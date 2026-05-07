@@ -1,5 +1,31 @@
 import Foundation
 
+enum EquityMilestoneStatus: String, Codable, Sendable, CaseIterable {
+    case planned
+    case in_progress
+    case completed
+}
+
+struct EquityMilestoneProgress: Identifiable, Equatable, Hashable, Codable, Sendable {
+    var id: String { title + "-" + (dueDate?.timeIntervalSince1970.description ?? "na") }
+    let title: String
+    let description: String
+    let dueDate: Date?
+    let status: EquityMilestoneStatus
+    let updatedAt: Date?
+    let note: String?
+}
+
+struct EquityVentureUpdate: Identifiable, Equatable, Hashable, Codable, Sendable {
+    let id: String
+    let title: String
+    let message: String
+    let ventureStage: String?
+    let growthMetric: String?
+    let attachmentURLs: [String]
+    let createdAt: Date
+}
+
 struct InvestmentListing: Identifiable, Equatable, Hashable {
     let id: String
     let status: String
@@ -68,6 +94,94 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let principalReceivedBySeekerAt: Date?
     let principalInvestorProofImageURLs: [String]
     let principalSeekerProofImageURLs: [String]
+    let equityMilestones: [EquityMilestoneProgress]
+    let equityUpdates: [EquityVentureUpdate]
+
+    init(
+        id: String,
+        status: String,
+        createdAt: Date?,
+        opportunityId: String?,
+        investorId: String?,
+        seekerId: String?,
+        opportunityTitle: String,
+        imageURLs: [String],
+        investmentAmount: Double,
+        finalInterestRate: Double?,
+        finalTimelineMonths: Int?,
+        investmentType: InvestmentType,
+        acceptedAt: Date?,
+        receivedAmount: Double,
+        requestKind: InvestmentRequestKind,
+        offerStatus: InvestmentOfferStatus,
+        offerSource: InvestmentOfferSource?,
+        offeredAmount: Double?,
+        offeredInterestRate: Double?,
+        offeredTimelineMonths: Int?,
+        offerDescription: String?,
+        offerChatId: String?,
+        offerChatMessageId: String?,
+        agreementStatus: AgreementStatus,
+        fundingStatus: FundingStatus,
+        signedByInvestorAt: Date?,
+        signedBySeekerAt: Date?,
+        agreementGeneratedAt: Date?,
+        agreement: InvestmentAgreementSnapshot?,
+        loanInstallments: [LoanInstallment],
+        revenueSharePeriods: [RevenueSharePeriod],
+        moaPdfURL: String?,
+        moaContentHash: String?,
+        investorSignatureImageURL: String?,
+        seekerSignatureImageURL: String?,
+        principalSentByInvestorAt: Date?,
+        principalReceivedBySeekerAt: Date?,
+        principalInvestorProofImageURLs: [String],
+        principalSeekerProofImageURLs: [String],
+        equityMilestones: [EquityMilestoneProgress] = [],
+        equityUpdates: [EquityVentureUpdate] = []
+    ) {
+        self.id = id
+        self.status = status
+        self.createdAt = createdAt
+        self.opportunityId = opportunityId
+        self.investorId = investorId
+        self.seekerId = seekerId
+        self.opportunityTitle = opportunityTitle
+        self.imageURLs = imageURLs
+        self.investmentAmount = investmentAmount
+        self.finalInterestRate = finalInterestRate
+        self.finalTimelineMonths = finalTimelineMonths
+        self.investmentType = investmentType
+        self.acceptedAt = acceptedAt
+        self.receivedAmount = receivedAmount
+        self.requestKind = requestKind
+        self.offerStatus = offerStatus
+        self.offerSource = offerSource
+        self.offeredAmount = offeredAmount
+        self.offeredInterestRate = offeredInterestRate
+        self.offeredTimelineMonths = offeredTimelineMonths
+        self.offerDescription = offerDescription
+        self.offerChatId = offerChatId
+        self.offerChatMessageId = offerChatMessageId
+        self.agreementStatus = agreementStatus
+        self.fundingStatus = fundingStatus
+        self.signedByInvestorAt = signedByInvestorAt
+        self.signedBySeekerAt = signedBySeekerAt
+        self.agreementGeneratedAt = agreementGeneratedAt
+        self.agreement = agreement
+        self.loanInstallments = loanInstallments
+        self.revenueSharePeriods = revenueSharePeriods
+        self.moaPdfURL = moaPdfURL
+        self.moaContentHash = moaContentHash
+        self.investorSignatureImageURL = investorSignatureImageURL
+        self.seekerSignatureImageURL = seekerSignatureImageURL
+        self.principalSentByInvestorAt = principalSentByInvestorAt
+        self.principalReceivedBySeekerAt = principalReceivedBySeekerAt
+        self.principalInvestorProofImageURLs = principalInvestorProofImageURLs
+        self.principalSeekerProofImageURLs = principalSeekerProofImageURLs
+        self.equityMilestones = equityMilestones
+        self.equityUpdates = equityUpdates
+    }
 
     /// Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
     var blocksSeekerFromManagingOpportunity: Bool {

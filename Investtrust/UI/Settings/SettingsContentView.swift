@@ -8,6 +8,8 @@ struct SettingsContentView: View {
     @State private var userProfile: UserProfile?
     @State private var activityMetrics: ProfileActivityMetrics?
     @State private var profileSwitchRotationDegrees: Double = 0
+    @State private var calendarSyncEnabled = LoanRepaymentCalendarSync.isCalendarSyncEnabled
+    @State private var calendarSyncError: String?
 
     private let userService = UserService()
 
@@ -35,6 +37,11 @@ struct SettingsContentView: View {
             }
 
             Section("Preferences") {
+                Toggle("Calendar reminders", isOn: $calendarSyncEnabled)
+                    .onChange(of: calendarSyncEnabled) { _, enabled in
+                        Task { await handleCalendarToggleChange(enabled: enabled) }
+                    }
+
                 NavigationLink {
                     SettingsAppearanceView()
                 } label: {
@@ -51,6 +58,12 @@ struct SettingsContentView: View {
                     SettingsAccessibilityView()
                 } label: {
                     Label("Accessibility", systemImage: "accessibility")
+                }
+
+                if let calendarSyncError, !calendarSyncError.isEmpty {
+                    Text(calendarSyncError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
                 }
             }
 
@@ -87,6 +100,9 @@ struct SettingsContentView: View {
         }
         .onChange(of: auth.activeProfile) { _, _ in
             Task { await loadProfileData() }
+        }
+        .onAppear {
+            calendarSyncEnabled = LoanRepaymentCalendarSync.isCalendarSyncEnabled
         }
     }
 
@@ -258,5 +274,21 @@ struct SettingsContentView: View {
         async let metricsTask = userService.fetchProfileActivityMetrics(userID: uid)
         userProfile = try? await profileTask
         activityMetrics = try? await metricsTask
+    }
+
+    private func handleCalendarToggleChange(enabled: Bool) async {
+        calendarSyncError = nil
+        LoanRepaymentCalendarSync.setCalendarSyncEnabled(enabled)
+        guard enabled else {
+            LoanRepaymentCalendarSync.clearAllReminders()
+            return
+        }
+        let granted = await LoanRepaymentCalendarSync.requestPermissionIfNeeded()
+        guard granted else {
+            LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+            calendarSyncEnabled = false
+            calendarSyncError = "Calendar access is not available. Enable access from iOS Settings."
+            return
+        }
     }
 }

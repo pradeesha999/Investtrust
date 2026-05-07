@@ -5,15 +5,15 @@
 
 import SwiftUI
 
-/// Brand accents by active profile: Investor = blue, Opportunity builder (seeker) = pink.
+/// Brand accents by active profile: Investor = red, Opportunity builder (seeker) = blue.
 enum ProfileTheme {
-    /// #0088FF — Investor mode.
-    static let investorBlue = Color(red: 0, green: 0x88 / 255, blue: 1)
+    /// #FF2D55 — Investor mode.
+    static let investorRed = Color(red: 1, green: 0x2D / 255, blue: 0x55 / 255)
 
-    /// Opportunity builder / seeker — matches auth brand pink.
-    static let seekerPink = AuthTheme.primaryPink
+    /// #0088FF — Opportunity builder / seeker mode.
+    static let seekerBlue = Color(red: 0, green: 0x88 / 255, blue: 1)
 
     static func accent(for profile: UserProfile.ActiveProfile) -> Color {
-        profile == .investor ? investorBlue : seekerPink
+        profile == .investor ? investorRed : seekerBlue
     }
 }

@@ -95,6 +95,9 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
             }
             return "—"
         case .equity:
+            if let roi = terms.equityRoiTimeline {
+                return roi.displayName + " ROI"
+            }
             if let p = terms.equityPercentage {
                 return String(format: "%.1f%% equity", p)
             }
@@ -118,6 +121,7 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
             var parts: [String] = []
             if let e = terms.equityPercentage { parts.append(String(format: "%.1f%% equity", e)) }
             if let v = terms.businessValuation { parts.append("Val. LKR \(Int(v))") }
+            if let roi = terms.equityRoiTimeline { parts.append(roi.displayName + " ROI") }
             return parts.isEmpty ? "Equity" : parts.joined(separator: " · ")
         case .revenue_share:
             var parts: [String] = []

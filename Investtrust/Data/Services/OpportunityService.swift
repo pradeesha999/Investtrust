@@ -505,12 +505,26 @@ final class OpportunityService {
             guard let p = Self.parseDouble(from: draft.equityPercentage), p > 0, p <= 100 else {
                 throw OpportunityServiceError.invalidTerms
             }
+            let ventureName = draft.ventureName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !ventureName.isEmpty else { throw OpportunityServiceError.invalidTerms }
+            let revenueModel = draft.revenueModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !revenueModel.isEmpty else { throw OpportunityServiceError.invalidTerms }
+            let targetAudience = draft.targetAudience.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !targetAudience.isEmpty else { throw OpportunityServiceError.invalidTerms }
             var t = OpportunityTerms()
             t.equityPercentage = p
             let bv = draft.businessValuation.trimmingCharacters(in: .whitespacesAndNewlines)
             if !bv.isEmpty, let v = Self.parseDouble(from: bv), v > 0 {
                 t.businessValuation = v
             }
+            t.equityTimelineMonths = draft.equityRoiTimeline.months
+            t.ventureName = ventureName
+            t.ventureStage = draft.ventureStage
+            t.futureGoals = draft.futureGoals.trimmingCharacters(in: .whitespacesAndNewlines)
+            t.revenueModel = revenueModel
+            t.targetAudience = targetAudience
+            t.demoLinks = draft.demoLinks.trimmingCharacters(in: .whitespacesAndNewlines)
+            t.equityRoiTimeline = draft.equityRoiTimeline
             let exit = draft.exitPlan.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !exit.isEmpty else { throw OpportunityServiceError.invalidTerms }
             t.exitPlan = exit

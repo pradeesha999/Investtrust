@@ -19,6 +19,19 @@ final class InAppNotificationService {
 
     private func investorNotifications(_ rows: [InvestmentListing], userId: String) -> [InAppNotification] {
         var notes: [InAppNotification] = []
+        if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
+           rows.contains(where: { $0.agreementStatus == .active }) {
+            notes.append(
+                InAppNotification(
+                    id: "calendar-consent-investor-\(userId)",
+                    title: "Enable calendar reminders",
+                    message: "Turn on calendar sync to add repayment and milestone reminders.",
+                    createdAt: Date(),
+                    kind: .actionRequired,
+                    route: .dashboard
+                )
+            )
+        }
         for inv in rows {
             if inv.agreementStatus == .pending_signatures, inv.needsInvestorSignature(currentUserId: userId) {
                 notes.append(
@@ -61,12 +74,39 @@ final class InAppNotificationService {
                     )
                 )
             }
+            if inv.investmentType == .equity,
+               inv.agreementStatus == .active,
+               let latest = inv.equityUpdates.first {
+                notes.append(
+                    InAppNotification(
+                        id: "investor-equity-update-\(inv.id)-\(latest.id)",
+                        title: "New venture update",
+                        message: "\(safeTitle(inv)): \(latest.title)",
+                        createdAt: latest.createdAt,
+                        kind: .actionRequired,
+                        route: .actionOngoing
+                    )
+                )
+            }
         }
         return notes.sorted { $0.createdAt > $1.createdAt }
     }
 
     private func seekerNotifications(_ rows: [InvestmentListing], userId: String) -> [InAppNotification] {
         var notes: [InAppNotification] = []
+        if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
+           rows.contains(where: { $0.agreementStatus == .active }) {
+            notes.append(
+                InAppNotification(
+                    id: "calendar-consent-seeker-\(userId)",
+                    title: "Enable calendar reminders",
+                    message: "Turn on calendar sync to add repayment and milestone reminders.",
+                    createdAt: Date(),
+                    kind: .actionRequired,
+                    route: .dashboard
+                )
+            )
+        }
         for inv in rows {
             let status = inv.status.lowercased()
             if status == "pending" {
@@ -134,6 +174,20 @@ final class InAppNotificationService {
                         )
                     )
                 }
+            }
+            if inv.investmentType == .equity,
+               inv.agreementStatus == .active,
+               inv.equityUpdates.isEmpty {
+                notes.append(
+                    InAppNotification(
+                        id: "seeker-equity-post-\(inv.id)",
+                        title: "Post your first venture update",
+                        message: "Share progress with investors for \(safeTitle(inv)).",
+                        createdAt: inv.updatedFallbackDate,
+                        kind: .actionRequired,
+                        route: .actionSeekerOpportunity
+                    )
+                )
             }
         }
         return notes.sorted { $0.createdAt > $1.createdAt }

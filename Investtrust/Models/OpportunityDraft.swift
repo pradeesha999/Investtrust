@@ -43,6 +43,14 @@ struct OpportunityDraft: Identifiable, Equatable {
     // Equity
     var equityPercentage: String = ""
     var businessValuation: String = ""
+    var equityTimelineMonths: String = ""
+    var ventureName: String = ""
+    var ventureStage: VentureStage = .idea_stage
+    var futureGoals: String = ""
+    var revenueModel: String = ""
+    var targetAudience: String = ""
+    var demoLinks: String = ""
+    var equityRoiTimeline: EquityRoiTimeline = .one_year
     var exitPlan: String = ""
 
     // Revenue share

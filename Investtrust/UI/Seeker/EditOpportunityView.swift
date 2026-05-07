@@ -111,8 +111,33 @@ struct EditOpportunityView: View {
                                     .pickerStyle(.menu)
                                 }
                             case .equity:
+                                field("Venture name", text: $draft.ventureName, placeholder: "Your startup / product / brand")
                                 field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
                                 field("Business valuation (LKR, optional)", text: $draft.businessValuation, placeholder: "5000000", keyboardType: .numberPad)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Expected ROI timeline")
+                                        .font(.subheadline.weight(.semibold))
+                                    Picker("Expected ROI timeline", selection: $draft.equityRoiTimeline) {
+                                        ForEach(EquityRoiTimeline.allCases, id: \.self) { option in
+                                            Text(option.displayName).tag(option)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                }
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Venture stage")
+                                        .font(.subheadline.weight(.semibold))
+                                    Picker("Venture stage", selection: $draft.ventureStage) {
+                                        ForEach(VentureStage.allCases, id: \.self) { stage in
+                                            Text(stage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(stage)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                }
+                                textArea("Revenue model", text: $draft.revenueModel, placeholder: "How this venture earns revenue")
+                                textArea("Target audience / market", text: $draft.targetAudience, placeholder: "Who the venture is built for")
+                                textArea("Future goals", text: $draft.futureGoals, placeholder: "Growth roadmap and scaling goals")
+                                field("Demo links (optional)", text: $draft.demoLinks, placeholder: "https://...")
                                 textArea("Exit plan", text: $draft.exitPlan, placeholder: "How investors may realize returns.")
                             case .revenue_share:
                                 field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
@@ -339,6 +364,13 @@ struct EditOpportunityView: View {
             if let v = t.businessValuation {
                 d.businessValuation = String(format: "%.0f", v)
             }
+            d.ventureName = t.ventureName ?? ""
+            d.ventureStage = t.ventureStage ?? .idea_stage
+            d.futureGoals = t.futureGoals ?? ""
+            d.revenueModel = t.revenueModel ?? ""
+            d.targetAudience = t.targetAudience ?? ""
+            d.demoLinks = t.demoLinks ?? ""
+            d.equityRoiTimeline = t.equityRoiTimeline ?? .one_year
             d.exitPlan = t.exitPlan ?? ""
         case .revenue_share:
             if let p = t.revenueSharePercent {

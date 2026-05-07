@@ -78,6 +78,40 @@ enum ExpectedReturnType: String, CaseIterable, Codable, Sendable {
     case none
 }
 
+enum EquityRoiTimeline: String, CaseIterable, Codable, Sendable {
+    case six_months
+    case one_year
+    case two_years
+    case five_years
+
+    var displayName: String {
+        switch self {
+        case .six_months: return "6 Months"
+        case .one_year: return "1 Year"
+        case .two_years: return "2 Years"
+        case .five_years: return "5 Years"
+        }
+    }
+
+    var months: Int {
+        switch self {
+        case .six_months: return 6
+        case .one_year: return 12
+        case .two_years: return 24
+        case .five_years: return 60
+        }
+    }
+}
+
+enum VentureStage: String, CaseIterable, Codable, Sendable {
+    case idea_stage
+    case prototype
+    case beta_launch
+    case early_users
+    case revenue_generating
+    case scaling
+}
+
 // MARK: - Milestone
 
 struct OpportunityMilestone: Equatable, Hashable, Codable, Sendable {
@@ -97,6 +131,14 @@ struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     var repaymentFrequency: RepaymentFrequency?
     var equityPercentage: Double?
     var businessValuation: Double?
+    var equityTimelineMonths: Int?
+    var ventureName: String?
+    var ventureStage: VentureStage?
+    var futureGoals: String?
+    var revenueModel: String?
+    var targetAudience: String?
+    var demoLinks: String?
+    var equityRoiTimeline: EquityRoiTimeline?
     var exitPlan: String?
     var revenueSharePercent: Double?
     var targetReturnAmount: Double?
@@ -111,7 +153,7 @@ struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     var effectiveInterestRate: Double { interestRate ?? 0 }
 
     var effectiveTimelineMonths: Int {
-        max(1, repaymentTimelineMonths ?? maxDurationMonths ?? 1)
+        max(1, repaymentTimelineMonths ?? maxDurationMonths ?? equityTimelineMonths ?? 1)
     }
 }
 
@@ -128,6 +170,14 @@ enum OpportunityFirestoreCoding {
         case .equity:
             if let v = t.equityPercentage { m["equityPercentage"] = v }
             if let v = t.businessValuation { m["businessValuation"] = v }
+            if let v = t.equityTimelineMonths { m["equityTimelineMonths"] = v }
+            if let v = t.ventureName { m["ventureName"] = v }
+            if let v = t.ventureStage { m["ventureStage"] = v.rawValue }
+            if let v = t.futureGoals { m["futureGoals"] = v }
+            if let v = t.revenueModel { m["revenueModel"] = v }
+            if let v = t.targetAudience { m["targetAudience"] = v }
+            if let v = t.demoLinks { m["demoLinks"] = v }
+            if let v = t.equityRoiTimeline { m["equityRoiTimeline"] = v.rawValue }
             if let v = t.exitPlan { m["exitPlan"] = v }
         case .revenue_share:
             if let v = t.revenueSharePercent { m["revenueSharePercent"] = v }
@@ -188,6 +238,18 @@ enum OpportunityFirestoreCoding {
         case .equity:
             t.equityPercentage = dbl("equityPercentage")
             t.businessValuation = dbl("businessValuation")
+            t.equityTimelineMonths = intg("equityTimelineMonths")
+            t.ventureName = str("ventureName")
+            if let raw = (nested["ventureStage"] as? String) ?? (data["ventureStage"] as? String) {
+                t.ventureStage = VentureStage(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
+            t.futureGoals = str("futureGoals")
+            t.revenueModel = str("revenueModel")
+            t.targetAudience = str("targetAudience")
+            t.demoLinks = str("demoLinks")
+            if let raw = (nested["equityRoiTimeline"] as? String) ?? (data["equityRoiTimeline"] as? String) {
+                t.equityRoiTimeline = EquityRoiTimeline(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            }
             t.exitPlan = str("exitPlan")
         case .revenue_share:
             t.revenueSharePercent = dbl("revenueSharePercent")

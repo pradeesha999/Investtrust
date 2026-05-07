@@ -18,6 +18,7 @@ struct OpportunityDetailView: View {
     @State private var userProfileLoaded: UserProfile?
     @State private var sellerProfile: UserProfile?
     @State private var showProfileEdit = false
+    @State private var showCalendarSyncPrompt = false
 
     @State private var contactError: String?
     @State private var showContactError = false
@@ -168,6 +169,29 @@ struct OpportunityDetailView: View {
                 )
             }
         }
+        .alert("Sync due dates to Calendar?", isPresented: $showCalendarSyncPrompt) {
+            Button("Not now", role: .cancel) {
+                LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+            }
+            Button("Enable") {
+                Task {
+                    LoanRepaymentCalendarSync.setCalendarSyncEnabled(true)
+                    let granted = await LoanRepaymentCalendarSync.requestPermissionIfNeeded()
+                    if !granted {
+                        LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+                    }
+                    if let opportunity, let uid = auth.currentUserID, let latest = myLatestRequest {
+                        await LoanRepaymentCalendarSync.syncPostAgreementEvents(
+                            investment: latest,
+                            opportunity: opportunity,
+                            currentUserId: uid
+                        )
+                    }
+                }
+            }
+        } message: {
+            Text("Investtrust can add repayment and milestone reminders for active deals.")
+        }
         .sheet(isPresented: $showProfileEdit) {
             NavigationStack {
                 ProfileEditView()
@@ -208,6 +232,19 @@ struct OpportunityDetailView: View {
                 if shouldShowStatusCard(for: opportunity) {
                     statusCard(for: opportunity)
                         .padding(.horizontal, AppTheme.screenPadding)
+                }
+                if let req = myLatestRequest, req.agreement != nil {
+                    agreementAccessCard(for: req, opportunity: opportunity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                }
+
+                if let req = myLatestRequest,
+                   req.investmentType == .equity,
+                   req.agreementStatus == .active || req.status.lowercased() == "active" {
+                    infoCard(title: "Venture updates", subtitle: "Latest progress from seeker", systemImage: "chart.line.uptrend.xyaxis") {
+                        investorEquityUpdatesContent(req)
+                    }
+                    .padding(.horizontal, AppTheme.screenPadding)
                 }
 
                 if let req = myLatestRequest, req.isLoanWithSchedule {
@@ -280,6 +317,48 @@ struct OpportunityDetailView: View {
         .task(id: opportunity.id) {
             await loadMyRequest(for: opportunity)
             await loadSellerProfile(for: opportunity)
+        }
+    }
+
+    @ViewBuilder
+    private func investorEquityUpdatesContent(_ req: InvestmentListing) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if req.equityUpdates.isEmpty {
+                Text("No venture updates posted yet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(req.equityUpdates.prefix(5)) { update in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(update.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(update.message)
+                            .font(.footnote)
+                        if let stage = update.ventureStage, !stage.isEmpty {
+                            Text(stage.replacingOccurrences(of: "_", with: " ").capitalized)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(10)
+                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                }
+            }
+            if !req.equityMilestones.isEmpty {
+                Divider()
+                Text("Milestone progress")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(req.equityMilestones) { row in
+                    HStack {
+                        Text(row.title)
+                            .font(.footnote)
+                        Spacer()
+                        Text(row.status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
     }
 
@@ -611,6 +690,22 @@ struct OpportunityDetailView: View {
         )
     }
 
+    private func compactMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+    }
+
     @ViewBuilder
     private func incomeFundsTimelineSection(for o: OpportunityListing) -> some View {
         let income = o.incomeGenerationMethod.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -762,27 +857,30 @@ struct OpportunityDetailView: View {
                investorAmount: ticket,
                goalAmount: o.amountRequested
            ) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("This round offers up to \(formatRate(eq))% equity for the full LKR \(o.formattedAmountLKR) goal.")
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("At \(ticketText), your pro‑rata slice is about \(formatRate(slice))% of the company if the round fills at that ticket size.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    compactMetric(
+                        title: "Round equity",
+                        value: "\(formatRate(eq))%"
+                    )
+                    compactMetric(
+                        title: "Your est. share",
+                        value: "\(formatRate(slice))%"
+                    )
+                    compactMetric(
+                        title: "Ticket",
+                        value: ticketText.replacingOccurrences(of: "LKR ", with: "")
+                    )
+                }
                 if let v = t.businessValuation, v > 0 {
-                    Text("Seeker’s stated pre-money context: LKR \(OpportunityFinancialPreview.formatLKRInteger(v)).")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    compactMetric(
+                        title: "Valuation",
+                        value: OpportunityFinancialPreview.formatLKRInteger(v)
+                    )
                 }
             }
         } else {
-            Text("Equity % and funding goal unlock a quick ownership snapshot here.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            compactMetric(title: "Ownership estimate", value: "Awaiting complete inputs")
         }
     }
 
@@ -897,7 +995,12 @@ struct OpportunityDetailView: View {
             )
         } else if let r = req, r.agreementStatus == .active || status == "active" {
             VStack(alignment: .leading, spacing: 12) {
-                statusHeader(tint: .green, icon: "checkmark.seal.fill", title: "Agreement active", message: "The memorandum is fully signed. Use Chat to coordinate funding outside the platform.")
+                statusHeader(
+                    tint: .green,
+                    icon: "checkmark.seal.fill",
+                    title: "Agreement active",
+                    message: activeDealNextStepsMessage(for: r)
+                )
                 if let timeline = activeAgreementTimeline(for: r) {
                     HStack(spacing: 10) {
                         calloutRow(title: "Started", value: Self.mediumDate(timeline.start))
@@ -970,6 +1073,21 @@ struct OpportunityDetailView: View {
         }
     }
 
+    private func activeDealNextStepsMessage(for req: InvestmentListing) -> String {
+        switch req.investmentType {
+        case .loan:
+            return "The memorandum is fully signed. Use Chat to coordinate funding outside the platform."
+        case .equity:
+            return "The equity agreement is live. Investor funds the round, seeker executes milestones, and both parties track governance updates in chat until exit."
+        case .revenue_share:
+            return "The agreement is live. Coordinate monthly revenue reporting and payout confirmations until the target return is met."
+        case .project:
+            return "The agreement is live. Follow milestone delivery updates and close the deal when project outcomes are completed."
+        case .custom:
+            return "The agreement is live. Follow the custom terms and record key updates through milestones and chat."
+        }
+    }
+
     @ViewBuilder
     private func statusShell(tint: Color, icon: String, title: String, message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1003,7 +1121,21 @@ struct OpportunityDetailView: View {
 
     private func activeAgreementTimeline(for req: InvestmentListing) -> (start: Date, end: Date, daysLeft: Int)? {
         let start = req.acceptedAt ?? req.agreementGeneratedAt ?? req.createdAt
-        let months = req.finalTimelineMonths ?? req.agreement?.termsSnapshot.effectiveTimelineMonths
+        let terms = req.agreement?.termsSnapshot
+        let months: Int? = {
+            switch req.investmentType {
+            case .loan:
+                return req.finalTimelineMonths ?? terms?.repaymentTimelineMonths
+            case .revenue_share:
+                return req.finalTimelineMonths ?? terms?.maxDurationMonths
+            case .equity:
+                return terms?.equityTimelineMonths
+            case .project:
+                return req.finalTimelineMonths
+            case .custom:
+                return nil
+            }
+        }()
         guard let start, let months, months > 0 else { return nil }
         guard let end = Calendar.current.date(byAdding: .month, value: months, to: start) else { return nil }
         let rawDays = Calendar.current.dateComponents([.day], from: Date(), to: end).day ?? 0
@@ -1042,9 +1174,7 @@ struct OpportunityDetailView: View {
             case .loan:
                 EmptyView()
             case .equity:
-                if let exit = t.exitPlan, !exit.isEmpty {
-                    calloutRow(title: "Exit plan", value: exit)
-                }
+                equityTermsCards(terms: t)
             case .revenue_share:
                 EmptyView()
             case .project:
@@ -1056,6 +1186,34 @@ struct OpportunityDetailView: View {
                     calloutRow(title: "Summary", value: s)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func equityTermsCards(terms t: OpportunityTerms) -> some View {
+        if let ventureName = t.ventureName, !ventureName.isEmpty {
+            calloutRow(title: "Venture", value: ventureName)
+        }
+        if let stage = t.ventureStage {
+            calloutRow(title: "Stage", value: stage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+        }
+        if let roi = t.equityRoiTimeline {
+            calloutRow(title: "ROI timeline", value: roi.displayName)
+        }
+        if let model = t.revenueModel, !model.isEmpty {
+            calloutRow(title: "Revenue model", value: model)
+        }
+        if let audience = t.targetAudience, !audience.isEmpty {
+            calloutRow(title: "Target market", value: audience)
+        }
+        if let goals = t.futureGoals, !goals.isEmpty {
+            calloutRow(title: "Future goals", value: goals)
+        }
+        if let links = t.demoLinks, !links.isEmpty {
+            calloutRow(title: "Demo links", value: links)
+        }
+        if let exit = t.exitPlan, !exit.isEmpty {
+            calloutRow(title: "Exit plan", value: exit)
         }
     }
 
@@ -1074,6 +1232,7 @@ struct OpportunityDetailView: View {
             var out: [TermPair] = []
             if let p = t.equityPercentage { out.append(TermPair(label: "Equity", value: String(format: "%.1f%%", p))) }
             if let v = t.businessValuation { out.append(TermPair(label: "Valuation", value: "LKR \(Int(v))")) }
+            if let roi = t.equityRoiTimeline { out.append(TermPair(label: "ROI", value: roi.displayName)) }
             return out
         case .revenue_share:
             var out: [TermPair] = []
@@ -1204,6 +1363,32 @@ struct OpportunityDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+    }
+
+    private func agreementAccessCard(for req: InvestmentListing, opportunity: OpportunityListing) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Agreement", systemImage: "doc.text.fill")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(req.agreementStatus == .active ? "Active" : req.agreementStatus.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                agreementReviewContext = AgreementReviewContext(investment: req, opportunity: opportunity)
+            } label: {
+                Text(req.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review & sign agreement" : "Open agreement")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: AppTheme.minTapTarget)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(auth.accentColor)
+        }
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .appCardShadow()
     }
 
     // MARK: - Seeker card
@@ -1497,6 +1682,18 @@ struct OpportunityDetailView: View {
                 investorId: uid
             )
             await MainActor.run { myLatestRequest = latest }
+            if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
+               !showCalendarSyncPrompt,
+               latest?.agreementStatus == .active {
+                await MainActor.run { showCalendarSyncPrompt = true }
+            }
+            if let latest {
+                await LoanRepaymentCalendarSync.syncPostAgreementEvents(
+                    investment: latest,
+                    opportunity: opportunity,
+                    currentUserId: uid
+                )
+            }
         } catch {
             await MainActor.run { myLatestRequest = nil }
         }

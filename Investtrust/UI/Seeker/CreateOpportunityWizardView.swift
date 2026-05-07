@@ -401,8 +401,33 @@ struct CreateOpportunityWizardView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 case .equity:
+                    field("Venture name", text: $draft.ventureName, placeholder: "Your startup / product / brand")
                     field("Equity offered (%)", text: $draft.equityPercentage, placeholder: "10", keyboardType: .decimalPad)
                     field("Business valuation (LKR, optional)", text: $draft.businessValuation, placeholder: "5000000", keyboardType: .numberPad)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Expected ROI timeline")
+                            .font(.subheadline.weight(.semibold))
+                        Picker("Expected ROI timeline", selection: $draft.equityRoiTimeline) {
+                            ForEach(EquityRoiTimeline.allCases, id: \.self) { option in
+                                Text(option.displayName).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Venture stage")
+                            .font(.subheadline.weight(.semibold))
+                        Picker("Venture stage", selection: $draft.ventureStage) {
+                            ForEach(VentureStage.allCases, id: \.self) { stage in
+                                Text(stage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(stage)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    textArea("Revenue model", text: $draft.revenueModel, placeholder: "How this venture earns revenue")
+                    textArea("Target audience / market", text: $draft.targetAudience, placeholder: "Who the venture is built for")
+                    textArea("Future goals", text: $draft.futureGoals, placeholder: "Growth roadmap and scaling goals")
+                    field("Demo links (optional)", text: $draft.demoLinks, placeholder: "https://...")
                     textArea("Exit plan", text: $draft.exitPlan, placeholder: "How and when investors may realize returns.")
                 case .revenue_share:
                     field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
@@ -658,6 +683,9 @@ struct CreateOpportunityWizardView: View {
         case .equity:
             rows.append(("Equity %", draft.equityPercentage))
             rows.append(("Valuation", draft.businessValuation.isEmpty ? "—" : "LKR \(draft.businessValuation)"))
+            rows.append(("ROI timeline", draft.equityRoiTimeline.displayName))
+            rows.append(("Venture stage", draft.ventureStage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized))
+            rows.append(("Venture", draft.ventureName.isEmpty ? "—" : draft.ventureName))
             rows.append(("Exit", draft.exitPlan.isEmpty ? "—" : String(draft.exitPlan.prefix(120))))
         case .revenue_share:
             rows.append(("Rev. share", draft.revenueSharePercent))
@@ -1020,7 +1048,9 @@ struct CreateOpportunityWizardView: View {
                 return min(3650, max(30, days))
             }
             return 180
-        case .equity, .custom:
+        case .equity:
+            return min(3650, max(30, draft.equityRoiTimeline.months * 30))
+        case .custom:
             return 180
         }
     }

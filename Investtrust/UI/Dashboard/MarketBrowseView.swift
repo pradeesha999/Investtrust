@@ -181,8 +181,17 @@ struct MarketBrowseView: View {
         do {
             let all = try await opportunityService.fetchMarketListings()
             if let userID = auth.currentUserID {
-                opportunities = all.filter { $0.ownerId != userID }
                 let myInvestments = try await investmentService.fetchInvestments(forInvestor: userID)
+                let completedOpportunityIds = Set(
+                    myInvestments.compactMap { row -> String? in
+                        guard InvestorPortfolioMetrics.isCompletedDeal(row) else { return nil }
+                        guard let oppId = row.opportunityId, !oppId.isEmpty else { return nil }
+                        return oppId
+                    }
+                )
+                opportunities = all.filter {
+                    $0.ownerId != userID && !completedOpportunityIds.contains($0.id)
+                }
                 myLatestRequestsByOpportunityId = latestRequestsMap(from: myInvestments)
             } else {
                 opportunities = all

@@ -30,8 +30,14 @@ struct SeekerOpportunityDetailView: View {
     @State private var principalProofBusyId: String?
     @State private var showPrincipalProofLibrary = false
     @State private var showPrincipalProofCamera = false
+    @State private var showCalendarSyncPrompt = false
     @State private var principalProofLibraryItem: PhotosPickerItem?
     @State private var principalProofTargetInvestmentId: String?
+    @State private var equityUpdateTitle = ""
+    @State private var equityUpdateMessage = ""
+    @State private var equityGrowthMetric = ""
+    @State private var equityStage: VentureStage = .idea_stage
+    @State private var equityUpdateBusy = false
 
     private let investmentService = InvestmentService()
     private let opportunityService = OpportunityService()
@@ -94,6 +100,14 @@ struct SeekerOpportunityDetailView: View {
 
     private var showSeekerLoanRepaymentDashboard: Bool {
         opportunity.investmentType == .loan && !activeLoanDealsForDashboard.isEmpty
+    }
+
+    private var activeEquityDealsForDashboard: [InvestmentListing] {
+        investments.filter { inv in
+            guard inv.investmentType == .equity else { return false }
+            let s = inv.status.lowercased()
+            return inv.agreementStatus == .active || s == "active"
+        }
     }
 
     private var seekerLoanScheduleAggregate: (next: (investment: InvestmentListing, installment: LoanInstallment)?, paidCount: Int, totalCount: Int, remainingTotal: Double, paidTotal: Double) {
@@ -592,6 +606,10 @@ struct SeekerOpportunityDetailView: View {
                 if showSeekerLoanRepaymentDashboard {
                     seekerLoanRepaymentDashboardStack
                 } else {
+                    if !activeEquityDealsForDashboard.isEmpty {
+                        seekerEquityProgressSection
+                            .padding(.horizontal, AppTheme.screenPadding)
+                    }
                     overviewCard(for: opportunity)
                         .padding(.horizontal, AppTheme.screenPadding)
                     keyNumbersCard(for: opportunity)
@@ -810,6 +828,148 @@ struct SeekerOpportunityDetailView: View {
                     }
                 }
             }
+        }
+        .alert("Sync due dates to Calendar?", isPresented: $showCalendarSyncPrompt) {
+            Button("Not now", role: .cancel) {
+                LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+            }
+            Button("Enable") {
+                Task {
+                    LoanRepaymentCalendarSync.setCalendarSyncEnabled(true)
+                    let granted = await LoanRepaymentCalendarSync.requestPermissionIfNeeded()
+                    if !granted {
+                        LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+                        return
+                    }
+                    if let uid = auth.currentUserID {
+                        for row in investments where row.agreementStatus == .active {
+                            await LoanRepaymentCalendarSync.syncPostAgreementEvents(
+                                investment: row,
+                                opportunity: opportunity,
+                                currentUserId: uid
+                            )
+                        }
+                    }
+                }
+            }
+        } message: {
+            Text("Investtrust can add repayment and milestone reminders for active deals.")
+        }
+    }
+
+    private var seekerEquityProgressSection: some View {
+        sectionCard(
+            title: "Equity progress updates",
+            subtitle: "Post venture updates and move milestones as your venture grows.",
+            systemImage: "chart.line.uptrend.xyaxis"
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                fieldLike("Update title", text: $equityUpdateTitle, placeholder: "Prototype completed")
+                fieldLike("Growth metric (optional)", text: $equityGrowthMetric, placeholder: "1,000 users")
+                fieldLike("Update message", text: $equityUpdateMessage, placeholder: "Share what changed and what comes next", multiline: true)
+                Picker("Venture stage", selection: $equityStage) {
+                    ForEach(VentureStage.allCases, id: \.self) { stage in
+                        Text(stage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized).tag(stage)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Button {
+                    Task { await postEquityUpdate() }
+                } label: {
+                    Text(equityUpdateBusy ? "Posting..." : "Post update")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(auth.accentColor)
+                .disabled(equityUpdateBusy || equityUpdateMessage.trimmingCharacters(in: .whitespacesAndNewlines).count < 8)
+
+                ForEach(activeEquityDealsForDashboard) { inv in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(inv.opportunityTitle.isEmpty ? "Equity deal" : inv.opportunityTitle)
+                            .font(.subheadline.weight(.semibold))
+                        ForEach(inv.equityMilestones) { milestone in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(milestone.title)
+                                        .font(.footnote.weight(.semibold))
+                                    Text(milestone.status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Menu("Update status") {
+                                    Button("Planned") { Task { await setMilestoneStatus(inv.id, milestone.title, .planned) } }
+                                    Button("In Progress") { Task { await setMilestoneStatus(inv.id, milestone.title, .in_progress) } }
+                                    Button("Completed") { Task { await setMilestoneStatus(inv.id, milestone.title, .completed) } }
+                                }
+                                .font(.caption.weight(.semibold))
+                            }
+                        }
+                    }
+                    .padding(10)
+                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                }
+            }
+        }
+    }
+
+    private func fieldLike(_ label: String, text: Binding<String>, placeholder: String, multiline: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if multiline {
+                TextEditor(text: text)
+                    .frame(height: 90)
+                    .padding(8)
+                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            } else {
+                TextField(placeholder, text: text)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
+                    .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            }
+        }
+    }
+
+    private func postEquityUpdate() async {
+        guard let uid = auth.currentUserID, let first = activeEquityDealsForDashboard.first else { return }
+        equityUpdateBusy = true
+        defer { equityUpdateBusy = false }
+        do {
+            try await investmentService.postEquityVentureUpdate(
+                investmentId: first.id,
+                seekerId: uid,
+                title: equityUpdateTitle,
+                message: equityUpdateMessage,
+                ventureStage: equityStage,
+                growthMetric: equityGrowthMetric
+            )
+            equityUpdateTitle = ""
+            equityUpdateMessage = ""
+            equityGrowthMetric = ""
+            await loadInvestments()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+        }
+    }
+
+    private func setMilestoneStatus(_ investmentId: String, _ milestoneTitle: String, _ status: EquityMilestoneStatus) async {
+        guard let uid = auth.currentUserID else { return }
+        do {
+            try await investmentService.updateEquityMilestoneStatus(
+                investmentId: investmentId,
+                seekerId: uid,
+                milestoneTitle: milestoneTitle,
+                status: status,
+                note: nil
+            )
+            await loadInvestments()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
         }
     }
 
@@ -1508,6 +1668,20 @@ struct SeekerOpportunityDetailView: View {
             let visible = rows.filter { $0.status.lowercased() != "withdrawn" }
             investments = visible
             investorProfilesById = await loadInvestorProfiles(for: visible)
+            if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
+               !showCalendarSyncPrompt,
+               visible.contains(where: { $0.agreementStatus == .active }) {
+                showCalendarSyncPrompt = true
+            }
+            if let uid = auth.currentUserID {
+                for row in visible where row.agreementStatus == .active {
+                    await LoanRepaymentCalendarSync.syncPostAgreementEvents(
+                        investment: row,
+                        opportunity: opportunity,
+                        currentUserId: uid
+                    )
+                }
+            }
         } catch {
             loadError = (error as NSError).localizedDescription
         }

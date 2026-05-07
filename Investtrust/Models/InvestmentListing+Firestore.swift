@@ -122,6 +122,53 @@ extension InvestmentListing {
             return arr.compactMap { RevenueSharePeriod(firestoreMap: $0) }
                 .sorted { $0.periodNo < $1.periodNo }
         }()
+        let equityMilestones: [EquityMilestoneProgress] = {
+            guard let arr = data["equityMilestones"] as? [[String: Any]] else { return [] }
+            return arr.compactMap { row in
+                let title = (row["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let description = (row["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !title.isEmpty || !description.isEmpty else { return nil }
+                let dueDate = (row["dueDate"] as? Timestamp)?.dateValue()
+                let updatedAt = (row["updatedAt"] as? Timestamp)?.dateValue()
+                let rawStatus = ((row["status"] as? String) ?? "planned")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                let status = EquityMilestoneStatus(rawValue: rawStatus) ?? .planned
+                let note = (row["note"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return EquityMilestoneProgress(
+                    title: title.isEmpty ? "Milestone" : title,
+                    description: description,
+                    dueDate: dueDate,
+                    status: status,
+                    updatedAt: updatedAt,
+                    note: note?.isEmpty == false ? note : nil
+                )
+            }
+        }()
+        let equityUpdates: [EquityVentureUpdate] = {
+            guard let arr = data["equityUpdates"] as? [[String: Any]] else { return [] }
+            return arr.compactMap { row in
+                let id = (row["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? UUID().uuidString
+                let title = (row["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let message = (row["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !title.isEmpty || !message.isEmpty else { return nil }
+                let ventureStage = (row["ventureStage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let growthMetric = (row["growthMetric"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let attachmentURLs = (row["attachmentURLs"] as? [String] ?? []).map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }.filter { !$0.isEmpty }
+                let createdAt = (row["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                return EquityVentureUpdate(
+                    id: id,
+                    title: title.isEmpty ? "Venture update" : title,
+                    message: message,
+                    ventureStage: ventureStage?.isEmpty == false ? ventureStage : nil,
+                    growthMetric: growthMetric?.isEmpty == false ? growthMetric : nil,
+                    attachmentURLs: attachmentURLs,
+                    createdAt: createdAt
+                )
+            }.sorted { $0.createdAt > $1.createdAt }
+        }()
 
         let moaPdfURL = (data["moaPdfURL"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -217,7 +264,9 @@ extension InvestmentListing {
             principalSentByInvestorAt: principalSentByInvestorAt,
             principalReceivedBySeekerAt: principalReceivedBySeekerAt,
             principalInvestorProofImageURLs: principalInvestorProofImageURLs,
-            principalSeekerProofImageURLs: principalSeekerProofImageURLs
+            principalSeekerProofImageURLs: principalSeekerProofImageURLs,
+            equityMilestones: equityMilestones,
+            equityUpdates: equityUpdates
         )
     }
 

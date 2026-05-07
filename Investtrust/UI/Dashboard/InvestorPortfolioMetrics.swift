@@ -29,14 +29,27 @@ enum InvestorPortfolioMetrics {
 
     static func isCompletedDeal(_ row: InvestmentListing) -> Bool {
         let s = row.status.lowercased()
-        return s == "completed" || row.fundingStatus == .closed
+        if s == "completed" || row.fundingStatus == .closed {
+            return true
+        }
+        if row.investmentType == .equity,
+           !row.equityMilestones.isEmpty,
+           row.equityMilestones.allSatisfy({ $0.status == .completed }) {
+            return true
+        }
+        return false
     }
 
     static func isOngoingDeal(_ row: InvestmentListing) -> Bool {
         if isCompletedDeal(row) { return false }
         let s = row.status.lowercased()
-        if row.agreementStatus == .active { return true }
-        return s == "active"
+        if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
+            return false
+        }
+        if row.agreementStatus == .active || row.agreementStatus == .pending_signatures {
+            return true
+        }
+        return s == "accepted" || s == "active"
     }
 
     /// Principal in deals with a fully signed MOA (`agreementStatus == active`).
@@ -64,6 +77,37 @@ enum InvestorPortfolioMetrics {
     static func receivedTotal(_ rows: [InvestmentListing]) -> Double {
         rows.reduce(0) { sum, r in
             sum + returnedValue(for: r)
+        }
+    }
+
+    /// Total amount deployed across all non-pending, non-rejected/cancelled investments.
+    static func totalInvestedAllTime(_ rows: [InvestmentListing]) -> Double {
+        rows.reduce(0) { sum, r in
+            let s = r.status.lowercased()
+            if ["pending", "declined", "rejected", "cancelled", "withdrawn"].contains(s) {
+                return sum
+            }
+            return sum + r.investmentAmount
+        }
+    }
+
+    static func allTimeDealsCount(_ rows: [InvestmentListing]) -> Int {
+        rows.filter { r in
+            let s = r.status.lowercased()
+            return !["pending", "declined", "rejected", "cancelled", "withdrawn"].contains(s)
+        }.count
+    }
+
+    /// Net position to date from all investments (returned - deployed principal).
+    static func pureProfitAllTime(_ rows: [InvestmentListing]) -> Double {
+        receivedTotal(rows) - totalInvestedAllTime(rows)
+    }
+
+    /// Total projected maturity of currently active deals.
+    static func expectedReturnCurrentInvestments(_ rows: [InvestmentListing]) -> Double {
+        rows.reduce(0) { sum, r in
+            guard isOngoingDeal(r) else { return sum }
+            return sum + projectedMaturityValue(for: r)
         }
     }
 

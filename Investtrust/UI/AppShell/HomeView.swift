@@ -13,7 +13,10 @@ struct HomeView: View {
     @State private var lastSyncedSessionEpoch = -1
     @State private var notifications: [InAppNotification] = []
     @State private var showNotifications = false
+    @State private var showCalendarSyncPrompt = false
     private let notificationService = InAppNotificationService()
+    private let investmentService = InvestmentService()
+    private let opportunityService = OpportunityService()
 
     var body: some View {
         TabView(selection: tabSelection) {
@@ -52,13 +55,22 @@ struct HomeView: View {
                     tabRouter.selectedTab = .dashboard
                 }
             }
-            Task { await refreshNotifications() }
+            Task {
+                await refreshNotifications()
+                await checkDeferredCalendarConsentPrompt()
+            }
         }
         .onChange(of: auth.activeProfile) { _, _ in
-            Task { await refreshNotifications() }
+            Task {
+                await refreshNotifications()
+                await checkDeferredCalendarConsentPrompt()
+            }
         }
         .onChange(of: tabRouter.selectedTab) { _, _ in
-            Task { await refreshNotifications() }
+            Task {
+                await refreshNotifications()
+                await checkDeferredCalendarConsentPrompt()
+            }
         }
         .safeAreaInset(edge: .top) {
             HStack {
@@ -74,6 +86,16 @@ struct HomeView: View {
             } onTapNotification: { note in
                 handleNotificationTap(note)
             }
+        }
+        .alert("Sync due dates to Calendar?", isPresented: $showCalendarSyncPrompt) {
+            Button("Not now", role: .cancel) {
+                LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+            }
+            Button("Enable") {
+                Task { await enableCalendarSyncFromHomePrompt() }
+            }
+        } message: {
+            Text("Investtrust can add repayment and milestone reminders for active deals.")
         }
         .accessibilityLabel(tabAccessibilitySummary)
     }
@@ -140,6 +162,65 @@ struct HomeView: View {
             await MainActor.run { notifications = rows }
         } catch {
             await MainActor.run { notifications = [] }
+        }
+    }
+
+    private func checkDeferredCalendarConsentPrompt() async {
+        guard !LoanRepaymentCalendarSync.hasCalendarSyncPreference else { return }
+        guard !showCalendarSyncPrompt else { return }
+        guard let userId = auth.currentUserID else { return }
+        do {
+            let rows: [InvestmentListing]
+            switch auth.activeProfile {
+            case .investor:
+                rows = try await investmentService.fetchInvestments(forInvestor: userId, limit: 120)
+            case .seeker:
+                rows = try await investmentService.fetchInvestmentsForSeeker(seekerId: userId, limit: 200)
+            }
+            if rows.contains(where: { $0.agreementStatus == .active }) {
+                await MainActor.run { showCalendarSyncPrompt = true }
+            }
+        } catch {
+            return
+        }
+    }
+
+    private func enableCalendarSyncFromHomePrompt() async {
+        guard let userId = auth.currentUserID else { return }
+        LoanRepaymentCalendarSync.setCalendarSyncEnabled(true)
+        let granted = await LoanRepaymentCalendarSync.requestPermissionIfNeeded()
+        guard granted else {
+            LoanRepaymentCalendarSync.setCalendarSyncEnabled(false)
+            return
+        }
+        do {
+            let rows: [InvestmentListing]
+            switch auth.activeProfile {
+            case .investor:
+                rows = try await investmentService.fetchInvestments(forInvestor: userId, limit: 120)
+            case .seeker:
+                rows = try await investmentService.fetchInvestmentsForSeeker(seekerId: userId, limit: 200)
+            }
+            var opportunitiesById: [String: OpportunityListing] = [:]
+            for row in rows where row.agreementStatus == .active {
+                guard let opportunityId = row.opportunityId, !opportunityId.isEmpty else { continue }
+                let opportunity: OpportunityListing
+                if let cached = opportunitiesById[opportunityId] {
+                    opportunity = cached
+                } else if let loaded = try await opportunityService.fetchOpportunity(opportunityId: opportunityId) {
+                    opportunity = loaded
+                    opportunitiesById[opportunityId] = loaded
+                } else {
+                    continue
+                }
+                await LoanRepaymentCalendarSync.syncPostAgreementEvents(
+                    investment: row,
+                    opportunity: opportunity,
+                    currentUserId: userId
+                )
+            }
+        } catch {
+            return
         }
     }
 

@@ -84,6 +84,13 @@ service cloud.firestore {
         && request.auth.uid in data.agreement.requiredSignerIds;
     }
 
+    function equityProgressFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'equityUpdates',
+        'equityMilestones'
+      ]);
+    }
+
     // --- investments/{investmentId} ---
     match /investments/{investmentId} {
       allow read: if signedIn() && (
@@ -100,9 +107,18 @@ service cloud.firestore {
         && opportunityOwnerId(request.resource.data.opportunityId) == request.resource.data.seekerId;
 
       allow update: if signedIn() && (
-        investmentParty(resource.data)
-        || isAgreementSigner(resource.data)
-        || investmentSeekerIsListingOwner(resource.data)
+        (
+          equityProgressFieldsChanged()
+          && resource.data.seekerId == request.auth.uid
+        )
+        || (
+          !equityProgressFieldsChanged()
+          && (
+            investmentParty(resource.data)
+            || isAgreementSigner(resource.data)
+            || investmentSeekerIsListingOwner(resource.data)
+          )
+        )
       );
 
       allow delete: if signedIn() && (
