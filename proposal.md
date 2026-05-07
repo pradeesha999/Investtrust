@@ -84,9 +84,12 @@ Investtrust will solve these gaps by establishing a digital lifecycle that captu
 - Investor request submission
 - Seeker accept/decline actions
 - Investor withdrawal before confirmation
+- Negotiation and offer updates before final confirmation
 - Lifecycle status visibility across request, agreement, and active phases
 - Investment history views for tracking past and ongoing activity
 - Agreement-linked history context for better investment traceability
+- Digital agreement flow with signing and document tracking
+- Post-agreement execution tracking (loan/revenue/equity progress)
 
 ### Feature Group 6 - Collaboration and Communication
 - User-to-user chat threads
@@ -105,33 +108,11 @@ Investtrust will solve these gaps by establishing a digital lifecycle that captu
 
 ## 6) Advanced Capability Set
 
-### Advanced Capability 1 - Structured Negotiation Offers
-- Proposal-driven offer submission (amount, return, timeline, notes)
-- Offer revision support before agreement lock-in
-
-### Advanced Capability 2 - Agreement Snapshot Consistency
-- Master agreement data synchronized across linked investment records
-- Multi-party signature readiness states
-
-### Advanced Capability 3 - Digital Signature and MOA Document Pipeline
-- Signature capture and storage
-- MOA PDF generation workflow
-- Hash-based document integrity verification
-
-### Advanced Capability 4 - Post-Agreement Execution Engines
-- **Loan:** installment schedule, payment proof, confirm/dispute flow
-- **Revenue share:** period declarations and payout tracking
-- **Equity:** milestone and venture progress updates
-
-### Advanced Capability 5 - Calendar-Linked Commitment Tracking
+### Advanced Capability 1 - Calendar-Linked Commitment Tracking (EventKit)
 - Repayment/milestone events synced to iOS Calendar
 - Permission-driven EventKit integration
 
-### Advanced Capability 6 - Safety and Trust Enhancements
-- On-device inappropriate image detection before upload
-- Evidence-driven progress and payment confirmations
-
-### Advanced Capability 7 - Widget Extension for At-a-Glance Status
+### Advanced Capability 2 - Widget Extension for At-a-Glance Status (WidgetKit)
 - Home screen widget with next relevant commitment
 - Shared app-group snapshot flow for lightweight updates
 - WidgetKit-based quick visibility for role-specific upcoming actions
@@ -180,6 +161,7 @@ Proposed strengths that will distinguish Investtrust:
 - Multi-stage agreement management with digital signing
 - Execution discipline through proof and confirmation flows
 - Role-flexible product model for real user behavior
+- Advanced iOS integrations through EventKit and WidgetKit
 
 ## 10) Delivery Roadmap and Recommendations
 
