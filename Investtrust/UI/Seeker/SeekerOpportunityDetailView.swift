@@ -1109,7 +1109,7 @@ struct SeekerOpportunityDetailView: View {
         GeometryReader { geo in
             Group {
                 if opportunity.imageStoragePaths.isEmpty {
-                    RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
                         .fill(Color(.systemGray5))
                         .overlay {
                             Image(systemName: opportunity.effectiveVideoReference != nil ? "play.rectangle.fill" : "photo")
@@ -1119,53 +1119,51 @@ struct SeekerOpportunityDetailView: View {
                 } else {
                     AutoPagingImageCarousel(
                         references: opportunity.imageStoragePaths,
-                        height: 280,
-                        cornerRadius: AppTheme.controlCornerRadius
+                        height: 240,
+                        cornerRadius: AppTheme.cardCornerRadius
                     )
                 }
             }
-            .frame(width: geo.size.width, height: 280, alignment: .center)
+            .frame(width: geo.size.width, height: 240, alignment: .center)
             .clipped()
         }
-        .frame(height: 280)
+        .frame(height: 240)
     }
 
     private func overviewCard(for o: OpportunityListing) -> some View {
-        sectionCard(title: "Overview", subtitle: nil, systemImage: "rectangle.and.text.magnifyingglass") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(o.title)
-                    .font(.title2.bold())
-                    .foregroundStyle(.primary)
-
-                if !o.category.isEmpty {
-                    Text(o.category)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        tagPill(text: o.investmentType.displayName, icon: "chart.pie.fill", tint: auth.accentColor)
-                        tagPill(text: o.riskLevel.displayName + " risk", icon: "exclamationmark.shield.fill", tint: riskAccent(o.riskLevel))
-                        tagPill(
-                            text: o.verificationStatus == .verified ? "Verified" : "Unverified",
-                            icon: o.verificationStatus == .verified ? "checkmark.seal.fill" : "questionmark.circle.fill",
-                            tint: o.verificationStatus == .verified ? .green : .secondary
-                        )
-                        tagPill(text: o.status.capitalized, icon: "circle.fill", tint: .secondary, small: true)
+        sectionCard(title: "", subtitle: nil, systemImage: nil) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(o.title)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    if let listed = o.createdAt {
+                        Text(listed.formatted(date: .abbreviated, time: .omitted))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                if let listed = o.createdAt {
-                    Text("Listed \(Self.mediumDate(listed))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    if !o.category.isEmpty {
+                        Text(o.category)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                    }
+                    if o.verificationStatus == .verified {
+                        tagPill(text: "Verified", icon: "checkmark.seal.fill", tint: .blue, filled: true)
+                    }
+                    tagPill(text: o.investmentType.displayName, icon: "chart.pie.fill", tint: .secondary)
+                    tagPill(text: "\(o.riskLevel.displayName) risk", icon: "exclamationmark.shield.fill", tint: riskAccent(o.riskLevel), filled: true)
+                    Spacer(minLength: 0)
                 }
 
                 if !o.description.isEmpty {
                     Text(o.description)
                         .font(.body)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1174,42 +1172,310 @@ struct SeekerOpportunityDetailView: View {
 
     @ViewBuilder
     private func keyNumbersCard(for o: OpportunityListing) -> some View {
-        let ticketText = (o.maximumInvestors ?? 1) <= 1 ? "LKR \(o.formattedAmountLKR) (full round)" : "LKR \(o.formattedMinimumLKR) (min. ticket)"
         sectionCard(title: "Key numbers", subtitle: "Same numbers investors see", systemImage: "chart.bar.fill") {
-            VStack(alignment: .leading, spacing: 10) {
-                if o.investmentType == .loan,
-                   let rate = o.terms.interestRate,
-                   let months = o.terms.repaymentTimelineMonths,
-                   let preview = OpportunityFinancialPreview.loanMoneyOutcome(
-                       principal: o.minimumInvestment,
-                       annualRatePercent: rate,
-                       termMonths: months,
-                       plan: LoanRepaymentPlan.from(o.terms.repaymentFrequency)
-                   ) {
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                        metricTile(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
-                        metricTile(
-                            title: "Interest amount",
-                            value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
-                            tint: auth.accentColor
-                        )
-                        metricTile(
-                            title: "Profit",
-                            value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount))",
-                            tint: .green
-                        )
-                        metricTile(
-                            title: "Total back (revenue)",
-                            value: "LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))",
-                            tint: .green
-                        )
+            let ticket = o.minimumInvestment
+            let ticketText = (o.maximumInvestors ?? 1) <= 1
+                ? "LKR \(o.formattedAmountLKR) (full round)"
+                : "LKR \(o.formattedMinimumLKR) (min. ticket)"
+
+            VStack(alignment: .leading, spacing: 12) {
+                keyNumbersPrimaryMetric(for: o, ticket: ticket)
+                switch o.investmentType {
+                case .loan:
+                    loanReturnsSnapshot(for: o, ticket: ticket, ticketText: ticketText)
+                case .equity:
+                    sectionCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
+                        seekerEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
                     }
-                } else {
-                    detailBlock(title: "Terms summary", value: o.termsSummaryLine)
+                case .revenue_share:
+                    sectionCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
+                        seekerRevenueShareValueBody(o: o)
+                    }
+                case .project:
+                    sectionCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
+                        seekerProjectValueBody(o: o)
+                    }
+                case .custom:
+                    sectionCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
+                        seekerCustomValueBody(o: o)
+                    }
                 }
                 detailBlock(title: "Required investment", value: ticketText)
             }
         }
+    }
+
+    @ViewBuilder
+    private func loanReturnsSnapshot(for o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let rate = t.interestRate,
+           let months = t.repaymentTimelineMonths, months > 0,
+           ticket > 0,
+           let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+               principal: ticket,
+               annualRatePercent: rate,
+               termMonths: months,
+               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+           ) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Amount to be paid")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Text("Based on \(ticketText) over \(months) months.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                    .stroke(Color(.separator).opacity(0.2), lineWidth: 1)
+            )
+            .appCardShadow()
+        } else {
+            seekerLoanValueBody(o: o, ticket: ticket, ticketText: ticketText)
+        }
+    }
+
+    @ViewBuilder
+    private func keyNumbersPrimaryMetric(for o: OpportunityListing, ticket: Double) -> some View {
+        switch o.investmentType {
+        case .loan:
+            if let rate = o.terms.interestRate {
+                if let months = o.terms.repaymentTimelineMonths, months > 0,
+                   let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+                    principal: ticket,
+                    annualRatePercent: rate,
+                    termMonths: months,
+                    plan: LoanRepaymentPlan.from(o.terms.repaymentFrequency)
+                   ) {
+                    HStack(spacing: 8) {
+                        metricTile(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
+                        metricTile(title: "Timeline", value: "\(months) mo", tint: .primary)
+                        metricTile(title: "Final profit", value: OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount), tint: .green)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        metricTile(title: "Interest rate", value: "\(formatRate(rate))%", tint: auth.accentColor)
+                        metricTile(title: "Timeline", value: "—", tint: .primary)
+                    }
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Rate not set")
+            }
+        case .equity:
+            if let eq = o.terms.equityPercentage, eq > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(formatRate(eq))%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(auth.accentColor)
+                    Text("Equity offered (full round)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Equity %")
+            }
+        case .revenue_share:
+            if let p = o.terms.revenueSharePercent, p > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(formatRate(p))%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(auth.accentColor)
+                    Text("Revenue share")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Revenue share")
+            }
+        case .project:
+            let kind = o.terms.expectedReturnType?.rawValue.capitalized ?? "Return"
+            let value = (o.terms.expectedReturnValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(kind)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(auth.accentColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Expected return")
+            }
+        case .custom:
+            let s = (o.terms.customTermsSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Custom deal")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(String(s.prefix(120)) + (s.count > 120 ? "…" : ""))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(auth.accentColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                placeholderPrimaryMetric(caption: "Custom terms")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func placeholderPrimaryMetric(caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("—")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func seekerLoanValueBody(o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let rate = t.interestRate,
+           let months = t.repaymentTimelineMonths, months > 0,
+           ticket > 0,
+           let preview = OpportunityFinancialPreview.loanMoneyOutcome(
+               principal: ticket,
+               annualRatePercent: rate,
+               termMonths: months,
+               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+           ) {
+            let freq = (t.repaymentFrequency ?? .monthly).displayName
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Estimated return for \(ticketText): LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount)) interest over \(months) months.")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let first = preview.firstInstallmentDue, let last = preview.maturityDue {
+                    if first == last {
+                        Text("One payment around \(OpportunityFinancialPreview.mediumDate(first)).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Modeled \(freq) cadence: first installment about \(OpportunityFinancialPreview.mediumDate(first)), last by \(OpportunityFinancialPreview.mediumDate(last)).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } else {
+            Text("Once this listing has a clear rate and timeline, projected profit and total return will appear here.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func seekerEquityValueBody(o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
+        let t = o.terms
+        if let eq = t.equityPercentage, eq > 0, o.amountRequested > 0, ticket > 0,
+           let slice = OpportunityFinancialPreview.equitySlicePercent(
+               roundEquityPercent: eq,
+               investorAmount: ticket,
+               goalAmount: o.amountRequested
+           ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    compactMetric(title: "Round equity", value: "\(formatRate(eq))%")
+                    compactMetric(title: "Estimated share", value: "\(formatRate(slice))%")
+                    compactMetric(title: "Ticket", value: ticketText.replacingOccurrences(of: "LKR ", with: ""))
+                }
+                if let v = t.businessValuation, v > 0 {
+                    compactMetric(title: "Valuation", value: OpportunityFinancialPreview.formatLKRInteger(v))
+                }
+            }
+        } else {
+            compactMetric(title: "Ownership estimate", value: "Awaiting complete inputs")
+        }
+    }
+
+    @ViewBuilder
+    private func seekerRevenueShareValueBody(o: OpportunityListing) -> some View {
+        let t = o.terms
+        if let p = t.revenueSharePercent, p > 0,
+           let target = t.targetReturnAmount, target > 0 {
+            let cap = t.maxDurationMonths.map { "\($0) months" } ?? "the agreed cap"
+            Text("Investors share \(formatRate(p))% of revenue until LKR \(OpportunityFinancialPreview.formatLKRInteger(target)) is paid back (max \(cap)).")
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Add revenue share %, target, and duration so backers can see the upside cap.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func seekerProjectValueBody(o: OpportunityListing) -> some View {
+        let t = o.terms
+        let kind = t.expectedReturnType?.rawValue.capitalized ?? "Return"
+        let value = (t.expectedReturnValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(kind): \(value)")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let d = t.completionDate {
+                    Text("Target wrap-up: \(Self.mediumDate(d)).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            Text("Describe the expected return so investors can judge the upside.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func seekerCustomValueBody(o: OpportunityListing) -> some View {
+        let s = (o.terms.customTermsSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !s.isEmpty {
+            Text(String(s.prefix(280)) + (s.count > 280 ? "…" : ""))
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Custom summary will appear here once terms are completed.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func compactMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
     private func incomeFundsTimelineCard(for o: OpportunityListing) -> some View {
@@ -1297,30 +1563,36 @@ struct SeekerOpportunityDetailView: View {
     private func sectionCard<Content: View>(
         title: String,
         subtitle: String?,
-        systemImage: String,
+        systemImage: String?,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.title2)
-                    .foregroundStyle(auth.accentColor)
-                    .frame(width: 36, alignment: .leading)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            if !title.isEmpty {
+                HStack(alignment: .center, spacing: 10) {
+                    if let systemImage, !systemImage.isEmpty {
+                        Image(systemName: systemImage)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(auth.accentColor)
+                            .frame(width: 22, height: 22)
+                            .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.headline)
+                        if let subtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
             }
 
             content()
         }
         .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
         .appCardShadow()
     }
@@ -1340,7 +1612,7 @@ struct SeekerOpportunityDetailView: View {
         .appCardShadow()
     }
 
-    private func tagPill(text: String, icon: String, tint: Color, small: Bool = false) -> some View {
+    private func tagPill(text: String, icon: String, tint: Color, small: Bool = false, filled: Bool = false) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(small ? .caption2 : .caption)
@@ -1349,8 +1621,16 @@ struct SeekerOpportunityDetailView: View {
         }
         .padding(.horizontal, small ? 8 : 10)
         .padding(.vertical, small ? 5 : 7)
-        .background(tint.opacity(0.12), in: Capsule())
-        .foregroundStyle(tint)
+        .background(
+            Group {
+                if filled {
+                    Capsule().fill(tint.opacity(0.14))
+                } else {
+                    Capsule().fill(AppTheme.secondaryFill)
+                }
+            }
+        )
+        .foregroundStyle(filled ? tint : .primary)
     }
 
     private func riskAccent(_ r: RiskLevel) -> Color {
@@ -1382,13 +1662,19 @@ struct SeekerOpportunityDetailView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.subheadline.weight(.bold))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
         .padding(12)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .stroke(Color(.separator).opacity(0.18), lineWidth: 1)
+        )
     }
 
     private func termPairs(for o: OpportunityListing) -> [(String, String)] {

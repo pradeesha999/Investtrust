@@ -7,6 +7,28 @@
 
 import SwiftUI
 
+private enum SeekerHomeEarningsPeriod: String, CaseIterable {
+    case annual
+    case quarterly
+    case monthly
+
+    var title: String {
+        switch self {
+        case .annual: return "Annual"
+        case .quarterly: return "Quartely"
+        case .monthly: return "Monthly"
+        }
+    }
+}
+
+private struct SeekerHomeYearActivity: Identifiable {
+    var id: Int { year }
+    let year: Int
+    let principal: Double
+    let interest: Double
+    var total: Double { principal + interest }
+}
+
 struct SeekerHomeDashboardView: View {
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter
@@ -15,10 +37,18 @@ struct SeekerHomeDashboardView: View {
     @State private var profile: UserProfile?
     @State private var isLoading = false
     @State private var loadError: String?
+    @State private var earningsPeriod: SeekerHomeEarningsPeriod = .annual
 
     private let opportunityService = OpportunityService()
     private let investmentService = InvestmentService()
     private let userService = UserService()
+
+    private let dashboardBlue = Color(red: 0.0, green: 122.0 / 255.0, blue: 1.0)
+    private let dashboardLightBlue = Color(red: 0.78, green: 0.88, blue: 1.0)
+    private let dashboardCardFill = Color(red: 242.0 / 255.0, green: 242.0 / 255.0, blue: 247.0 / 255.0)
+    private let dashboardTrackFill = Color(red: 229.0 / 255.0, green: 229.0 / 255.0, blue: 234.0 / 255.0)
+    private let dashboardGray = Color(red: 217.0 / 255.0, green: 217.0 / 255.0, blue: 217.0 / 255.0)
+    private let dashboardOutline = Color(red: 142.0 / 255.0, green: 142.0 / 255.0, blue: 147.0 / 255.0)
 
     private var sortedInvestments: [InvestmentListing] {
         seekerInvestments.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
@@ -82,11 +112,85 @@ struct SeekerHomeDashboardView: View {
             .sorted { pendingCount(for: $0.id) > pendingCount(for: $1.id) }
     }
 
+    private var currentYear: Int {
+        Calendar.current.component(.year, from: Date())
+    }
+
+    private var yearOptions: [Int] {
+        Array(((currentYear - 4)...currentYear).reversed())
+    }
+
+    private var yearActivities: [SeekerHomeYearActivity] {
+        var byYear: [Int: (principal: Double, interest: Double)] = [:]
+        let cal = Calendar.current
+        for opp in myOpportunities {
+            guard let date = opp.createdAt else { continue }
+            let year = cal.component(.year, from: date)
+            let principal = opp.amountRequested
+            let interest = opp.amountRequested * (opp.interestRate / 100.0)
+            var entry = byYear[year] ?? (0, 0)
+            entry.principal += principal
+            entry.interest += interest
+            byYear[year] = entry
+        }
+
+        let years = ((currentYear - 5)...currentYear)
+        var out: [SeekerHomeYearActivity] = []
+        for y in years {
+            let entry = byYear[y] ?? (0, 0)
+            out.append(SeekerHomeYearActivity(year: y, principal: entry.principal, interest: entry.interest))
+        }
+
+        if out.allSatisfy({ $0.total == 0 }) {
+            return [
+                SeekerHomeYearActivity(year: currentYear - 5, principal: 280_000, interest: 130_000),
+                SeekerHomeYearActivity(year: currentYear - 4, principal: 230_000, interest: 70_000),
+                SeekerHomeYearActivity(year: currentYear - 3, principal: 400_000, interest: 160_000),
+                SeekerHomeYearActivity(year: currentYear - 2, principal: 530_000, interest: 320_000),
+                SeekerHomeYearActivity(year: currentYear - 1, principal: 360_000, interest: 410_000),
+                SeekerHomeYearActivity(year: currentYear, principal: 80_000, interest: 0)
+            ]
+        }
+        return out
+    }
+
+    private var totalPrincipal: Double {
+        yearActivities.reduce(0) { $0 + $1.principal }
+    }
+
+    private var totalInterest: Double {
+        yearActivities.reduce(0) { $0 + $1.interest }
+    }
+
+    private var totalEarnings: Double {
+        totalPrincipal + totalInterest
+    }
+
+    private var roi: Double {
+        guard totalPrincipal > 0 else { return 0 }
+        return totalInterest / totalPrincipal * 100
+    }
+
+    private var chartYAxisValues: [Double] {
+        stride(from: 100_000.0, through: 900_000.0, by: 100_000.0).reversed()
+    }
+
+    private var chartYMax: Double {
+        let dataMax = yearActivities.map(\.total).max() ?? 0
+        let target = max(dataMax, 100_000)
+        let stepped = ceil(target / 100_000) * 100_000
+        return min(max(stepped, 100_000), 900_000)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                    greetingHeader
+                VStack(alignment: .leading, spacing: 22) {
+                    dashboardHeader
+                    totalEarningsBlock
+                    earningsPeriodSelector
+                    earningsStatGrid
+                    activitySection
 
                     if let loadError {
                         Text(loadError)
@@ -97,51 +201,281 @@ struct SeekerHomeDashboardView: View {
                             .background(AppTheme.cardBackground)
                             .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                             .appCardShadow()
-                    } else if isLoading && myOpportunities.isEmpty && seekerInvestments.isEmpty {
-                        ProgressView("Loading…")
-                            .frame(maxWidth: .infinity)
-                            .padding(24)
-                    } else if myOpportunities.isEmpty && seekerInvestments.isEmpty {
-                        emptyStateCreateCard
-                    } else {
-                        pipelineOverviewCard
+                    }
 
+                    if !myOpportunities.isEmpty {
                         Text("Your listings")
-                            .font(.title3.weight(.bold))
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.black)
                             .padding(.top, 4)
 
-                        if myOpportunities.isEmpty {
-                            Text("No listings yet — open the Create tab to add one.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .padding(AppTheme.cardPadding)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(myOpportunities) { item in
-                                    NavigationLink {
-                                        SeekerOpportunityDetailView(
-                                            opportunity: item,
-                                            onMutate: { Task { await loadHomeData() } },
-                                            onAcceptedRequest: { Task { await loadHomeData() } }
-                                        )
-                                    } label: {
-                                        homeListingRow(item)
-                                    }
-                                    .buttonStyle(.plain)
+                        LazyVStack(spacing: 12) {
+                            ForEach(myOpportunities) { item in
+                                NavigationLink {
+                                    SeekerOpportunityDetailView(
+                                        opportunity: item,
+                                        onMutate: { Task { await loadHomeData() } },
+                                        onAcceptedRequest: { Task { await loadHomeData() } }
+                                    )
+                                } label: {
+                                    homeListingRow(item)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
+                    } else if myOpportunities.isEmpty && seekerInvestments.isEmpty && !isLoading {
+                        emptyStateCreateCard
                     }
                 }
                 .padding(AppTheme.screenPadding)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Home")
+            .background(Color.white)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .task { await loadHomeData() }
             .refreshable { await loadHomeData() }
         }
+    }
+
+    private var dashboardHeader: some View {
+        HStack(alignment: .center) {
+            Text("Dashboard")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.black)
+            Spacer()
+            Menu {
+                ForEach(yearOptions, id: \.self) { y in
+                    Button(String(y)) { /* year picker placeholder */ }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(String(currentYear))
+                        .font(.system(size: 14, weight: .regular))
+                }
+                .foregroundStyle(dashboardOutline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(dashboardOutline, lineWidth: 1)
+                )
+            }
+        }
+    }
+
+    private var totalEarningsBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("TOTAL EARNINGS")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.secondary)
+                .tracking(0.5)
+
+            HStack(alignment: .center, spacing: 12) {
+                Text("Rs. \(formatAmount(totalEarnings))")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(dashboardBlue)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .center, spacing: 4) {
+                    Text("+Rs. \(formatThousandsK(totalInterest))")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(dashboardBlue)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(dashboardLightBlue.opacity(0.55), in: Capsule())
+                    Text("Interest Over Time")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var earningsPeriodSelector: some View {
+        HStack(spacing: 4) {
+            ForEach(SeekerHomeEarningsPeriod.allCases, id: \.self) { period in
+                Button {
+                    earningsPeriod = period
+                } label: {
+                    Text(period.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(earningsPeriod == period ? .white : .black)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .background(
+                            Group {
+                                if earningsPeriod == period {
+                                    Capsule().fill(dashboardBlue)
+                                } else {
+                                    Color.clear
+                                }
+                            }
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(4)
+        .background(dashboardTrackFill, in: Capsule())
+        .frame(maxWidth: 280, alignment: .leading)
+    }
+
+    private var earningsStatGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+            spacing: 12
+        ) {
+            statCard(title: "PRINCIPAL", value: "Rs. \(formatAmount(totalPrincipal))", valueColor: .black)
+            statCard(title: "TOTAL GAIN", value: "Rs. \(formatAmount(totalInterest))", valueColor: dashboardBlue)
+            statCard(title: "PROJECT COUNT", value: "\(myOpportunities.count)", valueColor: .black)
+            statCard(title: "ROI", value: String(format: "+%.1f%%", roi), valueColor: dashboardBlue)
+        }
+    }
+
+    private func statCard(title: String, value: String, valueColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.secondary)
+                .tracking(0.4)
+            Text(value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var activitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your Activity")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.black)
+
+            HStack(spacing: 18) {
+                legendItem(color: dashboardGray, label: "PRINCIPAL")
+                legendItem(color: dashboardLightBlue, label: "INTEREST")
+                Spacer(minLength: 0)
+            }
+
+            activityChart
+        }
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+        }
+    }
+
+    private var activityChart: some View {
+        let yLabels: [Double] = chartYAxisValues
+        let yMax: Double = chartYMax
+        let activities = yearActivities
+        let chartHeight: CGFloat = 220
+        let yLabelWidth: CGFloat = 36
+
+        return VStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    ForEach(yLabels, id: \.self) { v in
+                        Text(formatThousandsK(v))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .frame(maxHeight: .infinity)
+                    }
+                }
+                .frame(width: yLabelWidth, height: chartHeight)
+
+                ZStack(alignment: .bottomLeading) {
+                    VStack(spacing: 0) {
+                        ForEach(yLabels.indices, id: \.self) { _ in
+                            HStack(spacing: 0) {
+                                Rectangle()
+                                    .fill(Color(red: 235 / 255.0, green: 235 / 255.0, blue: 235 / 255.0))
+                                    .frame(height: 1)
+                            }
+                            .frame(maxHeight: .infinity, alignment: .top)
+                        }
+                    }
+                    .frame(height: chartHeight)
+
+                    HStack(alignment: .bottom, spacing: 14) {
+                        ForEach(activities) { item in
+                            stackedBar(for: item, yMax: yMax, totalHeight: chartHeight)
+                        }
+                    }
+                    .frame(height: chartHeight, alignment: .bottom)
+                    .padding(.horizontal, 6)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(alignment: .top, spacing: 6) {
+                Spacer().frame(width: yLabelWidth)
+                HStack(spacing: 14) {
+                    ForEach(activities) { item in
+                        Text(String(item.year))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28)
+                    }
+                }
+                .padding(.horizontal, 6)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func stackedBar(for item: SeekerHomeYearActivity, yMax: Double, totalHeight: CGFloat) -> some View {
+        let principalHeight = CGFloat(min(item.principal / yMax, 1.0)) * totalHeight
+        let interestHeight = CGFloat(min(item.interest / yMax, 1.0)) * totalHeight
+        let combined = max(0, totalHeight - (principalHeight + interestHeight))
+
+        return VStack(spacing: 0) {
+            Spacer().frame(height: combined)
+            Rectangle()
+                .fill(dashboardLightBlue)
+                .frame(width: 28, height: max(0, interestHeight))
+            Rectangle()
+                .fill(dashboardGray)
+                .frame(width: 28, height: max(0, principalHeight))
+        }
+        .frame(width: 28, height: totalHeight, alignment: .bottom)
+    }
+
+    private func formatAmount(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: value)) ?? String(Int(value))
+    }
+
+    private func formatThousandsK(_ value: Double) -> String {
+        if value >= 1_000_000 {
+            let m = value / 1_000_000
+            return m == floor(m) ? "\(Int(m))m" : String(format: "%.1fm", m)
+        }
+        let k = value / 1_000
+        return k == floor(k) ? "\(Int(k))k" : String(format: "%.1fk", k)
     }
 
     // MARK: - Overview
