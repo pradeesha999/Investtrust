@@ -7,20 +7,6 @@
 
 import SwiftUI
 
-private enum SeekerOpportunitySegment: String, CaseIterable {
-    case open
-    case ongoing
-    case completed
-
-    var title: String {
-        switch self {
-        case .open: return "Open"
-        case .ongoing: return "Ongoing"
-        case .completed: return "Completed"
-        }
-    }
-}
-
 struct SeekerDashboardView: View {
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter
@@ -157,7 +143,16 @@ struct SeekerDashboardView: View {
             .task { await loadMyOpportunities() }
             .refreshable { await loadMyOpportunities() }
             .onAppear {
+                selectedSegment = tabRouter.seekerOpportunitySegment
                 consumeExternalCreateWizardIntentIfNeeded()
+            }
+            .onChange(of: selectedSegment) { _, newValue in
+                tabRouter.seekerOpportunitySegment = newValue
+            }
+            .onChange(of: tabRouter.seekerOpportunitySegment) { _, newValue in
+                if selectedSegment != newValue {
+                    selectedSegment = newValue
+                }
             }
             .onChange(of: tabRouter.openSeekerCreateWizard) { _, _ in
                 consumeExternalCreateWizardIntentIfNeeded()

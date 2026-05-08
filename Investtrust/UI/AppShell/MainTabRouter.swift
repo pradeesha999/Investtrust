@@ -37,6 +37,21 @@ enum InvestorInvestSegment: String, CaseIterable, Hashable {
     }
 }
 
+/// Sub-page within the seeker **Opportunity** tab (segmented control).
+enum SeekerOpportunitySegment: String, CaseIterable, Hashable {
+    case open
+    case ongoing
+    case completed
+
+    var title: String {
+        switch self {
+        case .open: return "Open"
+        case .ongoing: return "Ongoing"
+        case .completed: return "Completed"
+        }
+    }
+}
+
 /// Coordinates tab selection and opening chats from anywhere in the shell (e.g. Invest tab, opportunity detail).
 final class MainTabRouter: ObservableObject {
     @Published var selectedTab: AppTab = .dashboard
@@ -45,4 +60,6 @@ final class MainTabRouter: ObservableObject {
     @Published var investorInvestSegment: InvestorInvestSegment = .myRequests
     /// Triggers seeker create wizard presentation from other tabs (e.g. Home CTA).
     @Published var openSeekerCreateWizard: Bool = false
+    /// Which segment is shown when the **Opportunity** tab is selected (seeker mode only).
+    @Published var seekerOpportunitySegment: SeekerOpportunitySegment = .open
 }
