@@ -42,6 +42,25 @@ struct InvestmentOfferComposerForm: View {
                     let cap = max(1, selected.maximumInvestors ?? 1)
                     let fixedAmount = Self.offerAmountForOpportunity(selected)
                     let multi = cap > 1
+                    let showRateField = selected.investmentType == .loan || selected.investmentType == .revenue_share || selected.investmentType == .equity
+                    let showTimelineField = selected.investmentType != .custom
+                    let rateLabel: String = {
+                        switch selected.investmentType {
+                        case .loan: return "Interest rate (%)"
+                        case .revenue_share: return "Revenue share (%)"
+                        case .equity: return "Equity share (%)"
+                        case .project, .custom: return "Rate (%)"
+                        }
+                    }()
+                    let timelineLabel: String = {
+                        switch selected.investmentType {
+                        case .loan: return "Repayment timeline (months)"
+                        case .revenue_share: return "Duration (months)"
+                        case .equity: return "ROI timeline (months)"
+                        case .project: return "Completion window (months)"
+                        case .custom: return "Timeline (months)"
+                        }
+                    }()
                     Section("Offer terms") {
                         if multi {
                             LabeledContent("Amount") {
@@ -57,13 +76,17 @@ struct InvestmentOfferComposerForm: View {
                                     .keyboardType(.decimalPad)
                             }
                         }
-                        LabeledContent("Interest rate (%)") {
-                            TextField("e.g. 12.5", text: $rateText)
-                                .keyboardType(.decimalPad)
+                        if showRateField {
+                            LabeledContent(rateLabel) {
+                                TextField("e.g. 12.5", text: $rateText)
+                                    .keyboardType(.decimalPad)
+                            }
                         }
-                        LabeledContent("Repayment timeline (months)") {
-                            TextField("e.g. 24", text: $timelineText)
-                                .keyboardType(.numberPad)
+                        if showTimelineField {
+                            LabeledContent(timelineLabel) {
+                                TextField("e.g. 24", text: $timelineText)
+                                    .keyboardType(.numberPad)
+                            }
                         }
                         LabeledContent("Description") {
                             TextField("Optional note to the seeker", text: $descriptionText, axis: .vertical)

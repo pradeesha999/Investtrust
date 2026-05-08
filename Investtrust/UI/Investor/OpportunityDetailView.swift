@@ -28,6 +28,7 @@ struct OpportunityDetailView: View {
     @State private var isOpeningChat = false
     @State private var myLatestRequest: InvestmentListing?
     @State private var showInvestSheet = false
+    @State private var showOfferSheet = false
     @State private var isRevokingRequest = false
     @State private var agreementReviewContext: AgreementReviewContext?
 
@@ -89,59 +90,22 @@ struct OpportunityDetailView: View {
         }
         .sheet(isPresented: $showInvestSheet) {
             if let opportunity {
-                InvestProposalSheet(opportunity: opportunity) { submission in
-                    guard let uid = auth.currentUserID else {
-                        throw InvestmentService.InvestmentServiceError.notSignedIn
-                    }
-                    let created: InvestmentListing
-                    let requestKindLabel: String
-                    let noteText: String
-                    switch submission {
-                    case .standardRequest:
-                        created = try await investmentService.createInvestmentRequest(
-                            opportunity: opportunity,
-                            investorId: uid
-                        )
-                        requestKindLabel = "Investment request"
-                        noteText = "Default investment request from listing."
-                    case .negotiatedOffer(let amount, let interestRate, let timelineMonths, let note):
-                        created = try await investmentService.createOrUpdateOfferRequest(
-                            opportunity: opportunity,
-                            investorId: uid,
-                            proposedAmount: amount,
-                            proposedInterestRate: interestRate,
-                            proposedTimelineMonths: timelineMonths,
-                            description: note,
-                            source: .detail_sheet
-                        )
-                        requestKindLabel = "Offer request"
-                        noteText = note.isEmpty ? "Negotiated offer from listing." : note
-                    }
-                    let chatId = try await chatService.getOrCreateChat(
-                        opportunityId: opportunity.id,
-                        seekerId: opportunity.ownerId,
-                        investorId: uid,
-                        opportunityTitle: opportunity.title
-                    )
-                    let requestSnapshot = InvestmentRequestSnapshot(
-                        investmentId: created.id,
-                        opportunityId: opportunity.id,
-                        title: opportunity.title,
-                        amountText: Self.lkrText(created.investmentAmount),
-                        interestRateText: created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—",
-                        timelineText: created.finalTimelineMonths.map { "\($0) months" } ?? "—",
-                        note: noteText,
-                        requestKindLabel: requestKindLabel
-                    )
-                    _ = try await chatService.sendInvestmentRequestCard(
-                        chatId: chatId,
-                        senderId: uid,
-                        snapshot: requestSnapshot
-                    )
-                    await loadMyRequest(for: opportunity)
-                    await MainActor.run {
-                        showRequestSuccess = true
-                    }
+                InvestProposalSheet(
+                    opportunity: opportunity,
+                    lockToStandardMode: true
+                ) { submission in
+                    try await submitInvestmentSubmission(submission, for: opportunity)
+                }
+            }
+        }
+        .sheet(isPresented: $showOfferSheet) {
+            if let opportunity {
+                InvestProposalSheet(
+                    opportunity: opportunity,
+                    preferOfferMode: true,
+                    lockToOfferMode: true
+                ) { submission in
+                    try await submitInvestmentSubmission(submission, for: opportunity)
                 }
             }
         }
@@ -486,8 +450,8 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func keyNumbersSection(for o: OpportunityListing) -> some View {
-        let ticket = o.minimumInvestment
-        let ticketText = (o.maximumInvestors ?? 1) <= 1 ? "LKR \(o.formattedAmountLKR) (full round)" : "LKR \(o.formattedMinimumLKR) (min. ticket)"
+        let ticket = effectiveTicketAmount(for: o)
+        let ticketText = effectiveTicketText(for: o, ticket: ticket)
 
         VStack(alignment: .leading, spacing: 12) {
             // Primary metrics should stand on their own (outside a "Key numbers" card).
@@ -519,15 +483,15 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func loanReturnsSnapshot(for o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
-        let t = o.terms
-        if let rate = t.interestRate,
-           let months = t.repaymentTimelineMonths, months > 0,
+        let terms = effectiveLoanTerms(for: o)
+        if let rate = terms.rate,
+           let months = terms.months, months > 0,
            ticket > 0,
            let preview = OpportunityFinancialPreview.loanMoneyOutcome(
                principal: ticket,
                annualRatePercent: rate,
                termMonths: months,
-               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+               plan: LoanRepaymentPlan.from(terms.frequency)
            ) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Amount to be paid")
@@ -557,13 +521,14 @@ struct OpportunityDetailView: View {
     private func keyNumbersPrimaryMetric(for o: OpportunityListing, ticket: Double) -> some View {
         switch o.investmentType {
         case .loan:
-            if let rate = o.terms.interestRate {
-                if let months = o.terms.repaymentTimelineMonths, months > 0,
+            let terms = effectiveLoanTerms(for: o)
+            if let rate = terms.rate {
+                if let months = terms.months, months > 0,
                    let preview = OpportunityFinancialPreview.loanMoneyOutcome(
                     principal: ticket,
                     annualRatePercent: rate,
                     termMonths: months,
-                    plan: LoanRepaymentPlan.from(o.terms.repaymentFrequency)
+                    plan: LoanRepaymentPlan.from(terms.frequency)
                    ) {
                     HStack(spacing: 8) {
                         heroLoanMetric(
@@ -597,7 +562,8 @@ struct OpportunityDetailView: View {
                     .foregroundStyle(.secondary)
             }
         case .equity:
-            if let eq = o.terms.equityPercentage, eq > 0 {
+            let eq = myLatestRequest?.finalInterestRate ?? o.terms.equityPercentage
+            if let eq, eq > 0 {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(formatRate(eq))%")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -611,7 +577,8 @@ struct OpportunityDetailView: View {
                 placeholderPrimaryMetric(caption: "Equity %")
             }
         case .revenue_share:
-            if let p = o.terms.revenueSharePercent, p > 0 {
+            let p = myLatestRequest?.finalInterestRate ?? o.terms.revenueSharePercent
+            if let p, p > 0 {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(formatRate(p))%")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -681,8 +648,8 @@ struct OpportunityDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
-        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
+        .padding(10)
         .background(Color.white, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
@@ -810,17 +777,17 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func investorLoanValueBody(o: OpportunityListing, ticket: Double, ticketText: String) -> some View {
-        let t = o.terms
-        if let rate = t.interestRate,
-           let months = t.repaymentTimelineMonths, months > 0,
+        let terms = effectiveLoanTerms(for: o)
+        if let rate = terms.rate,
+           let months = terms.months, months > 0,
            ticket > 0,
            let preview = OpportunityFinancialPreview.loanMoneyOutcome(
                principal: ticket,
                annualRatePercent: rate,
                termMonths: months,
-               plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+               plan: LoanRepaymentPlan.from(terms.frequency)
            ) {
-            let freq = (t.repaymentFrequency ?? .monthly).displayName
+            let freq = terms.frequency.displayName
             VStack(alignment: .leading, spacing: 8) {
                 Text("Estimated return for \(ticketText): LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.interestAmount)) interest over \(months) months.")
                     .font(.subheadline)
@@ -948,6 +915,9 @@ struct OpportunityDetailView: View {
     private func shouldShowStatusCard(for opportunity: OpportunityListing) -> Bool {
         if auth.currentUserID == opportunity.ownerId { return true }
         if auth.currentUserID == nil { return false }
+        if let req = myLatestRequest, req.agreementStatus == .pending_signatures {
+            return false
+        }
         let status = myLatestRequest?.status.lowercased() ?? ""
         if status.isEmpty && profileReadyForInvesting { return false }
         return true
@@ -1223,10 +1193,11 @@ struct OpportunityDetailView: View {
         let t = o.terms
         switch o.investmentType {
         case .loan:
+            let loanTerms = effectiveLoanTerms(for: o)
             var out: [TermPair] = []
-            out.append(TermPair(label: "Interest", value: "\(formatRate(t.interestRate ?? 0))%"))
-            out.append(TermPair(label: "Repayment", value: t.repaymentTimelineMonths.map { "\($0) months" } ?? o.repaymentLabel))
-            out.append(TermPair(label: "Frequency", value: (t.repaymentFrequency ?? .monthly).rawValue.capitalized))
+            out.append(TermPair(label: "Interest", value: loanTerms.rate.map { "\(formatRate($0))%" } ?? "—"))
+            out.append(TermPair(label: "Repayment", value: loanTerms.months.map { "\($0) months" } ?? o.repaymentLabel))
+            out.append(TermPair(label: "Frequency", value: loanTerms.frequency.rawValue.capitalized))
             return out
         case .equity:
             var out: [TermPair] = []
@@ -1248,6 +1219,41 @@ struct OpportunityDetailView: View {
         case .custom:
             return []
         }
+    }
+
+    private var activeRequestForDisplay: InvestmentListing? {
+        guard let req = myLatestRequest else { return nil }
+        let s = req.status.lowercased()
+        if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
+            return nil
+        }
+        return req
+    }
+
+    private func effectiveTicketAmount(for o: OpportunityListing) -> Double {
+        if let req = activeRequestForDisplay, req.investmentAmount > 0 {
+            return req.investmentAmount
+        }
+        return o.minimumInvestment
+    }
+
+    private func effectiveTicketText(for o: OpportunityListing, ticket: Double) -> String {
+        if activeRequestForDisplay != nil {
+            return "LKR \(OpportunityFinancialPreview.formatLKRInteger(ticket)) (your request)"
+        }
+        return (o.maximumInvestors ?? 1) <= 1
+            ? "LKR \(o.formattedAmountLKR) (full round)"
+            : "LKR \(o.formattedMinimumLKR) (min. ticket)"
+    }
+
+    private func effectiveLoanTerms(for o: OpportunityListing) -> (rate: Double?, months: Int?, frequency: RepaymentFrequency) {
+        if let req = activeRequestForDisplay {
+            let rate = req.finalInterestRate ?? req.offeredInterestRate ?? o.terms.interestRate
+            let months = req.finalTimelineMonths ?? req.offeredTimelineMonths ?? o.terms.repaymentTimelineMonths
+            let frequency = o.terms.repaymentFrequency ?? .monthly
+            return (rate, months, frequency)
+        }
+        return (o.terms.interestRate, o.terms.repaymentTimelineMonths, o.terms.repaymentFrequency ?? .monthly)
     }
 
     private func termChip(label: String, value: String) -> some View {
@@ -1555,7 +1561,6 @@ struct OpportunityDetailView: View {
             VStack(spacing: 8) {
                 if showsPrimaryInvestmentFloatingAction(for: opportunity) {
                     HStack(spacing: 10) {
-                        contactSeekerFloatingButton(for: opportunity)
                         Button {
                             performPrimaryFloatingAction(for: opportunity)
                         } label: {
@@ -1569,10 +1574,27 @@ struct OpportunityDetailView: View {
                         .foregroundStyle(.white)
                         .disabled(!isPrimaryFloatingActionEnabled(for: opportunity))
                         .opacity(isPrimaryFloatingActionEnabled(for: opportunity) ? 1 : 0.45)
+
+                        if canShowOfferFloatingAction(for: opportunity) {
+                            Button {
+                                showOfferSheet = true
+                            } label: {
+                                Text("Make offer")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(minHeight: AppTheme.minTapTarget)
+                            }
+                            .buttonStyle(.plain)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                                    .stroke(auth.accentColor, lineWidth: 1.5)
+                            )
+                            .foregroundStyle(auth.accentColor)
+                        }
                     }
-                } else {
-                    contactSeekerFloatingButton(for: opportunity)
                 }
+
+                contactSeekerFloatingButton(for: opportunity)
             }
             .padding(.horizontal, AppTheme.screenPadding)
             .padding(.top, 10)
@@ -1643,6 +1665,17 @@ struct OpportunityDetailView: View {
         return true
     }
 
+    private func canShowOfferFloatingAction(for opportunity: OpportunityListing) -> Bool {
+        guard opportunity.isNegotiable else { return false }
+        guard profileReadyForInvesting else { return false }
+        let status = myLatestRequest?.status.lowercased() ?? ""
+        if let req = myLatestRequest, req.agreementStatus == .pending_signatures { return false }
+        if status == "pending" || status == "accepted" || status == "active" || status == "completed" {
+            return false
+        }
+        return true
+    }
+
     private func performPrimaryFloatingAction(for opportunity: OpportunityListing) {
         let req = myLatestRequest
         if !profileReadyForInvesting {
@@ -1656,6 +1689,61 @@ struct OpportunityDetailView: View {
             return
         }
         showInvestSheet = true
+    }
+
+    private func submitInvestmentSubmission(_ submission: InvestProposalSheet.Submission, for opportunity: OpportunityListing) async throws {
+        guard let uid = auth.currentUserID else {
+            throw InvestmentService.InvestmentServiceError.notSignedIn
+        }
+        let created: InvestmentListing
+        let requestKindLabel: String
+        let noteText: String
+        switch submission {
+        case .standardRequest:
+            created = try await investmentService.createInvestmentRequest(
+                opportunity: opportunity,
+                investorId: uid
+            )
+            requestKindLabel = "Investment request"
+            noteText = "Default investment request from listing."
+        case .negotiatedOffer(let amount, let interestRate, let timelineMonths, let note):
+            created = try await investmentService.createOrUpdateOfferRequest(
+                opportunity: opportunity,
+                investorId: uid,
+                proposedAmount: amount,
+                proposedInterestRate: interestRate,
+                proposedTimelineMonths: timelineMonths,
+                description: note,
+                source: .detail_sheet
+            )
+            requestKindLabel = "Offer request"
+            noteText = note.isEmpty ? "Negotiated offer from listing." : note
+        }
+        let chatId = try await chatService.getOrCreateChat(
+            opportunityId: opportunity.id,
+            seekerId: opportunity.ownerId,
+            investorId: uid,
+            opportunityTitle: opportunity.title
+        )
+        let requestSnapshot = InvestmentRequestSnapshot(
+            investmentId: created.id,
+            opportunityId: opportunity.id,
+            title: opportunity.title,
+            amountText: Self.lkrText(created.investmentAmount),
+            interestRateText: created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—",
+            timelineText: created.finalTimelineMonths.map { "\($0) months" } ?? "—",
+            note: noteText,
+            requestKindLabel: requestKindLabel
+        )
+        _ = try await chatService.sendInvestmentRequestCard(
+            chatId: chatId,
+            senderId: uid,
+            snapshot: requestSnapshot
+        )
+        await loadMyRequest(for: opportunity)
+        await MainActor.run {
+            showRequestSuccess = true
+        }
     }
 
     private func revokePendingRequest(_ request: InvestmentListing, opportunity: OpportunityListing) async {
@@ -1681,7 +1769,13 @@ struct OpportunityDetailView: View {
                 opportunityId: opportunity.id,
                 investorId: uid
             )
-            await MainActor.run { myLatestRequest = latest }
+            await MainActor.run {
+                myLatestRequest = latest
+                if latest?.agreementStatus == .pending_signatures {
+                    // Keep investor in the actionable queue while signatures are pending.
+                    tabRouter.investorInvestSegment = .myRequests
+                }
+            }
             if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
                !showCalendarSyncPrompt,
                latest?.agreementStatus == .active {

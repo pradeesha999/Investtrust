@@ -8,8 +8,6 @@ struct ChatRoomView: View {
     @Environment(\.effectiveReduceMotion) private var reduceMotion
     private let chatService = ChatService()
     private let userService = UserService()
-    private let opportunityService = OpportunityService()
-    private let investmentService = InvestmentService()
 
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
@@ -18,22 +16,10 @@ struct ChatRoomView: View {
     @State private var showSendError = false
     @State private var loadError: String?
     @State private var showLoadError = false
-    @State private var offerComposerLoadError: String?
-    @State private var showOfferComposerLoadError = false
 
     @State private var partnerName: String = "Chat"
     @State private var partnerAvatarURL: URL?
     @State private var pendingInquirySnapshot: OpportunityInquirySnapshot?
-    @State private var participantIds: (seekerId: String, investorId: String)?
-    @State private var showOfferSheet = false
-    @State private var offerOpportunities: [OpportunityListing] = []
-    @State private var offerOpportunityId: String = ""
-    @State private var offerAmountText = ""
-    @State private var offerRateText = ""
-    @State private var offerTimelineText = ""
-    @State private var offerDescriptionText = ""
-    @State private var offerError: String?
-    @State private var isSendingOffer = false
 
     init(chatId: String, pendingInquirySnapshot: OpportunityInquirySnapshot? = nil) {
         self.chatId = chatId
@@ -77,17 +63,6 @@ struct ChatRoomView: View {
             Divider()
 
             HStack(alignment: .bottom, spacing: 10) {
-                if canCurrentUserMakeOffer {
-                    Button {
-                        Task { await openOfferComposer() }
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(auth.accentColor)
-                    }
-                    .accessibilityLabel("Make offer")
-                    .accessibilityHint("Send a negotiated investment offer in this chat.")
-                }
                 TextField("Message", text: $inputText, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...5)
@@ -139,14 +114,6 @@ struct ChatRoomView: View {
         } message: {
             Text(loadError ?? "")
         }
-        .alert("Couldn’t load offers", isPresented: $showOfferComposerLoadError) {
-            Button("OK") { offerComposerLoadError = nil }
-        } message: {
-            Text(offerComposerLoadError ?? "")
-        }
-        .sheet(isPresented: $showOfferSheet) {
-            offerComposerSheet
-        }
     }
 
     @ViewBuilder
@@ -179,9 +146,6 @@ struct ChatRoomView: View {
     private func loadPartnerHeader() async {
         guard let uid = auth.currentUserID else { return }
         guard let pair = try? await chatService.fetchParticipantIds(chatId: chatId) else { return }
-        await MainActor.run {
-            participantIds = pair
-        }
         let otherId = pair.seekerId == uid ? pair.investorId : pair.seekerId
         guard let profile = try? await userService.fetchProfile(userID: otherId) else {
             await MainActor.run {
@@ -578,151 +542,6 @@ struct ChatRoomView: View {
         } catch {
             inputText = text
             presentSendError(error.localizedDescription)
-        }
-    }
-
-    private var canCurrentUserMakeOffer: Bool {
-        guard let uid = auth.currentUserID, let pair = participantIds else { return false }
-        return uid == pair.investorId
-    }
-
-    @ViewBuilder
-    private var offerComposerSheet: some View {
-        NavigationStack {
-            InvestmentOfferComposerForm(
-                opportunities: offerOpportunities,
-                selectedOpportunityId: $offerOpportunityId,
-                showOpportunityPicker: offerOpportunities.count > 1,
-                emptyListingMessage: "No listings from this seeker are still open for offers. They may already be full, or not marked open.",
-                amountText: $offerAmountText,
-                rateText: $offerRateText,
-                timelineText: $offerTimelineText,
-                descriptionText: $offerDescriptionText,
-                errorText: offerError
-            )
-            .navigationTitle("Make offer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showOfferSheet = false
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if isSendingOffer {
-                        ProgressView()
-                    } else {
-                        Button("Send offer") {
-                            Task { await submitOffer() }
-                        }
-                        .disabled(offerOpportunities.isEmpty)
-                    }
-                }
-            }
-        }
-    }
-
-    private var selectedOfferOpportunity: OpportunityListing? {
-        if !offerOpportunityId.isEmpty, let match = offerOpportunities.first(where: { $0.id == offerOpportunityId }) {
-            return match
-        }
-        return offerOpportunities.first
-    }
-
-    private func openOfferComposer() async {
-        guard auth.currentUserID != nil else { return }
-        if let fresh = try? await chatService.fetchParticipantIds(chatId: chatId) {
-            await MainActor.run { participantIds = fresh }
-        }
-        guard canCurrentUserMakeOffer, let pair = participantIds else { return }
-        do {
-            let openRows = try await opportunityService.fetchSeekerListingsEligibleForOffers(
-                ownerId: pair.seekerId,
-                limit: 100,
-                refineByInvestorCapacity: false
-            )
-            await MainActor.run {
-                offerOpportunities = openRows
-                offerOpportunityId = openRows.first?.id ?? ""
-                if let first = openRows.first {
-                    let cap = max(1, first.maximumInvestors ?? 1)
-                    offerAmountText = cap > 1 ? "" : String(format: "%.0f", first.amountRequested)
-                    offerRateText = first.interestRate > 0 ? String(format: "%.2f", first.interestRate) : ""
-                    offerTimelineText = "\(max(1, first.repaymentTimelineMonths))"
-                } else {
-                    offerAmountText = ""
-                    offerRateText = ""
-                    offerTimelineText = ""
-                }
-                offerDescriptionText = ""
-                offerError = nil
-                showOfferSheet = true
-            }
-        } catch {
-            await MainActor.run {
-                offerComposerLoadError = (error as NSError).localizedDescription
-                showOfferComposerLoadError = true
-            }
-        }
-    }
-
-    private func submitOffer() async {
-        guard let uid = auth.currentUserID,
-              let selected = selectedOfferOpportunity else { return }
-        let cap = max(1, selected.maximumInvestors ?? 1)
-        let multi = cap > 1
-        let amountValue: Double?
-        if multi {
-            amountValue = InvestmentOfferComposerForm.offerAmountForOpportunity(selected)
-        } else {
-            let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
-            amountValue = Double(cleaned)
-        }
-        let rateValue = Double(offerRateText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let timelineDigits = offerTimelineText.filter(\.isNumber)
-        let timelineValue = Int(timelineDigits)
-        guard let amountValue, amountValue > 0,
-              let rateValue, rateValue > 0,
-              let timelineValue, timelineValue > 0 else {
-            await MainActor.run {
-                offerError = "Enter valid offer terms to continue."
-            }
-            return
-        }
-
-        isSendingOffer = true
-        defer { isSendingOffer = false }
-        do {
-            let row = try await investmentService.createOrUpdateOfferRequest(
-                opportunity: selected,
-                investorId: uid,
-                proposedAmount: amountValue,
-                proposedInterestRate: rateValue,
-                proposedTimelineMonths: timelineValue,
-                description: offerDescriptionText,
-                source: .chat,
-                chatId: chatId
-            )
-            let snapshot = InvestmentOfferSnapshot(
-                investmentId: row.id,
-                opportunityId: selected.id,
-                title: selected.title,
-                amountText: InvestmentOfferComposerForm.lkr(row.offeredAmount ?? row.investmentAmount),
-                interestRateText: String(format: "%.2f%%", row.offeredInterestRate ?? row.finalInterestRate ?? rateValue),
-                timelineText: "\((row.offeredTimelineMonths ?? row.finalTimelineMonths ?? timelineValue)) months",
-                description: offerDescriptionText.trimmingCharacters(in: .whitespacesAndNewlines),
-                isFixedAmount: multi
-            )
-            _ = try await chatService.sendInvestmentOfferCard(chatId: chatId, senderId: uid, snapshot: snapshot)
-            await MainActor.run {
-                showOfferSheet = false
-                offerDescriptionText = ""
-                offerError = nil
-            }
-        } catch {
-            await MainActor.run {
-                offerError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
-            }
         }
     }
 

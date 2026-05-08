@@ -22,6 +22,8 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     let location: String
     let riskLevel: RiskLevel
     let verificationStatus: VerificationStatus
+    /// Optional analytics counter from backend.
+    let viewCount: Int?
     /// If false, investor cannot submit negotiated offer terms.
     let isNegotiable: Bool
     let documentURLs: [String]
@@ -35,6 +37,64 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     let mediaWarnings: [String]
     let imagePublicIds: [String]
     let videoPublicId: String?
+
+    init(
+        id: String,
+        ownerId: String,
+        title: String,
+        category: String,
+        description: String,
+        investmentType: InvestmentType,
+        amountRequested: Double,
+        minimumInvestment: Double,
+        maximumInvestors: Int?,
+        terms: OpportunityTerms,
+        useOfFunds: String,
+        incomeGenerationMethod: String,
+        milestones: [OpportunityMilestone],
+        location: String,
+        riskLevel: RiskLevel,
+        verificationStatus: VerificationStatus,
+        viewCount: Int? = nil,
+        isNegotiable: Bool,
+        documentURLs: [String],
+        status: String,
+        createdAt: Date?,
+        imageStoragePaths: [String],
+        videoStoragePath: String?,
+        videoURL: String?,
+        mediaWarnings: [String],
+        imagePublicIds: [String],
+        videoPublicId: String?
+    ) {
+        self.id = id
+        self.ownerId = ownerId
+        self.title = title
+        self.category = category
+        self.description = description
+        self.investmentType = investmentType
+        self.amountRequested = amountRequested
+        self.minimumInvestment = minimumInvestment
+        self.maximumInvestors = maximumInvestors
+        self.terms = terms
+        self.useOfFunds = useOfFunds
+        self.incomeGenerationMethod = incomeGenerationMethod
+        self.milestones = milestones
+        self.location = location
+        self.riskLevel = riskLevel
+        self.verificationStatus = verificationStatus
+        self.viewCount = viewCount
+        self.isNegotiable = isNegotiable
+        self.documentURLs = documentURLs
+        self.status = status
+        self.createdAt = createdAt
+        self.imageStoragePaths = imageStoragePaths
+        self.videoStoragePath = videoStoragePath
+        self.videoURL = videoURL
+        self.mediaWarnings = mediaWarnings
+        self.imagePublicIds = imagePublicIds
+        self.videoPublicId = videoPublicId
+    }
 
     // MARK: - Legacy compatibility (loan metrics)
 

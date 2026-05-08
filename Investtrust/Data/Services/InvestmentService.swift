@@ -366,7 +366,10 @@ final class InvestmentService {
         guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
-        guard proposedInterestRate > 0, proposedTimelineMonths > 0 else {
+        guard proposedTimelineMonths > 0 else {
+            throw InvestmentServiceError.invalidOfferTerms
+        }
+        if opp.investmentType == .loan, proposedInterestRate <= 0 {
             throw InvestmentServiceError.invalidOfferTerms
         }
         if let p = try await userService.fetchProfile(userID: investorId) {
@@ -518,10 +521,30 @@ final class InvestmentService {
             investorId: investorId,
             opportunityTitle: serverOpportunity.title
         )
+        let acceptedAmountText = Self.lkrAmountText(inv.investmentAmount)
+        let acceptedRateText = String(format: "%.2f", acceptedInterestRate)
+        let termsLine: String = {
+            switch serverOpportunity.investmentType {
+            case .loan:
+                return "Accepted terms: \(acceptedRateText)% interest · \(acceptedTimelineMonths) months"
+            default:
+                return "Accepted timeline: \(acceptedTimelineMonths) months"
+            }
+        }()
+        let detailsMessage = """
+        Your investment request was accepted for "\(serverOpportunity.title)".
+        Category: \(serverOpportunity.category)
+        Type: \(serverOpportunity.investmentType.rawValue)
+        Accepted amount: LKR \(acceptedAmountText)
+        \(termsLine)
+        Location: \(serverOpportunity.location)
+        Use of funds: \(serverOpportunity.useOfFunds)
+        Next step: review and sign the agreement in-app.
+        """
         try await chatService.sendMessage(
             chatId: chatId,
             senderId: seekerId,
-            text: "Investment accepted. Agreement ready for signing."
+            text: detailsMessage
         )
         try await chatService.sendMessage(
             chatId: chatId,
@@ -1565,5 +1588,12 @@ final class InvestmentService {
         guard total > 0, investors > 0 else { return 0 }
         let raw = total / Double(investors)
         return (raw * 100).rounded() / 100
+    }
+
+    private static func lkrAmountText(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: amount)) ?? String(format: "%.0f", amount)
     }
 }

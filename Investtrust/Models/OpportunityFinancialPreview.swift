@@ -22,7 +22,8 @@ enum OpportunityFinancialPreview {
     static func loanTermMonthsFromWizardInput(rawTimeline: Int, repaymentFrequency: RepaymentFrequency) -> Int {
         switch repaymentFrequency {
         case .weekly:
-            max(1, Int((Double(rawTimeline) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+            // Round up so weekly input is never shortened when converted to month-based interest/schedule math.
+            max(1, Int(ceil(Double(rawTimeline) / LoanScheduleGenerator.weeksPerMonth)))
         case .monthly, .one_time:
             max(1, rawTimeline)
         }

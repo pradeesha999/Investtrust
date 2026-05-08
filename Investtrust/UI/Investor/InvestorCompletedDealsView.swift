@@ -2,12 +2,13 @@ import SwiftUI
 
 /// Investor deals that have fully completed repayment and are closed.
 struct InvestorCompletedDealsView: View {
+    var searchText: String = ""
+
     @Environment(AuthService.self) private var auth
 
     @State private var investments: [InvestmentListing] = []
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var searchText = ""
 
     private let investmentService = InvestmentService()
 
@@ -57,7 +58,6 @@ struct InvestorCompletedDealsView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
-        .searchable(text: $searchText, prompt: "Search listing")
         .task { await load() }
         .refreshable { await load() }
     }

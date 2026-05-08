@@ -1327,7 +1327,6 @@ struct SeekerHomeDashboardView: View {
         let live = seekerInvestments.contains {
             $0.opportunityId == item.id && ($0.agreementStatus == .active || $0.status.lowercased() == "active")
         }
-        let committed = committedPrincipal(for: item.id)
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -1373,19 +1372,18 @@ struct SeekerHomeDashboardView: View {
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Investor interest")
+                    Text("Final return")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(committed > 0 ? formatLKR(committed) : "—")
+                    Text(projectedFinalReturnText(for: item))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(committed > 0 ? auth.accentColor : .secondary)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Type")
+                    Text("Capacity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(item.investmentType.displayName)
+                    Text(item.maximumInvestors.map { "\($0) investors" } ?? "Open")
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
                 }
@@ -1446,6 +1444,19 @@ struct SeekerHomeDashboardView: View {
         f.maximumFractionDigits = 0
         let s = f.string(from: n) ?? String(format: "%.0f", v)
         return "LKR \(s)"
+    }
+
+    private func projectedFinalReturnText(for item: OpportunityListing) -> String {
+        let principal = item.amountRequested
+        let rate = item.interestRate
+        let months = item.repaymentTimelineMonths
+        guard principal > 0, rate > 0, months > 0 else { return "—" }
+        let total = LoanScheduleGenerator.totalRepayable(
+            principal: principal,
+            annualRatePercent: rate,
+            termMonths: months
+        )
+        return "LKR \(OpportunityFinancialPreview.formatLKRInteger(total))"
     }
 
     private func shortId(_ id: String) -> String {

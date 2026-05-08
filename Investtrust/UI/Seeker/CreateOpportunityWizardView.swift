@@ -946,7 +946,8 @@ struct CreateOpportunityWizardView: View {
         guard draft.repaymentFrequency == .weekly else { return }
         let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
         guard let weeks = Int(digits), weeks > 0 else { return }
-        let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+        // Weekly input is converted to months for persistence/scheduling; round up so we never shorten user-entered duration.
+        let months = max(1, Int(ceil(Double(weeks) / LoanScheduleGenerator.weeksPerMonth)))
         draft.repaymentTimeline = "\(months)"
     }
 
@@ -957,7 +958,7 @@ struct CreateOpportunityWizardView: View {
         var copy = draft
         let digits = copy.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
         if let weeks = Int(digits), weeks > 0 {
-            let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+            let months = max(1, Int(ceil(Double(weeks) / LoanScheduleGenerator.weeksPerMonth)))
             copy.repaymentTimeline = "\(months)"
         }
         return copy
@@ -1031,14 +1032,13 @@ struct CreateOpportunityWizardView: View {
         case .loan:
             let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
             guard let timeline = Int(digits), timeline > 0 else { return 180 }
-            let months: Int
             switch draft.repaymentFrequency {
             case .weekly:
-                months = max(1, Int((Double(timeline) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+                // For milestone/date hints, use exact weekly span in days.
+                return min(3650, max(7, timeline * 7))
             case .monthly, .one_time:
-                months = timeline
+                return min(3650, max(30, timeline * 30))
             }
-            return min(3650, max(30, months * 30))
         case .revenue_share:
             let m = Int(draft.maxDurationMonths.filter(\.isNumber)) ?? 12
             return min(3650, max(30, m * 30))

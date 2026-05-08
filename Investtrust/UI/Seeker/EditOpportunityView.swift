@@ -81,16 +81,6 @@ struct EditOpportunityView: View {
                             }
                             .tint(auth.accentColor)
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Risk level")
-                                .font(.subheadline.weight(.semibold))
-                            Picker("Risk", selection: $draft.riskLevel) {
-                                ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
-                                    Text(level.displayName).tag(level)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
                         field("Location", text: $draft.location, placeholder: "City / region")
                     }
 

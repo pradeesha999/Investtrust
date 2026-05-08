@@ -598,7 +598,7 @@ struct InvestorDashboardView: View {
     private var qualifyingInvestments: [InvestmentListing] {
         investments.filter { inv in
             let s = inv.status.lowercased()
-            return !["declined", "rejected", "cancelled", "withdrawn"].contains(s)
+            return !["pending", "declined", "rejected", "cancelled", "withdrawn"].contains(s)
         }
     }
 

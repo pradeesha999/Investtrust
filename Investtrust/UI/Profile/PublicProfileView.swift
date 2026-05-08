@@ -2,14 +2,26 @@ import SwiftUI
 
 /// Read-only profile for any member (e.g. investor viewed by an opportunity builder).
 struct PublicProfileView: View {
-    let userId: String
+    struct ChatContext {
+        let opportunityId: String
+        let seekerId: String?
+        let opportunityTitle: String
+    }
 
+    let userId: String
+    var chatContext: ChatContext? = nil
+
+    @Environment(AuthService.self) private var auth
+    @EnvironmentObject private var tabRouter: MainTabRouter
+    @Environment(\.dismiss) private var dismiss
     private let userService = UserService()
+    private let chatService = ChatService()
 
     @State private var profile: UserProfile?
     @State private var metrics: ProfileActivityMetrics?
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var chatError: String?
 
     var body: some View {
         ScrollView {
@@ -45,6 +57,26 @@ struct PublicProfileView: View {
 
                     if let m = metrics {
                         metricsSection(m)
+                    }
+
+                    if chatContext != nil {
+                        Button {
+                            Task { await openChatWithMember() }
+                        } label: {
+                            Label("Chat with investor", systemImage: "bubble.left.and.bubble.right.fill")
+                                .font(.headline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: AppTheme.minTapTarget)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(auth.accentColor)
+                    }
+
+                    if let chatError {
+                        Text(chatError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
                     }
 
                     Text("User ID: \(shortId(userId))")
@@ -217,6 +249,33 @@ struct PublicProfileView: View {
             metrics = try await userService.fetchProfileActivityMetrics(userID: userId)
         } catch {
             loadError = (error as NSError).localizedDescription
+        }
+    }
+
+    private func openChatWithMember() async {
+        guard let context = chatContext else { return }
+        guard let seekerId = context.seekerId ?? auth.currentUserID else {
+            await MainActor.run {
+                chatError = "Please sign in again."
+            }
+            return
+        }
+        do {
+            let chatId = try await chatService.getOrCreateChat(
+                opportunityId: context.opportunityId,
+                seekerId: seekerId,
+                investorId: userId,
+                opportunityTitle: context.opportunityTitle
+            )
+            await MainActor.run {
+                tabRouter.pendingChatDeepLink = ChatDeepLink(chatId: chatId, inquirySnapshot: nil)
+                tabRouter.selectedTab = .chat
+                dismiss()
+            }
+        } catch {
+            await MainActor.run {
+                chatError = (error as NSError).localizedDescription
+            }
         }
     }
 }
