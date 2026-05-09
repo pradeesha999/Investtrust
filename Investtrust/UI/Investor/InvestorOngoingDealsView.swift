@@ -19,9 +19,9 @@ struct InvestorOngoingDealsView: View {
         return rows.filter { $0.opportunityTitle.lowercased().contains(query) }
     }
 
-    private var totalRemainingToBePaid: Double {
+    private var totalAmountToBeReceived: Double {
         ongoingInvestments.reduce(0) { partial, inv in
-            partial + remainingAmount(for: inv)
+            partial + remainingAmountToReceive(for: inv)
         }
     }
 
@@ -50,7 +50,7 @@ struct InvestorOngoingDealsView: View {
                             : "Try a different search term."
                     )
                 } else {
-                    remainingHeaderCard
+                    receivableHeaderCard
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(ongoingInvestments) { inv in
                             InvestmentCard(inv: inv) {
@@ -69,12 +69,12 @@ struct InvestorOngoingDealsView: View {
         .refreshable { await load() }
     }
 
-    private var remainingHeaderCard: some View {
+    private var receivableHeaderCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Amount remaining to be paid")
+            Text("Amount to be received")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("LKR \(formatAmount(totalRemainingToBePaid))")
+            Text("LKR \(formatAmount(totalAmountToBeReceived))")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(auth.accentColor)
         }
@@ -103,7 +103,7 @@ struct InvestorOngoingDealsView: View {
         }
     }
 
-    private func remainingAmount(for inv: InvestmentListing) -> Double {
+    private func remainingAmountToReceive(for inv: InvestmentListing) -> Double {
         if !inv.loanInstallments.isEmpty {
             return inv.loanInstallments
                 .filter { $0.status != .confirmed_paid }

@@ -260,12 +260,6 @@ struct CreateOpportunityWizardView: View {
             return "Fixed repayments with interest and schedule."
         case .equity:
             return "Ownership stake, valuation, exit plan."
-        case .revenue_share:
-            return "Share of revenue until a target return."
-        case .project:
-            return "Deliverable-based with expected return and completion."
-        case .custom:
-            return "Describe bespoke terms in your own words."
         }
     }
 
@@ -275,12 +269,6 @@ struct CreateOpportunityWizardView: View {
             return "banknote.fill"
         case .equity:
             return "chart.pie.fill"
-        case .revenue_share:
-            return "arrow.trianglehead.2.clockwise.rotate.90"
-        case .project:
-            return "hammer.fill"
-        case .custom:
-            return "slider.horizontal.3"
         }
     }
 
@@ -290,12 +278,6 @@ struct CreateOpportunityWizardView: View {
             return .green
         case .equity:
             return .blue
-        case .revenue_share:
-            return .orange
-        case .project:
-            return .purple
-        case .custom:
-            return auth.accentColor
         }
     }
 
@@ -429,37 +411,6 @@ struct CreateOpportunityWizardView: View {
                     textArea("Future goals", text: $draft.futureGoals, placeholder: "Growth roadmap and scaling goals")
                     field("Demo links (optional)", text: $draft.demoLinks, placeholder: "https://...")
                     textArea("Exit plan", text: $draft.exitPlan, placeholder: "How and when investors may realize returns.")
-                case .revenue_share:
-                    field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
-                    field("Target return amount (LKR)", text: $draft.targetReturnAmount, placeholder: "500000", keyboardType: .numberPad)
-                    field("Maximum duration (months)", text: $draft.maxDurationMonths, placeholder: "24")
-                case .project:
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Expected return type")
-                            .font(.subheadline.weight(.semibold))
-                        Picker("Return type", selection: $draft.expectedReturnType) {
-                            Text("Fixed").tag(ExpectedReturnType.fixed)
-                            Text("Product").tag(ExpectedReturnType.product)
-                            Text("None").tag(ExpectedReturnType.none)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    field("Expected return (describe)", text: $draft.expectedReturnValue, placeholder: "e.g. 15% on completion / product units")
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Target completion date")
-                            .font(.subheadline.weight(.semibold))
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { draft.completionDate ?? Date() },
-                                set: { draft.completionDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                    }
-                case .custom:
-                    textArea("Custom terms summary", text: $draft.customTermsSummary, placeholder: "Spell out the deal in plain language.")
                 }
                 }
             }
@@ -687,20 +638,6 @@ struct CreateOpportunityWizardView: View {
             rows.append(("Venture stage", draft.ventureStage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized))
             rows.append(("Venture", draft.ventureName.isEmpty ? "—" : draft.ventureName))
             rows.append(("Exit", draft.exitPlan.isEmpty ? "—" : String(draft.exitPlan.prefix(120))))
-        case .revenue_share:
-            rows.append(("Rev. share", draft.revenueSharePercent))
-            rows.append(("Target", draft.targetReturnAmount.isEmpty ? "—" : "LKR \(draft.targetReturnAmount)"))
-            rows.append(("Max months", draft.maxDurationMonths))
-        case .project:
-            rows.append(("Return type", draft.expectedReturnType.rawValue.capitalized))
-            rows.append(("Expected return", draft.expectedReturnValue))
-            if let d = draft.completionDate {
-                let f = DateFormatter()
-                f.dateStyle = .medium
-                rows.append(("Completion", f.string(from: d)))
-            }
-        case .custom:
-            rows.append(("Summary", draft.customTermsSummary.isEmpty ? "—" : String(draft.customTermsSummary.prefix(160))))
         }
         return rows
     }
@@ -1039,19 +976,8 @@ struct CreateOpportunityWizardView: View {
             case .monthly, .one_time:
                 return min(3650, max(30, timeline * 30))
             }
-        case .revenue_share:
-            let m = Int(draft.maxDurationMonths.filter(\.isNumber)) ?? 12
-            return min(3650, max(30, m * 30))
-        case .project:
-            if let end = draft.completionDate {
-                let days = calendar.dateComponents([.day], from: Date(), to: end).day ?? 180
-                return min(3650, max(30, days))
-            }
-            return 180
         case .equity:
             return min(3650, max(30, draft.equityRoiTimeline.months * 30))
-        case .custom:
-            return 180
         }
     }
 

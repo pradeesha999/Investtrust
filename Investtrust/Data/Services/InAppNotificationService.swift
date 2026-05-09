@@ -175,6 +175,19 @@ final class InAppNotificationService {
                     )
                 }
             }
+            if inv.investmentType == .loan,
+               let accepted = latestAcceptedInstallment(in: inv) {
+                notes.append(
+                    InAppNotification(
+                        id: "seeker-payment-accepted-\(inv.id)-\(accepted.installmentNo)",
+                        title: "Payment accepted",
+                        message: "Investor confirmed installment #\(accepted.installmentNo) for \(safeTitle(inv)).",
+                        createdAt: accepted.investorMarkedPaidAt ?? inv.updatedFallbackDate,
+                        kind: .info,
+                        route: .actionSeekerOpportunity
+                    )
+                )
+            }
             if inv.investmentType == .equity,
                inv.agreementStatus == .active,
                inv.equityUpdates.isEmpty {
@@ -196,6 +209,12 @@ final class InAppNotificationService {
     private func safeTitle(_ inv: InvestmentListing) -> String {
         let title = inv.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? "your deal" : title
+    }
+
+    private func latestAcceptedInstallment(in inv: InvestmentListing) -> LoanInstallment? {
+        inv.loanInstallments
+            .filter { $0.status == .confirmed_paid && $0.investorMarkedPaidAt != nil }
+            .max { ($0.investorMarkedPaidAt ?? .distantPast) < ($1.investorMarkedPaidAt ?? .distantPast) }
     }
 }
 

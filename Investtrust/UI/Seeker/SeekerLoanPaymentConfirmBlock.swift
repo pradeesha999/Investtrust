@@ -16,6 +16,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
     @State private var showDocCamera = false
     @State private var showLibrarySheet = false
     @State private var libraryItem: PhotosPickerItem?
+    @State private var previewProofURL: String?
 
     private let service = InvestmentService()
 
@@ -41,19 +42,37 @@ struct SeekerLoanPaymentConfirmBlock: View {
             if let row, isSeeker, investment.loanRepaymentsUnlocked, row.status != .confirmed_paid {
                 VStack(alignment: .leading, spacing: 12) {
                     if installmentNo == nextOpenInstallmentNo {
-                        Text("Current cycle")
+                        Label("Current cycle", systemImage: "circle.fill")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(auth.accentColor)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(auth.accentColor.opacity(0.12), in: Capsule())
                     } else {
-                        Text("Complete installment #\(nextOpenInstallmentNo ?? installmentNo) first.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                        Label("Locked: complete installment #\(nextOpenInstallmentNo ?? installmentNo) first", systemImage: "lock.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
                     }
 
                     if !row.seekerProofImageURLs.isEmpty {
-                        Text("\(row.seekerProofImageURLs.count) proof file(s) attached")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Your proof")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(row.seekerProofImageURLs, id: \.self) { url in
+                                        Button {
+                                            previewProofURL = url
+                                        } label: {
+                                            StorageBackedAsyncImage(reference: url, height: 92, cornerRadius: 10, feedThumbnail: true)
+                                                .frame(width: 92, height: 92)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
                     }
                     if row.status == .disputed, let reason = row.latestDisputeReason, !reason.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -89,21 +108,10 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     .tint(auth.accentColor)
                     .disabled(busy || installmentNo != nextOpenInstallmentNo || row.seekerProofImageURLs.isEmpty)
 
-                    Menu {
-                        if VNDocumentCameraViewController.isSupported {
-                            Button {
-                                showDocCamera = true
-                            } label: {
-                                Text("Scan with camera")
-                            }
-                        }
-                        Button {
-                            showLibrarySheet = true
-                        } label: {
-                            Text("Choose from photos")
-                        }
+                    Button {
+                        showLibrarySheet = true
                     } label: {
-                        Text("Attach proof")
+                        Label("Upload proof from photos", systemImage: "photo")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
@@ -112,9 +120,38 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     .tint(auth.accentColor)
                     .disabled(busy || installmentNo != nextOpenInstallmentNo)
 
+                    if VNDocumentCameraViewController.isSupported {
+                        Button {
+                            showDocCamera = true
+                        } label: {
+                            Label("Scan proof with camera", systemImage: "doc.viewfinder")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(auth.accentColor)
+                        .disabled(busy || installmentNo != nextOpenInstallmentNo)
+                    }
                 }
                 .sheet(isPresented: $showLibrarySheet) {
                     libraryPickerSheet
+                }
+                .sheet(isPresented: Binding(
+                    get: { previewProofURL != nil },
+                    set: { if !$0 { previewProofURL = nil } }
+                )) {
+                    NavigationStack {
+                        ZStack {
+                            Color.black.ignoresSafeArea()
+                            if let previewProofURL {
+                                StorageBackedAsyncImage(reference: previewProofURL, height: min(UIScreen.main.bounds.height * 0.72, 560), cornerRadius: 14, feedThumbnail: false)
+                                    .padding(.horizontal, AppTheme.screenPadding)
+                            }
+                        }
+                        .navigationTitle("Proof image")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
                 }
                 .fullScreenCover(isPresented: $showDocCamera) {
                     documentCameraCover

@@ -115,13 +115,28 @@ struct SeekerHomeDashboardView: View {
     private func committedPrincipal(for opportunityId: String) -> Double {
         seekerInvestments
             .filter { $0.opportunityId == opportunityId && !isDeclinedLike($0) }
-            .reduce(0) { $0 + $1.investmentAmount }
+            .reduce(0) { $0 + $1.effectiveAmount }
     }
 
     private var opportunitiesNeedingAttention: [OpportunityListing] {
         myOpportunities
             .filter { pendingCount(for: $0.id) > 0 }
             .sorted { pendingCount(for: $0.id) > pendingCount(for: $1.id) }
+    }
+
+    private var dashboardListings: [OpportunityListing] {
+        myOpportunities.filter { opp in
+            let related = seekerInvestments.filter { $0.opportunityId == opp.id }
+            if related.isEmpty {
+                return opp.normalizedListingStatus == "open"
+            }
+            return related.contains { inv in
+                let s = inv.status.lowercased()
+                return ["pending", "accepted", "active"].contains(s)
+                    || inv.agreementStatus == .pending_signatures
+                    || inv.agreementStatus == .active
+            }
+        }
     }
 
     private var currentYear: Int {
@@ -158,7 +173,7 @@ struct SeekerHomeDashboardView: View {
     /// - principal = capital received
     /// - gain = liability still owed to investors (projected return - already repaid)
     private func principalAndProjectedGain(for inv: InvestmentListing) -> (principal: Double, gain: Double) {
-        let principal = inv.investmentAmount
+        let principal = inv.effectiveAmount
         let projected = InvestorPortfolioMetrics.projectedMaturityValue(for: inv)
         let repaid = InvestorPortfolioMetrics.returnedValue(for: inv)
         let outstanding = max(0, projected - repaid)
@@ -302,7 +317,7 @@ struct SeekerHomeDashboardView: View {
             guard let iid = inv.investorId, !iid.isEmpty else { continue }
             guard let d = attributionDate(for: inv) else { continue }
             var entry = totals[iid] ?? (0, 0, d)
-            entry.amount += inv.investmentAmount
+            entry.amount += inv.effectiveAmount
             entry.deals += 1
             entry.earliest = min(entry.earliest, d)
             totals[iid] = entry
@@ -459,14 +474,14 @@ struct SeekerHomeDashboardView: View {
                             .appCardShadow()
                     }
 
-                    if !myOpportunities.isEmpty {
+                    if !dashboardListings.isEmpty {
                         Text("Your listings")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(.black)
                             .padding(.top, 4)
 
                         LazyVStack(spacing: 12) {
-                            ForEach(myOpportunities) { item in
+                            ForEach(dashboardListings) { item in
                                 NavigationLink {
                                     SeekerOpportunityDetailView(
                                         opportunity: item,
@@ -535,27 +550,11 @@ struct SeekerHomeDashboardView: View {
                 .foregroundStyle(Color.secondary)
                 .tracking(0.5)
 
-            HStack(alignment: .center, spacing: 12) {
-                Text("Rs. \(formatAmount(totalEarnings))")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(dashboardBlue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .center, spacing: 4) {
-                    Text("+Rs. \(formatThousandsK(totalInterest))")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dashboardBlue)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(dashboardLightBlue.opacity(0.55), in: Capsule())
-                    Text("Liability To Settle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Rs. \(formatAmount(totalEarnings))")
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(dashboardBlue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
@@ -1123,7 +1122,7 @@ struct SeekerHomeDashboardView: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    Text(formatLKR(inv.investmentAmount))
+                    Text(formatLKR(inv.effectiveAmount))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(auth.accentColor)
                         .multilineTextAlignment(.trailing)

@@ -75,7 +75,7 @@ struct InvestmentAgreementReviewView: View {
             Text("Memorandum of agreement")
                 .font(.title3.weight(.bold))
 
-            Text("Snapshot at acceptance.")
+            Text("Binding snapshot captured when this request was accepted.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -86,6 +86,8 @@ struct InvestmentAgreementReviewView: View {
                     row("Seeker", agreement.seekerName)
                     row("Amount (LKR)", formatLKR(agreement.investmentAmount))
                     row("Type", agreement.investmentType.displayName)
+                    row("Agreement ID", agreement.agreementId)
+                    row("Prepared on", investment.agreementGeneratedAt.map(formatMediumDate) ?? "—")
                 }
                 .font(.subheadline)
             }
@@ -120,6 +122,10 @@ struct InvestmentAgreementReviewView: View {
                 termsBody(agreement: agreement, type: agreement.investmentType)
             }
 
+            termsSection("Financial snapshot") {
+                financialSnapshot(agreement: agreement)
+            }
+
             termsSection("Commitments") {
                 let t = agreement.termsSnapshot
                 let freq = (t.repaymentFrequency ?? .monthly).displayName
@@ -128,6 +134,7 @@ struct InvestmentAgreementReviewView: View {
                 bullet("Schedule adherence", "Payments are expected on each \(freq.lowercased()) due date.")
                 bullet("Late handling", "Missed due dates may move the deal to defaulted status after grace checks.")
                 bullet("Change control", "Any term changes must be agreed by all required signers in app.")
+                bullet("Evidence trail", "All signatures, timelines, and term snapshots remain stored with this agreement for auditability.")
             }
 
             if let gen = investment.agreementGeneratedAt {
@@ -230,23 +237,51 @@ struct InvestmentAgreementReviewView: View {
                 if let p = t.equityPercentage { bullet("Equity", String(format: "%.1f%%", p)) }
                 if let v = t.businessValuation { bullet("Valuation (LKR)", formatLKR(v)) }
                 if let e = t.exitPlan, !e.isEmpty { bullet("Exit plan", e) }
-            case .revenue_share:
-                if let p = t.revenueSharePercent { bullet("Revenue share", String(format: "%.1f%%", p)) }
-                if let a = t.targetReturnAmount { bullet("Target return (LKR)", formatLKR(a)) }
-                if let m = t.maxDurationMonths { bullet("Max duration", "\(m) mo") }
-            case .project:
-                bullet("Return type", t.expectedReturnType?.rawValue.capitalized ?? "—")
-                if let v = t.expectedReturnValue, !v.isEmpty { bullet("Expected return", v) }
-                if let d = t.completionDate { bullet("Completion", formatMediumDate(d)) }
-            case .custom:
-                if let s = t.customTermsSummary, !s.isEmpty {
-                    Text(s)
-                        .font(.body)
-                } else {
-                    Text("—")
-                        .foregroundStyle(.secondary)
-                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func financialSnapshot(agreement: InvestmentAgreementSnapshot) -> some View {
+        let amount = agreement.investmentAmount
+        let t = agreement.termsSnapshot
+        switch agreement.investmentType {
+        case .loan:
+            if let rate = t.interestRate,
+               let months = t.repaymentTimelineMonths,
+               months > 0,
+               let outcome = OpportunityFinancialPreview.loanMoneyOutcome(
+                principal: amount,
+                annualRatePercent: rate,
+                termMonths: months,
+                plan: LoanRepaymentPlan.from(t.repaymentFrequency)
+               ) {
+                bullet("Principal", "LKR \(formatLKR(amount))")
+                bullet("Estimated total payable", "LKR \(formatLKR(outcome.totalRepayable))")
+                bullet("Estimated investor gain", "LKR \(formatLKR(outcome.interestAmount))")
+                if let firstDue = outcome.firstInstallmentDue {
+                    bullet("First due date", formatMediumDate(firstDue))
+                }
+                if let maturity = outcome.maturityDue {
+                    bullet("Maturity date", formatMediumDate(maturity))
+                }
+            } else {
+                bullet("Principal", "LKR \(formatLKR(amount))")
+                Text("Detailed projection becomes available once timeline and rate are finalized.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .equity:
+            bullet("Committed capital", "LKR \(formatLKR(amount))")
+            if let p = t.equityPercentage {
+                bullet("Equity allocated", String(format: "%.1f%%", p))
+            }
+            if let v = t.businessValuation {
+                bullet("Business valuation", "LKR \(formatLKR(v))")
+            }
+            Text("Returns depend on growth milestones and exit outcomes rather than fixed repayment.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

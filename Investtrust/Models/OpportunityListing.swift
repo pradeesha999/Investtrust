@@ -149,11 +149,6 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
                 return "\(m) months"
             }
             return "\(terms.effectiveTimelineMonths) months"
-        case .revenue_share:
-            if let m = terms.maxDurationMonths {
-                return "\(m) months max"
-            }
-            return "—"
         case .equity:
             if let roi = terms.equityRoiTimeline {
                 return roi.displayName + " ROI"
@@ -162,10 +157,6 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
                 return String(format: "%.1f%% equity", p)
             }
             return "Equity"
-        case .project:
-            return terms.completionDate.map { Self.shortDate($0) } ?? "—"
-        case .custom:
-            return "Custom terms"
         }
     }
 
@@ -183,17 +174,6 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
             if let v = terms.businessValuation { parts.append("Val. LKR \(Int(v))") }
             if let roi = terms.equityRoiTimeline { parts.append(roi.displayName + " ROI") }
             return parts.isEmpty ? "Equity" : parts.joined(separator: " · ")
-        case .revenue_share:
-            var parts: [String] = []
-            if let e = terms.revenueSharePercent { parts.append("\(formatRate(e))% rev.") }
-            if let t = terms.targetReturnAmount { parts.append("Target LKR \(Int(t))") }
-            return parts.isEmpty ? "Revenue share" : parts.joined(separator: " · ")
-        case .project:
-            let kind = terms.expectedReturnType?.rawValue ?? "—"
-            let val = terms.expectedReturnValue ?? "—"
-            return "\(kind): \(val)"
-        case .custom:
-            return "Custom"
         }
     }
 

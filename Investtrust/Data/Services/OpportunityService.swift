@@ -529,36 +529,6 @@ final class OpportunityService {
             guard !exit.isEmpty else { throw OpportunityServiceError.invalidTerms }
             t.exitPlan = exit
             return t
-        case .revenue_share:
-            guard let p = Self.parseDouble(from: draft.revenueSharePercent), p > 0 else {
-                throw OpportunityServiceError.invalidTerms
-            }
-            guard let target = Self.parseDouble(from: draft.targetReturnAmount), target > 0 else {
-                throw OpportunityServiceError.invalidTerms
-            }
-            let md = draft.maxDurationMonths.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let maxM = Self.parseInt(from: md), maxM > 0 else {
-                throw OpportunityServiceError.invalidTimeline
-            }
-            var t = OpportunityTerms()
-            t.revenueSharePercent = p
-            t.targetReturnAmount = target
-            t.maxDurationMonths = maxM
-            return t
-        case .project:
-            let val = draft.expectedReturnValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !val.isEmpty else { throw OpportunityServiceError.invalidTerms }
-            var t = OpportunityTerms()
-            t.expectedReturnType = draft.expectedReturnType
-            t.expectedReturnValue = val
-            t.completionDate = draft.completionDate
-            return t
-        case .custom:
-            let s = draft.customTermsSummary.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !s.isEmpty else { throw OpportunityServiceError.invalidTerms }
-            var t = OpportunityTerms()
-            t.customTermsSummary = s
-            return t
         }
     }
 

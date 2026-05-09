@@ -6,17 +6,11 @@ import Foundation
 enum InvestmentType: String, CaseIterable, Codable, Sendable {
     case loan
     case equity
-    case revenue_share
-    case project
-    case custom
 
     var displayName: String {
         switch self {
         case .loan: return "Loan"
         case .equity: return "Equity"
-        case .revenue_share: return "Revenue share"
-        case .project: return "Project"
-        case .custom: return "Custom"
         }
     }
 
@@ -179,16 +173,6 @@ enum OpportunityFirestoreCoding {
             if let v = t.demoLinks { m["demoLinks"] = v }
             if let v = t.equityRoiTimeline { m["equityRoiTimeline"] = v.rawValue }
             if let v = t.exitPlan { m["exitPlan"] = v }
-        case .revenue_share:
-            if let v = t.revenueSharePercent { m["revenueSharePercent"] = v }
-            if let v = t.targetReturnAmount { m["targetReturnAmount"] = v }
-            if let v = t.maxDurationMonths { m["maxDurationMonths"] = v }
-        case .project:
-            if let v = t.expectedReturnType { m["expectedReturnType"] = v.rawValue }
-            if let v = t.expectedReturnValue { m["expectedReturnValue"] = v }
-            if let d = t.completionDate { m["completionDate"] = Timestamp(date: d) }
-        case .custom:
-            if let v = t.customTermsSummary { m["customTermsSummary"] = v }
         }
         return m
     }
@@ -251,18 +235,6 @@ enum OpportunityFirestoreCoding {
                 t.equityRoiTimeline = EquityRoiTimeline(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
             }
             t.exitPlan = str("exitPlan")
-        case .revenue_share:
-            t.revenueSharePercent = dbl("revenueSharePercent")
-            t.targetReturnAmount = dbl("targetReturnAmount")
-            t.maxDurationMonths = intg("maxDurationMonths")
-        case .project:
-            if let raw = nested["expectedReturnType"] as? String ?? data["expectedReturnType"] as? String {
-                t.expectedReturnType = ExpectedReturnType(rawValue: raw.lowercased())
-            }
-            t.expectedReturnValue = str("expectedReturnValue")
-            t.completionDate = date("completionDate")
-        case .custom:
-            t.customTermsSummary = str("customTermsSummary")
         }
         return t
     }

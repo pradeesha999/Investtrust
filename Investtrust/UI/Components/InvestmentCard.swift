@@ -35,7 +35,7 @@ struct InvestmentCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                if let rate = inv.finalInterestRate, rate > 0 {
+                if let rate = inv.effectiveFinalInterestRate, rate > 0 {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(formatRate(rate))%")
                             .font(.title3.weight(.bold))
@@ -63,7 +63,7 @@ struct InvestmentCard: View {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(format(inv.investmentAmount))")
+                    Text("LKR \(format(inv.effectiveAmount))")
                         .font(.subheadline.weight(.semibold))
                 }
                 Spacer(minLength: 0)
@@ -260,9 +260,9 @@ struct InvestmentCard: View {
     }
 
     private var finalReturnText: String {
-        let principal = max(0, inv.investmentAmount)
-        let rate = max(0, inv.finalInterestRate ?? inv.agreement?.termsSnapshot.interestRate ?? 0)
-        let months = max(0, inv.finalTimelineMonths ?? inv.agreement?.termsSnapshot.effectiveTimelineMonths ?? 0)
+        let principal = max(0, inv.effectiveAmount)
+        let rate = max(0, inv.effectiveFinalInterestRate ?? 0)
+        let months = max(0, inv.effectiveFinalTimelineMonths ?? 0)
         guard principal > 0, rate > 0, months > 0 else { return "—" }
         let total = LoanScheduleGenerator.totalRepayable(
             principal: principal,

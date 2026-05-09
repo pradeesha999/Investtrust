@@ -218,6 +218,13 @@ struct MarketBrowseView: View {
             let all = try await opportunityService.fetchMarketListings()
             if let userID = auth.currentUserID {
                 let myInvestments = try await investmentService.fetchInvestments(forInvestor: userID)
+                let ongoingOpportunityIds = Set(
+                    myInvestments.compactMap { row -> String? in
+                        guard InvestorPortfolioMetrics.isOngoingPortfolioRow(row) else { return nil }
+                        guard let oppId = row.opportunityId, !oppId.isEmpty else { return nil }
+                        return oppId
+                    }
+                )
                 let completedOpportunityIds = Set(
                     myInvestments.compactMap { row -> String? in
                         guard InvestorPortfolioMetrics.isCompletedDeal(row) else { return nil }
@@ -226,7 +233,9 @@ struct MarketBrowseView: View {
                     }
                 )
                 opportunities = all.filter {
-                    $0.ownerId != userID && !completedOpportunityIds.contains($0.id)
+                    $0.ownerId != userID
+                        && !ongoingOpportunityIds.contains($0.id)
+                        && !completedOpportunityIds.contains($0.id)
                 }
                 myLatestRequestsByOpportunityId = latestRequestsMap(from: myInvestments)
             } else {

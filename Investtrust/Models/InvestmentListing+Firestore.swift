@@ -5,6 +5,7 @@ extension InvestmentListing {
     init?(id: String, data: [String: Any]) {
         let status = (data["status"] as? String)?.lowercased() ?? "unknown"
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
+        let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
 
         // Investment amount
         let investmentAmount: Double = {
@@ -50,11 +51,14 @@ extension InvestmentListing {
             if let n = data["receivedAmount"] as? NSNumber { return max(0, n.doubleValue) }
             return 0
         }()
+        let offerMap = data["offer"] as? [String: Any]
         let requestKind: InvestmentRequestKind = {
             if let raw = data["requestKind"] as? String,
                let kind = InvestmentRequestKind(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 return kind
             }
+            if let isOffer = data["isOfferRequest"] as? Bool, isOffer { return .offer_request }
+            if let isOffer = offerMap?["isOffer"] as? Bool, isOffer { return .offer_request }
             return .default_request
         }()
         let offerStatus: InvestmentOfferStatus = {
@@ -62,6 +66,7 @@ extension InvestmentListing {
                let status = InvestmentOfferStatus(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 return status
             }
+            if requestKind == .offer_request { return .pending }
             return .pending
         }()
         let offerSource: InvestmentOfferSource? = {
@@ -69,19 +74,24 @@ extension InvestmentListing {
             return InvestmentOfferSource(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
         }()
         let offeredAmount: Double? = {
-            guard let v = data["offeredAmount"] else { return nil }
-            return Self.parseDouble(v)
+            if let v = data["offeredAmount"] { return Self.parseDouble(v) }
+            if let v = offerMap?["amount"] { return Self.parseDouble(v) }
+            return nil
         }()
         let offeredInterestRate: Double? = {
-            guard let v = data["offeredInterestRate"] else { return nil }
-            return Self.parseDouble(v)
+            if let v = data["offeredInterestRate"] { return Self.parseDouble(v) }
+            if let v = offerMap?["interestRate"] { return Self.parseDouble(v) }
+            return nil
         }()
         let offeredTimelineMonths: Int? = {
-            guard let v = data["offeredTimelineMonths"] else { return nil }
-            return Self.parseInt(v)
+            if let v = data["offeredTimelineMonths"] { return Self.parseInt(v) }
+            if let v = offerMap?["timelineMonths"] { return Self.parseInt(v) }
+            return nil
         }()
-        let offerDescription = (data["offerDescription"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let offerDescription = (
+            (data["offerDescription"] as? String)
+            ?? (offerMap?["description"] as? String)
+        )?.trimmingCharacters(in: .whitespacesAndNewlines)
         let offerChatId = (data["offerChatId"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let offerChatMessageId = (data["offerChatMessageId"] as? String)?
@@ -229,6 +239,7 @@ extension InvestmentListing {
             id: id,
             status: status,
             createdAt: createdAt,
+            updatedAt: updatedAt,
             opportunityId: opportunityId.isEmpty ? nil : opportunityId,
             investorId: trimmedInvestor.isEmpty ? nil : trimmedInvestor,
             seekerId: seeker.isEmpty ? nil : seeker,

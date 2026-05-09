@@ -17,6 +17,7 @@ struct OpportunityDetailView: View {
 
     @State private var userProfileLoaded: UserProfile?
     @State private var sellerProfile: UserProfile?
+    @State private var sellerProfileLoading = false
     @State private var showProfileEdit = false
     @State private var showCalendarSyncPrompt = false
 
@@ -90,9 +91,13 @@ struct OpportunityDetailView: View {
         }
         .sheet(isPresented: $showInvestSheet) {
             if let opportunity {
+                // Negotiable listings: do not lock to “listed terms only” — that path calls
+                // `createInvestmentRequest` and ignores offer economics. Default segment to
+                // Make offer so the primary button hits `createOrUpdateOfferRequest`.
                 InvestProposalSheet(
                     opportunity: opportunity,
-                    lockToStandardMode: true
+                    preferOfferMode: opportunity.isNegotiable,
+                    lockToStandardMode: !opportunity.isNegotiable
                 ) { submission in
                     try await submitInvestmentSubmission(submission, for: opportunity)
                 }
@@ -464,18 +469,6 @@ struct OpportunityDetailView: View {
                     infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
                         investorEquityValueBody(o: o, ticket: ticket, ticketText: ticketText)
                     }
-                case .revenue_share:
-                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
-                        investorRevenueShareValueBody(o: o)
-                    }
-                case .project:
-                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
-                        investorProjectValueBody(o: o)
-                    }
-                case .custom:
-                    infoCard(title: "Return snapshot", subtitle: nil, systemImage: nil) {
-                        investorCustomValueBody(o: o)
-                    }
                 }
             }
         }
@@ -494,7 +487,7 @@ struct OpportunityDetailView: View {
                plan: LoanRepaymentPlan.from(terms.frequency)
            ) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Amount to be paid")
+                Text("Amount to be received")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text("LKR \(OpportunityFinancialPreview.formatLKRInteger(preview.totalRepayable))")
@@ -562,7 +555,7 @@ struct OpportunityDetailView: View {
                     .foregroundStyle(.secondary)
             }
         case .equity:
-            let eq = myLatestRequest?.finalInterestRate ?? o.terms.equityPercentage
+            let eq = myLatestRequest?.effectiveFinalInterestRate ?? o.terms.equityPercentage
             if let eq, eq > 0 {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(formatRate(eq))%")
@@ -575,52 +568,6 @@ struct OpportunityDetailView: View {
                 }
             } else {
                 placeholderPrimaryMetric(caption: "Equity %")
-            }
-        case .revenue_share:
-            let p = myLatestRequest?.finalInterestRate ?? o.terms.revenueSharePercent
-            if let p, p > 0 {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("\(formatRate(p))%")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(auth.accentColor)
-                    Text("Revenue share")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-            } else {
-                placeholderPrimaryMetric(caption: "Revenue share")
-            }
-        case .project:
-            let kind = o.terms.expectedReturnType?.rawValue.capitalized ?? "Return"
-            let value = (o.terms.expectedReturnValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(kind)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(value)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(auth.accentColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                placeholderPrimaryMetric(caption: "Expected return")
-            }
-        case .custom:
-            let s = (o.terms.customTermsSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !s.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Custom deal")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(String(s.prefix(120)) + (s.count > 120 ? "…" : ""))
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(auth.accentColor)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                placeholderPrimaryMetric(caption: "Custom terms")
             }
         }
     }
@@ -957,12 +904,36 @@ struct OpportunityDetailView: View {
             .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
             .appCardShadow()
         } else if status == "completed" {
-            statusShell(
-                tint: .green,
-                icon: "checkmark.circle.fill",
-                title: "Investment completed",
-                message: "All scheduled payments are confirmed and this deal is fully closed."
-            )
+            VStack(alignment: .leading, spacing: 12) {
+                statusHeader(
+                    tint: .green,
+                    icon: "checkmark.circle.fill",
+                    title: "Investment completed",
+                    message: "All scheduled payments are confirmed and this deal is fully closed."
+                )
+                Label("Completed", systemImage: "checkmark.seal.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.green.opacity(0.12), in: Capsule())
+
+                Button {
+                    Task { await openChatWithSeeker(opportunity: opportunity) }
+                } label: {
+                    Label("Contact seeker", systemImage: "bubble.left.and.bubble.right.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: AppTheme.minTapTarget)
+                }
+                .buttonStyle(.bordered)
+                .tint(auth.accentColor)
+                .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
+            }
+            .padding(AppTheme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
         } else if let r = req, r.agreementStatus == .active || status == "active" {
             VStack(alignment: .leading, spacing: 12) {
                 statusHeader(
@@ -1046,15 +1017,18 @@ struct OpportunityDetailView: View {
     private func activeDealNextStepsMessage(for req: InvestmentListing) -> String {
         switch req.investmentType {
         case .loan:
-            return "The memorandum is fully signed. Use Chat to coordinate funding outside the platform."
+            if req.fundingStatus == .awaiting_disbursement {
+                if req.principalSentByInvestorAt == nil {
+                    return "Action required: send principal to unlock repayments."
+                }
+                return "Principal marked sent. Waiting for seeker confirmation."
+            }
+            if req.fundingStatus == .disbursed {
+                return "Principal confirmed. Repayments are active."
+            }
+            return "Loan is active."
         case .equity:
             return "The equity agreement is live. Investor funds the round, seeker executes milestones, and both parties track governance updates in chat until exit."
-        case .revenue_share:
-            return "The agreement is live. Coordinate monthly revenue reporting and payout confirmations until the target return is met."
-        case .project:
-            return "The agreement is live. Follow milestone delivery updates and close the deal when project outcomes are completed."
-        case .custom:
-            return "The agreement is live. Follow the custom terms and record key updates through milestones and chat."
         }
     }
 
@@ -1096,14 +1070,8 @@ struct OpportunityDetailView: View {
             switch req.investmentType {
             case .loan:
                 return req.finalTimelineMonths ?? terms?.repaymentTimelineMonths
-            case .revenue_share:
-                return req.finalTimelineMonths ?? terms?.maxDurationMonths
             case .equity:
                 return terms?.equityTimelineMonths
-            case .project:
-                return req.finalTimelineMonths
-            case .custom:
-                return nil
             }
         }()
         guard let start, let months, months > 0 else { return nil }
@@ -1116,9 +1084,6 @@ struct OpportunityDetailView: View {
         switch o.investmentType {
         case .loan: return "Interest, tenor and repayment"
         case .equity: return "Equity and valuation"
-        case .revenue_share: return "Revenue share and cap"
-        case .project: return "Expected return and completion"
-        case .custom: return "Custom-structured deal"
         }
     }
 
@@ -1145,16 +1110,6 @@ struct OpportunityDetailView: View {
                 EmptyView()
             case .equity:
                 equityTermsCards(terms: t)
-            case .revenue_share:
-                EmptyView()
-            case .project:
-                if let v = t.expectedReturnValue, !v.isEmpty {
-                    calloutRow(title: "Expected return", value: v)
-                }
-            case .custom:
-                if let s = t.customTermsSummary, !s.isEmpty {
-                    calloutRow(title: "Summary", value: s)
-                }
             }
         }
     }
@@ -1205,19 +1160,6 @@ struct OpportunityDetailView: View {
             if let v = t.businessValuation { out.append(TermPair(label: "Valuation", value: "LKR \(Int(v))")) }
             if let roi = t.equityRoiTimeline { out.append(TermPair(label: "ROI", value: roi.displayName)) }
             return out
-        case .revenue_share:
-            var out: [TermPair] = []
-            if let p = t.revenueSharePercent { out.append(TermPair(label: "Rev. share", value: String(format: "%.1f%%", p))) }
-            if let target = t.targetReturnAmount { out.append(TermPair(label: "Target", value: "LKR \(Int(target))")) }
-            if let mx = t.maxDurationMonths { out.append(TermPair(label: "Max term", value: "\(mx) months")) }
-            return out
-        case .project:
-            var out: [TermPair] = []
-            out.append(TermPair(label: "Return type", value: t.expectedReturnType?.rawValue.capitalized ?? "—"))
-            if let d = t.completionDate { out.append(TermPair(label: "Completion", value: Self.mediumDate(d))) }
-            return out
-        case .custom:
-            return []
         }
     }
 
@@ -1231,8 +1173,8 @@ struct OpportunityDetailView: View {
     }
 
     private func effectiveTicketAmount(for o: OpportunityListing) -> Double {
-        if let req = activeRequestForDisplay, req.investmentAmount > 0 {
-            return req.investmentAmount
+        if let req = activeRequestForDisplay, req.effectiveAmount > 0 {
+            return req.effectiveAmount
         }
         return o.minimumInvestment
     }
@@ -1248,8 +1190,8 @@ struct OpportunityDetailView: View {
 
     private func effectiveLoanTerms(for o: OpportunityListing) -> (rate: Double?, months: Int?, frequency: RepaymentFrequency) {
         if let req = activeRequestForDisplay {
-            let rate = req.finalInterestRate ?? req.offeredInterestRate ?? o.terms.interestRate
-            let months = req.finalTimelineMonths ?? req.offeredTimelineMonths ?? o.terms.repaymentTimelineMonths
+            let rate = req.effectiveFinalInterestRate ?? o.terms.interestRate
+            let months = req.effectiveFinalTimelineMonths ?? o.terms.repaymentTimelineMonths
             let frequency = o.terms.repaymentFrequency ?? .monthly
             return (rate, months, frequency)
         }
@@ -1435,7 +1377,29 @@ struct OpportunityDetailView: View {
 
     private func seekerCard(for opportunity: OpportunityListing) -> AnyView? {
         guard auth.currentUserID != opportunity.ownerId else { return nil }
-        guard let profile = sellerProfile else { return nil }
+        guard let profile = sellerProfile else {
+            let fallback = infoCard(title: "About the seeker", subtitle: nil, systemImage: "person.crop.square.fill") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        seekerAvatarInitials(initials: "S")
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(sellerProfileLoading ? "Loading seeker details..." : "Seeker details unavailable")
+                                .font(.subheadline.weight(.semibold))
+                            Text("Member ID: \(shortOwnerId(opportunity.ownerId))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if !sellerProfileLoading {
+                        Text("Ask the seeker to complete their profile for richer details.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            return AnyView(fallback)
+        }
 
         let details = profile.profileDetails
         let legal = (details?.legalFullName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1516,6 +1480,15 @@ struct OpportunityDetailView: View {
             .compactMap { $0.first.map(String.init) }
         let joined = parts.joined().uppercased()
         return joined.isEmpty ? "S" : joined
+    }
+
+    private func shortOwnerId(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "—" }
+        if trimmed.count <= 10 { return trimmed }
+        let prefix = trimmed.prefix(4)
+        let suffix = trimmed.suffix(4)
+        return "\(prefix)…\(suffix)"
     }
 
     // MARK: - Documents
@@ -1645,10 +1618,10 @@ struct OpportunityDetailView: View {
     private func primaryFloatingButtonTitle(for opportunity: OpportunityListing) -> String {
         let req = myLatestRequest
         let status = req?.status.lowercased() ?? ""
-        if !profileReadyForInvesting { return "Complete profile" }
         if let r = req, r.agreementStatus == .pending_signatures {
-            return r.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review agreement" : "Awaiting seeker sign"
+            return r.needsInvestorSignature(currentUserId: auth.currentUserID) ? "Review & sign agreement" : "View agreement"
         }
+        if !profileReadyForInvesting { return "Complete profile" }
         if status == "pending" { return "Request sent" }
         if status == "declined" || status == "rejected" { return "Send another request" }
         return "Request investment"
@@ -1657,10 +1630,10 @@ struct OpportunityDetailView: View {
     private func isPrimaryFloatingActionEnabled(for opportunity: OpportunityListing) -> Bool {
         let req = myLatestRequest
         let status = req?.status.lowercased() ?? ""
-        if !profileReadyForInvesting { return true }
         if let r = req, r.agreementStatus == .pending_signatures {
-            return r.needsInvestorSignature(currentUserId: auth.currentUserID)
+            return true
         }
+        if !profileReadyForInvesting { return true }
         if status == "pending" { return false }
         return true
     }
@@ -1678,14 +1651,12 @@ struct OpportunityDetailView: View {
 
     private func performPrimaryFloatingAction(for opportunity: OpportunityListing) {
         let req = myLatestRequest
-        if !profileReadyForInvesting {
-            showProfileEdit = true
+        if let r = req, r.agreementStatus == .pending_signatures {
+            agreementReviewContext = AgreementReviewContext(investment: r, opportunity: opportunity)
             return
         }
-        if let r = req, r.agreementStatus == .pending_signatures {
-            if r.needsInvestorSignature(currentUserId: auth.currentUserID) {
-                agreementReviewContext = AgreementReviewContext(investment: r, opportunity: opportunity)
-            }
+        if !profileReadyForInvesting {
+            showProfileEdit = true
             return
         }
         showInvestSheet = true
@@ -1698,6 +1669,9 @@ struct OpportunityDetailView: View {
         let created: InvestmentListing
         let requestKindLabel: String
         let noteText: String
+        let snapshotAmountText: String
+        let snapshotRateText: String
+        let snapshotTimelineText: String
         switch submission {
         case .standardRequest:
             created = try await investmentService.createInvestmentRequest(
@@ -1706,18 +1680,25 @@ struct OpportunityDetailView: View {
             )
             requestKindLabel = "Investment request"
             noteText = "Default investment request from listing."
-        case .negotiatedOffer(let amount, let interestRate, let timelineMonths, let note):
+            snapshotAmountText = Self.lkrText(created.investmentAmount)
+            snapshotRateText = created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
+            snapshotTimelineText = created.finalTimelineMonths.map { "\($0) months" } ?? "—"
+        case .negotiatedOffer(_, _, _, let note):
+            // Offer terms are fixed server-side (LKR 200,000 · 30% · 2 mo); chat snapshot matches persisted row.
             created = try await investmentService.createOrUpdateOfferRequest(
                 opportunity: opportunity,
                 investorId: uid,
-                proposedAmount: amount,
-                proposedInterestRate: interestRate,
-                proposedTimelineMonths: timelineMonths,
+                proposedAmount: 200_000,
+                proposedInterestRate: 30,
+                proposedTimelineMonths: 2,
                 description: note,
                 source: .detail_sheet
             )
             requestKindLabel = "Offer request"
             noteText = note.isEmpty ? "Negotiated offer from listing." : note
+            snapshotAmountText = Self.lkrText(created.effectiveAmount)
+            snapshotRateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "30.00%"
+            snapshotTimelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "2 months"
         }
         let chatId = try await chatService.getOrCreateChat(
             opportunityId: opportunity.id,
@@ -1729,9 +1710,9 @@ struct OpportunityDetailView: View {
             investmentId: created.id,
             opportunityId: opportunity.id,
             title: opportunity.title,
-            amountText: Self.lkrText(created.investmentAmount),
-            interestRateText: created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—",
-            timelineText: created.finalTimelineMonths.map { "\($0) months" } ?? "—",
+            amountText: snapshotAmountText,
+            interestRateText: snapshotRateText,
+            timelineText: snapshotTimelineText,
             note: noteText,
             requestKindLabel: requestKindLabel
         )
@@ -1809,14 +1790,24 @@ struct OpportunityDetailView: View {
     private func loadSellerProfile(for opportunity: OpportunityListing) async {
         let ownerId = opportunity.ownerId
         guard !ownerId.isEmpty else {
-            await MainActor.run { sellerProfile = nil }
+            await MainActor.run {
+                sellerProfile = nil
+                sellerProfileLoading = false
+            }
             return
         }
+        await MainActor.run { sellerProfileLoading = true }
         do {
-            let p = try await userService.fetchProfile(userID: ownerId)
-            await MainActor.run { sellerProfile = p }
+            let p = try await userService.fetchProfileResolvingLegacyIDs(userID: ownerId)
+            await MainActor.run {
+                sellerProfile = p
+                sellerProfileLoading = false
+            }
         } catch {
-            await MainActor.run { sellerProfile = nil }
+            await MainActor.run {
+                sellerProfile = nil
+                sellerProfileLoading = false
+            }
         }
     }
 

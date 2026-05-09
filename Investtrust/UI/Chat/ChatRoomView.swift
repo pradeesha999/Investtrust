@@ -306,16 +306,18 @@ struct ChatRoomView: View {
 
     @ViewBuilder
     private func investmentRequestBubble(snapshot: InvestmentRequestSnapshot, isMine: Bool, createdAt: Date?) -> some View {
+        let isOffer = snapshot.requestKindLabel.localizedCaseInsensitiveContains("offer")
+        let kindTint: Color = isOffer ? .red : auth.accentColor
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.text.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(auth.accentColor)
+                    .foregroundStyle(kindTint)
                     .frame(width: 22, height: 22)
-                    .background(auth.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(kindTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text(snapshot.requestKindLabel)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(auth.accentColor)
+                    .foregroundStyle(kindTint)
                 Spacer(minLength: 0)
             }
 

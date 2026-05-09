@@ -30,6 +30,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let id: String
     let status: String
     let createdAt: Date?
+    let updatedAt: Date?
 
     /// Firestore `opportunityId` (or nested `opportunity.id`) — used for seeker request management.
     let opportunityId: String?
@@ -101,6 +102,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         id: String,
         status: String,
         createdAt: Date?,
+        updatedAt: Date? = nil,
         opportunityId: String?,
         investorId: String?,
         seekerId: String?,
@@ -143,6 +145,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         self.id = id
         self.status = status
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.opportunityId = opportunityId
         self.investorId = investorId
         self.seekerId = seekerId
@@ -195,14 +198,31 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         "declined", "rejected", "cancelled", "withdrawn"
     ]
 
+    /// Canonical amount to display/use for deal math. Offers override legacy default snapshots.
+    var effectiveAmount: Double {
+        offeredAmount ?? investmentAmount
+    }
+
+    /// Canonical rate to display/use for deal math.
+    var effectiveFinalInterestRate: Double? {
+        offeredInterestRate ?? finalInterestRate ?? agreement?.termsSnapshot.interestRate
+    }
+
+    /// Canonical timeline to display/use for deal math.
+    var effectiveFinalTimelineMonths: Int? {
+        offeredTimelineMonths ?? finalTimelineMonths ?? agreement?.termsSnapshot.effectiveTimelineMonths
+    }
+
     var interestLabel: String {
-        guard let finalInterestRate else { return "-" }
-        return "\(finalInterestRate)%"
+        let rate = effectiveFinalInterestRate
+        guard let rate else { return "-" }
+        return "\(rate)%"
     }
 
     var timelineLabel: String {
-        guard let finalTimelineMonths else { return "-" }
-        return "\(finalTimelineMonths) months"
+        let months = effectiveFinalTimelineMonths
+        guard let months else { return "-" }
+        return "\(months) months"
     }
 
     // MARK: - Display
@@ -281,20 +301,19 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         investmentType == .loan && !loanInstallments.isEmpty
     }
 
-    var isRevenueShareWithSchedule: Bool {
-        investmentType == .revenue_share && !revenueSharePeriods.isEmpty
-    }
-
     var loanRepaymentsUnlocked: Bool {
         investmentType == .loan && fundingStatus == .disbursed
     }
 
-    var revenueShareActionsUnlocked: Bool {
-        investmentType == .revenue_share && fundingStatus == .disbursed
+    var isOfferRequest: Bool {
+        if requestKind == .offer_request { return true }
+        if offeredAmount != nil || offeredInterestRate != nil || offeredTimelineMonths != nil { return true }
+        if let offerDescription, !offerDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
     }
 
-    var isOfferRequest: Bool {
-        requestKind == .offer_request
+    var recencyDate: Date {
+        updatedAt ?? createdAt ?? .distantPast
     }
 
     /// Next installment that still needs action (by due date).
@@ -305,10 +324,4 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
             .first
     }
 
-    var nextOpenRevenueSharePeriod: RevenueSharePeriod? {
-        revenueSharePeriods
-            .filter { $0.status != .confirmed_paid }
-            .sorted { $0.dueDate < $1.dueDate }
-            .first
-    }
 }

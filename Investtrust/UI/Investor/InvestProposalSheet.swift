@@ -72,18 +72,12 @@ struct InvestProposalSheet: View {
 
                 if opportunity.isNegotiable && effectiveRequestMode == .offer {
                     Section("Negotiated terms") {
-                        if max(1, opportunity.maximumInvestors ?? 1) <= 1 {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Investment amount (LKR)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                TextField("e.g. 1,200,000", text: $offerAmountText)
-                                    .keyboardType(.numberPad)
-                            }
-                        } else {
-                            Text("Amount is fixed by investor split for this listing.")
-                                .font(.footnote)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Investment amount (LKR)")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
+                            TextField("e.g. 1,200,000", text: $offerAmountText)
+                                .keyboardType(.numberPad)
                         }
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Interest rate (%)")
@@ -165,9 +159,10 @@ struct InvestProposalSheet: View {
         }
         .onAppear {
             let cap = max(1, opportunity.maximumInvestors ?? 1)
-            if cap <= 1 {
-                offerAmountText = Self.formatLKR(opportunity.amountRequested)
-            }
+            let defaultOfferAmount: Double = cap > 1
+                ? InvestmentService.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+                : opportunity.amountRequested
+            offerAmountText = Self.formatLKR(defaultOfferAmount)
             offerRateText = opportunity.interestRate > 0 ? String(format: "%.2f", opportunity.interestRate) : ""
             offerTimelineText = "\(max(1, opportunity.repaymentTimelineMonths))"
         }
@@ -197,11 +192,7 @@ struct InvestProposalSheet: View {
 
     private var canSubmit: Bool {
         if opportunity.isNegotiable, effectiveRequestMode == .offer {
-            guard let _ = parsedInterestRate, let _ = parsedTimelineMonths else { return false }
-            let cap = max(1, opportunity.maximumInvestors ?? 1)
-            if cap <= 1 {
-                return parsedAmount != nil
-            }
+            // Offer uses fixed terms server-side; form fields are informational only.
             return true
         }
         if opportunity.isNegotiable {
@@ -224,7 +215,7 @@ struct InvestProposalSheet: View {
     }
 
     private var reviewButtonTitle: String {
-        effectiveRequestMode == .offer ? "Review offer" : "Review request"
+        effectiveRequestMode == .offer ? "Send offer" : "Review request"
     }
 
     private var confirmationTitle: String {
@@ -237,15 +228,11 @@ struct InvestProposalSheet: View {
 
     private var confirmationMessage: String {
         if effectiveRequestMode == .offer {
-            let amountLine: String = {
-                let cap = max(1, opportunity.maximumInvestors ?? 1)
-                if cap > 1 { return "Split amount applies for this listing." }
-                if let amount = parsedAmount { return "Amount: LKR \(Self.formatLKR(amount))" }
-                return "Amount: —"
-            }()
-            let rateLine = parsedInterestRate.map { "Rate: \(String(format: "%.2f", $0))%" } ?? "Rate: —"
-            let timelineLine = parsedTimelineMonths.map { "Timeline: \($0) months" } ?? "Timeline: —"
-            return "\(amountLine)\n\(rateLine)\n\(timelineLine)"
+            return """
+            Amount: LKR \(Self.formatLKR(200_000))
+            Rate: 30.00%
+            Timeline: 2 months
+            """
         }
         return "You are requesting to invest on the listed terms for this opportunity."
     }
@@ -284,8 +271,6 @@ struct InvestProposalSheet: View {
     }
 
     private var parsedAmount: Double? {
-        let cap = max(1, opportunity.maximumInvestors ?? 1)
-        guard cap <= 1 else { return nil }
         let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
         guard let value = Double(cleaned), value > 0 else { return nil }
         return value
@@ -309,20 +294,11 @@ struct InvestProposalSheet: View {
         defer { isSubmitting = false }
         do {
             if opportunity.isNegotiable, effectiveRequestMode == .offer {
-                guard let rate = parsedInterestRate, let timeline = parsedTimelineMonths else {
-                    submitError = "Enter valid offer terms (rate and timeline)."
-                    return
-                }
-                let cap = max(1, opportunity.maximumInvestors ?? 1)
-                let amount = cap <= 1 ? parsedAmount : nil
-                if cap <= 1, amount == nil {
-                    submitError = "Enter a valid amount."
-                    return
-                }
+                // Hardcoded offer terms (matches InvestmentService.createOrUpdateOfferRequest).
                 try await onSubmit(.negotiatedOffer(
-                    amount: amount,
-                    interestRate: rate,
-                    timelineMonths: timeline,
+                    amount: 200_000,
+                    interestRate: 30,
+                    timelineMonths: 2,
                     note: offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
             } else {

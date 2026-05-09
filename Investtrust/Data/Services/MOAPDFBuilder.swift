@@ -340,19 +340,6 @@ enum MOAPDFBuilder {
             if let p = t.equityPercentage { lines.append("Equity: \(String(format: "%.1f%%", p))") }
             if let e = t.exitPlan, !e.isEmpty { lines.append("Exit: \(e)") }
             return lines.isEmpty ? "—" : lines.joined(separator: "\n")
-        case .revenue_share:
-            var lines: [String] = []
-            if let p = t.revenueSharePercent { lines.append("Revenue share: \(String(format: "%.1f%%", p))") }
-            if let a = t.targetReturnAmount { lines.append("Target return (LKR): \(formatAmount(a))") }
-            return lines.isEmpty ? "—" : lines.joined(separator: "\n")
-        case .project:
-            return [
-                t.expectedReturnType.map { "Return type: \($0.rawValue)" },
-                t.expectedReturnValue.map { "Expected return: \($0)" },
-                t.completionDate.map { "Completion: \(mediumDate($0))" }
-            ].compactMap(\.self).joined(separator: "\n")
-        case .custom:
-            return t.customTermsSummary ?? "—"
         }
     }
 

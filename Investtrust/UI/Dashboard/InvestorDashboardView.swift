@@ -31,19 +31,6 @@ private struct TopRecipient: Identifiable {
     let totalAmount: Double
 }
 
-private struct PaymentScheduleItem: Identifiable {
-    let id: String
-    let title: String
-    let dueDate: Date
-    let amount: Double
-    let status: PaymentScheduleStatus
-}
-
-private enum PaymentScheduleStatus {
-    case upcoming(monthsAway: Int)
-    case done
-}
-
 /// Investor home: portfolio tracking, not browsing (see `MarketBrowseView`).
 struct InvestorDashboardView: View {
     @Environment(AuthService.self) private var auth
@@ -96,7 +83,7 @@ struct InvestorDashboardView: View {
                         emptyExploreCard
                     } else {
                         topRecipientsSection
-                        paymentScheduleSection
+                        ongoingListingsSection
                     }
                 }
                 .padding(.horizontal, AppTheme.screenPadding)
@@ -159,27 +146,11 @@ struct InvestorDashboardView: View {
                 .foregroundStyle(Color.secondary)
                 .tracking(0.5)
 
-            HStack(alignment: .center, spacing: 12) {
-                Text("Rs. \(formatAmount(totalLiability))")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(dashboardPink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .center, spacing: 4) {
-                    Text("+Rs. \(formatThousandsK(totalProjectedInterest))")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dashboardPink)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(dashboardLightPink.opacity(0.55), in: Capsule())
-                    Text("Value Over Time")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Rs. \(formatAmount(totalLiability))")
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(dashboardPink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
@@ -226,12 +197,17 @@ struct InvestorDashboardView: View {
         ) {
             statCard(title: "TOTAL INVESTED", value: "Rs. \(formatAmount(totalInvestedAllTime))", valueColor: .black)
             statCard(title: "RETURNS", value: "Rs. \(formatAmount(totalReturnsReceived))", valueColor: dashboardPink)
-            statCard(title: "ACTIVE INVESTMENTS", value: "\(activeInvestmentsCount)", valueColor: .black)
+            statCard(
+                title: "PROFITS COLLECTED",
+                value: "Rs. \(formatAmount(completedProfitsCollected))",
+                valueColor: .black,
+                subtitle: "Active investments: \(activeInvestmentsCount)"
+            )
             statCard(title: "PENDING REQUESTS", value: "\(pendingRequestsCount)", valueColor: dashboardPink)
         }
     }
 
-    private func statCard(title: String, value: String, valueColor: Color) -> some View {
+    private func statCard(title: String, value: String, valueColor: Color, subtitle: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
@@ -242,6 +218,13 @@ struct InvestorDashboardView: View {
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
         .padding(.horizontal, 14)
@@ -495,66 +478,67 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Payment schedule
+    // MARK: - Ongoing listings
 
     @ViewBuilder
-    private var paymentScheduleSection: some View {
-        if !paymentScheduleItems.isEmpty {
+    private var ongoingListingsSection: some View {
+        if !ongoingListings.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Payment schedule")
+                Text("Your listings")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(.black)
 
                 VStack(spacing: 10) {
-                    ForEach(paymentScheduleItems) { item in
-                        paymentScheduleRow(item)
+                    ForEach(ongoingListings) { row in
+                        if let oppId = row.opportunityId, !oppId.isEmpty {
+                            NavigationLink {
+                                OpportunityDetailView(opportunityId: oppId)
+                            } label: {
+                                ongoingListingRow(row)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
         }
     }
 
-    private func paymentScheduleRow(_ item: PaymentScheduleItem) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+    private func ongoingListingRow(_ row: InvestmentListing) -> some View {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
+                Text(row.opportunityTitle.isEmpty ? "Investment" : row.opportunityTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.black)
-                    .lineLimit(1)
-                Text(scheduleDateLabel(item.dueDate))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if let next = row.nextOpenLoanInstallment {
+                    Text("Next: \(scheduleDateLabel(next.dueDate)) · LKR \(formatAmount(next.totalDue))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(row.lifecycleDisplayTitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-
             Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("LKR \(formatAmount(item.amount))")
+            VStack(alignment: .trailing, spacing: 6) {
+                Text("LKR \(formatAmount(row.effectiveAmount))")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(dashboardPink)
-                paymentStatusPill(item.status)
+                Text(row.lifecycleDisplayTitle)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
-    @ViewBuilder
-    private func paymentStatusPill(_ status: PaymentScheduleStatus) -> some View {
-        switch status {
-        case .upcoming(let months):
-            Text(months <= 1 ? "In 1 Month" : "In \(months) Months")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(dashboardPink)
-        case .done:
-            Text("Done")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(dashboardPink, in: Capsule())
-        }
     }
 
     // MARK: - Empty state
@@ -616,7 +600,7 @@ struct InvestorDashboardView: View {
     }
 
     private func principalAndProjectedGain(for inv: InvestmentListing) -> (principal: Double, gain: Double) {
-        let principal = inv.investmentAmount
+        let principal = inv.effectiveAmount
         let projected = InvestorPortfolioMetrics.projectedMaturityValue(for: inv)
         return (principal, max(0, projected - principal))
     }
@@ -707,6 +691,14 @@ struct InvestorDashboardView: View {
 
     private var activeInvestmentsCount: Int {
         InvestorPortfolioMetrics.activeDealsCount(investments)
+    }
+
+    private var completedProfitsCollected: Double {
+        let completedRows = InvestorPortfolioMetrics.rowsForCompletedTab(investments)
+        return completedRows.reduce(0) { total, inv in
+            let returned = InvestorPortfolioMetrics.returnedValue(for: inv)
+            return total + max(0, returned - inv.effectiveAmount)
+        }
     }
 
     private var pendingRequestsCount: Int {
@@ -820,7 +812,7 @@ struct InvestorDashboardView: View {
             guard let sid = inv.seekerId, !sid.isEmpty else { continue }
             let date = inv.acceptedAt ?? inv.createdAt ?? Date()
             var entry = totals[sid] ?? (0, 0, date)
-            entry.amount += inv.investmentAmount
+            entry.amount += inv.effectiveAmount
             entry.count += 1
             entry.earliest = min(entry.earliest, date)
             totals[sid] = entry
@@ -846,29 +838,10 @@ struct InvestorDashboardView: View {
         }
     }
 
-    private var paymentScheduleItems: [PaymentScheduleItem] {
-        var rows: [PaymentScheduleItem] = []
-        let now = Date()
-
-        for inv in investments {
-            guard inv.investmentType == .loan, inv.isLoanWithSchedule else { continue }
-            for (idx, inst) in inv.loanInstallments.enumerated() {
-                let title = inv.opportunityTitle.isEmpty ? "Loan installment" : "\(inv.opportunityTitle) Payout"
-                let id = "\(inv.id)-\(idx)"
-                let amount = inst.totalDue
-                if inst.status == .confirmed_paid {
-                    rows.append(PaymentScheduleItem(id: id, title: title, dueDate: inst.dueDate, amount: amount, status: .done))
-                } else {
-                    let months = monthsBetween(now, inst.dueDate)
-                    if months >= 0 {
-                        rows.append(PaymentScheduleItem(id: id, title: title, dueDate: inst.dueDate, amount: amount, status: .upcoming(monthsAway: months)))
-                    }
-                }
-            }
-        }
-
-        let sorted = rows.sorted { $0.dueDate < $1.dueDate }
-        return Array(sorted.prefix(6))
+    private var ongoingListings: [InvestmentListing] {
+        investments
+            .filter { InvestorPortfolioMetrics.isOngoingDeal($0) }
+            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
     // MARK: - Loading

@@ -14,6 +14,7 @@ enum LoanRepaymentCalendarSync {
     private static let milestonePersistenceKey = "investtrust.milestoneCalendarEventIds.v1"
     private static let preferenceEnabledKey = "investtrust.calendarSyncEnabled.v1"
     private static let preferenceDecidedKey = "investtrust.calendarSyncDecided.v1"
+    private static let oneTimeCleanupKey = "investtrust.calendarOneTimeCleanup.v1"
 
     /// Replaces any previously synced events for this investment, then adds one all-day event per unpaid installment.
     static func replaceInstallmentReminders(
@@ -146,6 +147,8 @@ enum LoanRepaymentCalendarSync {
         else { return }
         guard investment.agreementStatus == .active else { return }
         guard let opportunity else { return }
+        guard await ensureCalendarAccess() else { return }
+        performOneTimeCleanupIfNeeded()
 
         if investment.investmentType == .loan, !investment.loanInstallments.isEmpty {
             await replaceInstallmentReminders(
@@ -193,6 +196,14 @@ enum LoanRepaymentCalendarSync {
         saveMilestoneIdMap([:])
     }
 
+    private static func performOneTimeCleanupIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: oneTimeCleanupKey) else { return }
+        clearAllReminders()
+        removeAllInvesttrustEventsFromCalendar()
+        defaults.set(true, forKey: oneTimeCleanupKey)
+    }
+
     static var hasCalendarSyncPreference: Bool {
         UserDefaults.standard.bool(forKey: preferenceDecidedKey)
     }
@@ -219,6 +230,8 @@ enum LoanRepaymentCalendarSync {
         guard let uid = currentUserId,
               uid == investment.investorId || uid == investment.seekerId
         else { return }
+        guard await ensureCalendarAccess() else { return }
+        performOneTimeCleanupIfNeeded()
 
         await replaceInstallmentReminders(
             investmentId: investment.id,
@@ -258,6 +271,23 @@ enum LoanRepaymentCalendarSync {
         @unknown default:
             return false
         }
+    }
+
+    private static func removeAllInvesttrustEventsFromCalendar() {
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .year, value: -10, to: Date()) ?? Date.distantPast
+        let end = cal.date(byAdding: .year, value: 10, to: Date()) ?? Date.distantFuture
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let matches = store.events(matching: predicate).filter { event in
+            let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let notes = (event.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return title.contains("investtrust") || notes.contains("investtrust")
+        }
+        for event in matches {
+            try? store.remove(event, span: .thisEvent)
+        }
+        saveRepaymentIdMap([:])
+        saveMilestoneIdMap([:])
     }
 
     // MARK: - Persistence

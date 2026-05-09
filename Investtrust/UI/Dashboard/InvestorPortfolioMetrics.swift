@@ -56,13 +56,13 @@ enum InvestorPortfolioMetrics {
     static func totalInvestedInBook(_ rows: [InvestmentListing]) -> Double {
         rows.reduce(0) { sum, r in
             guard isOngoingDeal(r) else { return sum }
-            return sum + r.investmentAmount
+            return sum + r.effectiveAmount
         }
     }
 
     static func totalPendingAmount(_ rows: [InvestmentListing]) -> Double {
         rows.reduce(0) { sum, r in
-            r.status.lowercased() == "pending" ? sum + r.investmentAmount : sum
+            r.status.lowercased() == "pending" ? sum + r.effectiveAmount : sum
         }
     }
 
@@ -87,7 +87,7 @@ enum InvestorPortfolioMetrics {
             if ["pending", "declined", "rejected", "cancelled", "withdrawn"].contains(s) {
                 return sum
             }
-            return sum + r.investmentAmount
+            return sum + r.effectiveAmount
         }
     }
 
@@ -182,11 +182,7 @@ enum InvestorPortfolioMetrics {
         switch row.investmentType {
         case .loan:
             return loanProgress(row)
-        case .revenue_share:
-            return revenueShareProgress(row)
-        case .project:
-            return projectProgress(row)
-        case .equity, .custom:
+        case .equity:
             return 0.45
         }
     }
@@ -199,20 +195,11 @@ enum InvestorPortfolioMetrics {
             return min(1, max(0, Double(done) / Double(n)))
         }
         guard let start = row.acceptedAt ?? row.createdAt,
-              let months = row.finalTimelineMonths, months > 0 else { return 0.35 }
+              let months = row.effectiveFinalTimelineMonths, months > 0 else { return 0.35 }
         let end = Calendar.current.date(byAdding: .month, value: months, to: start) ?? start
         let total = max(end.timeIntervalSince(start), 1)
         let elapsed = Date().timeIntervalSince(start)
         return min(1, max(0, elapsed / total))
-    }
-
-    private static func revenueShareProgress(_ row: InvestmentListing) -> Double {
-        let target = max(row.investmentAmount * 1.25, 1)
-        return min(1, max(0, row.receivedAmount / target))
-    }
-
-    private static func projectProgress(_ row: InvestmentListing) -> Double {
-        loanProgress(row)
     }
 
     // MARK: - Upcoming (projected for loans)
@@ -227,11 +214,7 @@ enum InvestorPortfolioMetrics {
             switch r.investmentType {
             case .loan:
                 out.append(contentsOf: loanSchedule(r, horizon: horizon))
-            case .revenue_share:
-                if let p = revenueShareNext(r, horizon: horizon) {
-                    out.append(p)
-                }
-            default:
+            case .equity:
                 break
             }
         }
@@ -257,8 +240,8 @@ enum InvestorPortfolioMetrics {
                 }
         }
         guard let start = r.acceptedAt ?? r.createdAt,
-              let months = r.finalTimelineMonths, months > 0 else { return [] }
-        let principal = r.investmentAmount
+              let months = r.effectiveFinalTimelineMonths, months > 0 else { return [] }
+        let principal = r.effectiveAmount
         let totalDue = projectedMaturityValue(for: r)
         let interestPortion = max(0, totalDue - principal)
         let monthly = interestPortion / Double(max(months, 1)) + principal / Double(max(months, 1))
@@ -296,7 +279,7 @@ enum InvestorPortfolioMetrics {
         }
         guard let start = r.acceptedAt ?? r.createdAt else { return nil }
         guard let next = Calendar.current.date(byAdding: .month, value: 1, to: start), next <= horizon else { return nil }
-        let guess = max(r.investmentAmount * 0.05, 1)
+        let guess = max(r.effectiveAmount * 0.05, 1)
         return UpcomingPayment(
             date: max(next, Date()),
             amount: guess,
@@ -320,7 +303,7 @@ enum InvestorPortfolioMetrics {
                 let s = r.status.lowercased()
                 if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) { return sum }
                 guard isOngoingDeal(r) else { return sum }
-                return sum + r.investmentAmount
+                return sum + r.effectiveAmount
             }
             let returned = rows.reduce(0.0) { sum, r in
                 guard (r.createdAt ?? now) <= monthEnd else { return sum }
@@ -334,9 +317,9 @@ enum InvestorPortfolioMetrics {
     // MARK: - Helpers
 
     static func projectedMaturityValue(for r: InvestmentListing) -> Double {
-        let p = r.investmentAmount
-        guard let months = r.finalTimelineMonths, months > 0 else { return p }
-        let rate = r.finalInterestRate ?? 0
+        let p = r.effectiveAmount
+        guard let months = r.effectiveFinalTimelineMonths, months > 0 else { return p }
+        let rate = r.effectiveFinalInterestRate ?? 0
         let years = Double(months) / 12
         return p + p * (rate / 100) * years
     }

@@ -42,23 +42,18 @@ struct InvestmentOfferComposerForm: View {
                     let cap = max(1, selected.maximumInvestors ?? 1)
                     let fixedAmount = Self.offerAmountForOpportunity(selected)
                     let multi = cap > 1
-                    let showRateField = selected.investmentType == .loan || selected.investmentType == .revenue_share || selected.investmentType == .equity
-                    let showTimelineField = selected.investmentType != .custom
+                    let showRateField = selected.investmentType == .loan || selected.investmentType == .equity
+                    let showTimelineField = true
                     let rateLabel: String = {
                         switch selected.investmentType {
                         case .loan: return "Interest rate (%)"
-                        case .revenue_share: return "Revenue share (%)"
                         case .equity: return "Equity share (%)"
-                        case .project, .custom: return "Rate (%)"
                         }
                     }()
                     let timelineLabel: String = {
                         switch selected.investmentType {
                         case .loan: return "Repayment timeline (months)"
-                        case .revenue_share: return "Duration (months)"
                         case .equity: return "ROI timeline (months)"
-                        case .project: return "Completion window (months)"
-                        case .custom: return "Timeline (months)"
                         }
                     }()
                     Section("Offer terms") {

@@ -128,7 +128,7 @@ struct SettingsContentView: View {
 
             Spacer(minLength: 8)
 
-            profileSwitchButton
+            profileSwitchControl
         }
         .padding(.vertical, 4)
     }
@@ -185,23 +185,37 @@ struct SettingsContentView: View {
         }
     }
 
-    private var profileSwitchButton: some View {
-        Button {
-            toggleActiveProfile()
-        } label: {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(auth.accentColor)
-                .rotationEffect(.degrees(profileSwitchRotationDegrees))
-                .frame(width: 44, height: 44)
-                .background(Color(.tertiarySystemFill), in: Circle())
+    private var currentRoleTitle: String {
+        auth.activeProfile == .investor ? "Investor" : "Opportunity builder"
+    }
+
+    private var nextRoleTitle: String {
+        auth.activeProfile == .investor ? "Opportunity builder" : "Investor"
+    }
+
+    private var profileSwitchControl: some View {
+        VStack(spacing: 6) {
+            Button {
+                toggleActiveProfile()
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(auth.accentColor)
+                    .rotationEffect(.degrees(profileSwitchRotationDegrees))
+                    .frame(width: 44, height: 44)
+                    .background(Color(.tertiarySystemFill), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSwitchProfile)
+            .opacity(canSwitchProfile ? 1 : 0.4)
+            .accessibilityLabel(switchAccessibilityLabel)
+            .accessibilityHint("Double tap to switch between Investor and Opportunity builder.")
+            .accessibilityAddTraits(.isButton)
+
+            Text(auth.activeProfile == .investor ? "Investor" : "Seeker")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(auth.activeProfile == .investor ? Color.red : Color.blue)
         }
-        .buttonStyle(.plain)
-        .disabled(!canSwitchProfile)
-        .opacity(canSwitchProfile ? 1 : 0.4)
-        .accessibilityLabel(switchAccessibilityLabel)
-        .accessibilityHint("Double tap to switch between Investor and Opportunity builder.")
-        .accessibilityAddTraits(.isButton)
     }
 
     private var canSwitchProfile: Bool {
