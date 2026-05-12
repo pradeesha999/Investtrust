@@ -373,10 +373,10 @@ final class InvestmentService {
         guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
-        // Hardcoded negotiated terms for offers (LKR 200,000 · 30% · 2 months). Overrides sheet/chat input.
-        let resolvedAmount: Double = 200_000
-        let resolvedRate: Double = 30
-        let resolvedMonths: Int = 2
+        let resolvedAmount: Double = proposedAmount ?? opp.amountRequested
+        let resolvedRate: Double = proposedInterestRate
+        let resolvedMonths: Int = proposedTimelineMonths
+        print("[OFFER] service.createOrUpdateOfferRequest → opp=\(opp.id) inv=\(investorId) amount=\(resolvedAmount) rate=\(resolvedRate) months=\(resolvedMonths)")
         guard resolvedMonths > 0 else {
             throw InvestmentServiceError.invalidOfferTerms
         }
@@ -527,6 +527,7 @@ final class InvestmentService {
         guard let finalData = snap.data(), let row = InvestmentListing(id: ref.documentID, data: finalData) else {
             throw InvestmentServiceError.notFound
         }
+        print("[OFFER] service wrote doc id=\(ref.documentID) status=\(row.status) requestKind=\(row.requestKind.rawValue) offered=\(row.offeredAmount ?? -1)/\(row.offeredInterestRate ?? -1)/\(row.offeredTimelineMonths ?? -1)")
         return row
     }
 

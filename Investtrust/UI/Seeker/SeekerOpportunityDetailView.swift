@@ -931,7 +931,24 @@ struct SeekerOpportunityDetailView: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") { showReviewRequestsSheet = false }
                     }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            Task { await loadInvestments() }
+                        } label: {
+                            if isLoadingInvestments {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                        }
+                        .disabled(isLoadingInvestments)
+                        .accessibilityLabel("Refresh requests")
+                    }
                 }
+                // Refresh whenever the sheet appears so a freshly-sent offer is visible
+                // without dismissing/reopening or pulling-to-refresh.
+                .task { await loadInvestments() }
+                .refreshable { await loadInvestments() }
             }
         }
         .alert("Sync due dates to Calendar?", isPresented: $showCalendarSyncPrompt) {
@@ -1931,6 +1948,10 @@ struct SeekerOpportunityDetailView: View {
             let rows = try await investmentService.fetchInvestmentsForOpportunity(opportunityId: opportunity.id)
             // Revoked requests are deleted in Firestore; hide legacy `withdrawn` rows so the sheet doesn’t show stuck cards without actions.
             let visible = rows.filter { $0.status.lowercased() != "withdrawn" }
+            print("[OFFER] seeker.loadInvestments opp=\(opportunity.id) total=\(rows.count) visible=\(visible.count)")
+            for row in visible {
+                print("  • inv=\(row.id) inv=\(row.investorId ?? "nil") status=\(row.status) requestKind=\(row.requestKind.rawValue) offered=\(row.offeredAmount ?? -1)/\(row.offeredInterestRate ?? -1)/\(row.offeredTimelineMonths ?? -1) effective=\(row.effectiveAmount)/\(row.effectiveFinalInterestRate ?? -1)/\(row.effectiveFinalTimelineMonths ?? -1)")
+            }
             investments = visible
             investorProfilesById = await loadInvestorProfiles(for: visible)
             if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,

@@ -1643,7 +1643,10 @@ struct OpportunityDetailView: View {
         guard profileReadyForInvesting else { return false }
         let status = myLatestRequest?.status.lowercased() ?? ""
         if let req = myLatestRequest, req.agreementStatus == .pending_signatures { return false }
-        if status == "pending" || status == "accepted" || status == "active" || status == "completed" {
+        // Allow re-offering while a previous request/offer is still `pending`: the service
+        // supersedes the old row so the seeker sees the latest negotiated terms. Without
+        // this, after sending one request the investor can never update their offer.
+        if status == "accepted" || status == "active" || status == "completed" {
             return false
         }
         return true
@@ -1683,22 +1686,24 @@ struct OpportunityDetailView: View {
             snapshotAmountText = Self.lkrText(created.investmentAmount)
             snapshotRateText = created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
             snapshotTimelineText = created.finalTimelineMonths.map { "\($0) months" } ?? "—"
-        case .negotiatedOffer(_, _, _, let note):
-            // Offer terms are fixed server-side (LKR 200,000 · 30% · 2 mo); chat snapshot matches persisted row.
+        case .negotiatedOffer(let amount, let rate, let months, let note):
+            // Forward the investor's actual offer values; do not substitute listing defaults or hard-coded numbers.
+            print("[OFFER] submit → opportunityId=\(opportunity.id) amount=\(amount ?? -1) rate=\(rate) months=\(months) note=\(note)")
             created = try await investmentService.createOrUpdateOfferRequest(
                 opportunity: opportunity,
                 investorId: uid,
-                proposedAmount: 200_000,
-                proposedInterestRate: 30,
-                proposedTimelineMonths: 2,
+                proposedAmount: amount,
+                proposedInterestRate: rate,
+                proposedTimelineMonths: months,
                 description: note,
                 source: .detail_sheet
             )
+            print("[OFFER] persisted → invId=\(created.id) requestKind=\(created.requestKind.rawValue) offered=\(created.offeredAmount ?? -1)/\(created.offeredInterestRate ?? -1)/\(created.offeredTimelineMonths ?? -1) effective=\(created.effectiveAmount)")
             requestKindLabel = "Offer request"
             noteText = note.isEmpty ? "Negotiated offer from listing." : note
             snapshotAmountText = Self.lkrText(created.effectiveAmount)
-            snapshotRateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "30.00%"
-            snapshotTimelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "2 months"
+            snapshotRateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
+            snapshotTimelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "—"
         }
         let chatId = try await chatService.getOrCreateChat(
             opportunityId: opportunity.id,

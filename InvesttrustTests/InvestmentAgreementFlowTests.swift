@@ -104,7 +104,9 @@ final class InvestmentAgreementFlowTests: XCTestCase {
             investorSignatureImageURL: nil,
             seekerSignatureImageURL: nil,
             principalSentByInvestorAt: nil,
-            principalReceivedBySeekerAt: nil
+            principalReceivedBySeekerAt: nil,
+            principalInvestorProofImageURLs: [],
+            principalSeekerProofImageURLs: []
         )
     }
 }

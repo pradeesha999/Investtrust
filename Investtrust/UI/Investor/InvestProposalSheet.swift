@@ -192,8 +192,7 @@ struct InvestProposalSheet: View {
 
     private var canSubmit: Bool {
         if opportunity.isNegotiable, effectiveRequestMode == .offer {
-            // Offer uses fixed terms server-side; form fields are informational only.
-            return true
+            return parsedAmount != nil && parsedInterestRate != nil && parsedTimelineMonths != nil
         }
         if opportunity.isNegotiable {
             return true
@@ -228,10 +227,13 @@ struct InvestProposalSheet: View {
 
     private var confirmationMessage: String {
         if effectiveRequestMode == .offer {
+            let amt = parsedAmount ?? 0
+            let rate = parsedInterestRate ?? 0
+            let tm = parsedTimelineMonths ?? 0
             return """
-            Amount: LKR \(Self.formatLKR(200_000))
-            Rate: 30.00%
-            Timeline: 2 months
+            Amount: LKR \(Self.formatLKR(amt))
+            Rate: \(String(format: "%.2f", rate))%
+            Timeline: \(tm) months
             """
         }
         return "You are requesting to invest on the listed terms for this opportunity."
@@ -294,11 +296,14 @@ struct InvestProposalSheet: View {
         defer { isSubmitting = false }
         do {
             if opportunity.isNegotiable, effectiveRequestMode == .offer {
-                // Hardcoded offer terms (matches InvestmentService.createOrUpdateOfferRequest).
+                guard let amt = parsedAmount, let rate = parsedInterestRate, let tm = parsedTimelineMonths else {
+                    submitError = "Please enter valid offer terms."
+                    return
+                }
                 try await onSubmit(.negotiatedOffer(
-                    amount: 200_000,
-                    interestRate: 30,
-                    timelineMonths: 2,
+                    amount: amt,
+                    interestRate: rate,
+                    timelineMonths: tm,
                     note: offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
             } else {
