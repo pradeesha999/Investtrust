@@ -7,3 +7,19 @@ npm-debug.log*
 .derivedData/
 google-cloud-sdk/
 *.tar.gz
+
+# Xcode (user-specific; avoid merge noise — if already tracked, run once:
+#   git rm -r --cached Investtrust.xcodeproj/xcuserdata
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager / build
+.build/
+.swiftpm/
+DerivedData/
