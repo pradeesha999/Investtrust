@@ -158,7 +158,7 @@ struct SeekerDashboardView: View {
                                 ForEach(filteredDisplayedOpportunities) { item in
                                     NavigationLink {
                                         SeekerOpportunityDetailView(
-                                            opportunity: item,
+                                            opportunity: item.overlayingAcceptedIfPresent(investments: seekerInvestments),
                                             onMutate: {
                                                 Task { await loadMyOpportunities() }
                                             },
@@ -356,6 +356,7 @@ struct SeekerDashboardView: View {
     }
 
     private func seekerListingRow(_ item: OpportunityListing) -> some View {
+        let display = item.overlayingAcceptedIfPresent(investments: seekerInvestments)
         let statusText = item.status.capitalized
         let pendingRequests = pendingRequestCount(for: item.id)
         return VStack(alignment: .leading, spacing: 12) {
@@ -383,9 +384,9 @@ struct SeekerDashboardView: View {
                     }
                 }
                 Spacer(minLength: 8)
-                if item.interestRate > 0 {
+                if display.interestRate > 0 {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(formatRate(item.interestRate))%")
+                        Text("\(formatRate(display.interestRate))%")
                             .font(.title3.weight(.bold))
                             .foregroundStyle(auth.accentColor)
                         Text("Interest")
@@ -420,7 +421,7 @@ struct SeekerDashboardView: View {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(item.formattedAmountLKR)")
+                    Text("LKR \(display.formattedAmountLKR)")
                         .font(.subheadline.weight(.semibold))
                 }
                 Spacer(minLength: 0)
@@ -428,7 +429,7 @@ struct SeekerDashboardView: View {
                     Text("Final return")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(projectedFinalReturnText(for: item))
+                    Text(projectedFinalReturnText(for: display))
                         .font(.caption.weight(.semibold))
                 }
                 Spacer(minLength: 0)

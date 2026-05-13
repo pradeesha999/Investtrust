@@ -47,12 +47,15 @@ final class InAppNotificationService {
             }
             if inv.investmentType == .loan, inv.fundingStatus == .awaiting_disbursement, inv.principalSentByInvestorAt == nil {
                 let needsProof = inv.principalInvestorProofImageURLs.isEmpty
+                let seekerReported = inv.principalSeekerNotReceivedReason != nil
                 notes.append(
                     InAppNotification(
-                        id: "investor-principal-\(inv.id)",
-                        title: needsProof ? "Upload principal proof" : "Mark principal sent",
-                        message: "\(safeTitle(inv)) is waiting for principal disbursement.",
-                        createdAt: inv.updatedFallbackDate,
+                        id: seekerReported ? "investor-principal-retry-\(inv.id)" : "investor-principal-\(inv.id)",
+                        title: seekerReported ? "Seeker reported principal not received" : (needsProof ? "Upload principal proof" : "Mark principal sent"),
+                        message: seekerReported
+                            ? "\(safeTitle(inv)): upload new transfer proof and mark sent again."
+                            : "\(safeTitle(inv)) is waiting for principal disbursement.",
+                        createdAt: inv.principalSeekerNotReceivedAt ?? inv.updatedFallbackDate,
                         kind: .actionRequired,
                         route: .actionOngoing
                     )

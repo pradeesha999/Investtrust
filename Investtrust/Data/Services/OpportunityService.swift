@@ -240,6 +240,16 @@ final class OpportunityService {
         return nil
     }
 
+    /// Same as `fetchOpportunity` strategy 1, but always reads from the **server** so UI refreshes after
+    /// local writes (e.g. accepted offer terms) are not stuck on persistence-cache snapshots.
+    func fetchOpportunityFromServer(opportunityId: String) async throws -> OpportunityListing? {
+        let trimmed = opportunityId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let snapshot = try await db.collection("opportunities").document(trimmed).getDocument(source: .server)
+        guard snapshot.exists, let data = snapshot.data() else { return nil }
+        return OpportunityListing(documentID: trimmed, data: data)
+    }
+
     func fetchMarketListings(limit: Int = 50) async throws -> [OpportunityListing] {
         // Fetch extra rows, then drop listings that already have enough active/pending investors
         // (same slot rules as `InvestmentListing.blocksSeekerFromManagingOpportunity` + `maximumInvestors`).
@@ -384,6 +394,64 @@ final class OpportunityService {
             throw NSError(domain: "Investtrust", code: 500, userInfo: [NSLocalizedDescriptionKey: "Could not read listing after update."])
         }
         return OpportunityListing(documentID: opportunityId, data: merged)
+    }
+
+    /// After the seeker accepts an investor’s pending request/offer, overwrite the public listing’s
+    /// funding amount and core terms so browse/detail views match the agreed deal (not the original defaults).
+    func applyAcceptedInvestmentTermsToListing(
+        opportunity: OpportunityListing,
+        ownerId: String,
+        acceptedAmount: Double,
+        acceptedRate: Double,
+        acceptedTimelineMonths: Int
+    ) async throws {
+        guard opportunity.ownerId == ownerId else {
+            throw OpportunityServiceError.notOwner
+        }
+        guard acceptedAmount > 0 else {
+            throw OpportunityServiceError.invalidAmount
+        }
+        guard acceptedTimelineMonths > 0 else {
+            throw OpportunityServiceError.invalidTimeline
+        }
+
+        let minimumInvestment = Self.storedMinimumInvestment(
+            amountRequested: acceptedAmount,
+            maxInvestors: opportunity.maximumInvestors
+        )
+
+        var terms = opportunity.terms
+        switch opportunity.investmentType {
+        case .loan:
+            guard acceptedRate >= 0 else { throw OpportunityServiceError.invalidInterestRate }
+            terms.interestRate = acceptedRate
+            terms.repaymentTimelineMonths = acceptedTimelineMonths
+        case .equity:
+            guard acceptedRate > 0, acceptedRate <= 100 else { throw OpportunityServiceError.invalidTerms }
+            terms.equityPercentage = acceptedRate
+            terms.equityTimelineMonths = acceptedTimelineMonths
+        }
+
+        let termsMap = OpportunityFirestoreCoding.termsDictionary(from: terms, type: opportunity.investmentType)
+        let now = Date()
+        var fields: [String: Any] = [
+            "amountRequested": acceptedAmount,
+            "minimumInvestment": minimumInvestment,
+            "terms": termsMap,
+            "updatedAt": Timestamp(date: now)
+        ]
+        if opportunity.investmentType == .loan {
+            fields["interestRate"] = acceptedRate
+            fields["repaymentTimelineMonths"] = acceptedTimelineMonths
+        } else {
+            fields["interestRate"] = FieldValue.delete()
+            fields["repaymentTimelineMonths"] = FieldValue.delete()
+        }
+
+        let ref = db.collection("opportunities").document(opportunity.id)
+        try await withTimeout(seconds: 12) {
+            try await ref.updateData(fields)
+        }
     }
 
     /// Deletes the opportunity and related `investments` rows for this listing. Blocked while any active (non-declined) request exists.

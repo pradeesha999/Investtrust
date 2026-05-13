@@ -14,7 +14,6 @@ struct SeekerLoanPaymentConfirmBlock: View {
     @State private var busy = false
     @State private var actionError: String?
     @State private var showDocCamera = false
-    @State private var showLibrarySheet = false
     @State private var libraryItem: PhotosPickerItem?
     @State private var previewProofURL: String?
 
@@ -41,24 +40,17 @@ struct SeekerLoanPaymentConfirmBlock: View {
         Group {
             if let row, isSeeker, investment.loanRepaymentsUnlocked, row.status != .confirmed_paid {
                 VStack(alignment: .leading, spacing: 12) {
-                    if installmentNo == nextOpenInstallmentNo {
-                        Label("Current cycle", systemImage: "circle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(auth.accentColor)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(auth.accentColor.opacity(0.12), in: Capsule())
-                    } else {
-                        Label("Locked: complete installment #\(nextOpenInstallmentNo ?? installmentNo) first", systemImage: "lock.fill")
+                    if installmentNo != nextOpenInstallmentNo {
+                        Label("Complete installment #\(nextOpenInstallmentNo ?? installmentNo) first", systemImage: "lock.fill")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.orange)
                     }
 
                     if !row.seekerProofImageURLs.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Your proof")
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Your slip")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.tertiary)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
                                     ForEach(row.seekerProofImageURLs, id: \.self) { url in
@@ -76,7 +68,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     }
                     if row.status == .disputed, let reason = row.latestDisputeReason, !reason.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Investor reported not received")
+                            Text("Issue from investor")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.orange)
                             Text(reason)
@@ -88,6 +80,39 @@ struct SeekerLoanPaymentConfirmBlock: View {
                         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
                     }
 
+                    HStack(spacing: 10) {
+                        PhotosPicker(selection: $libraryItem, matching: .images) {
+                            Label("Photos", systemImage: "photo")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(auth.accentColor)
+                        .disabled(busy || installmentNo != nextOpenInstallmentNo)
+                        .onChange(of: libraryItem) { _, item in
+                            guard let item else { return }
+                            Task {
+                                await handlePickedPhoto(item: item)
+                                await MainActor.run { libraryItem = nil }
+                            }
+                        }
+
+                        if VNDocumentCameraViewController.isSupported {
+                            Button {
+                                showDocCamera = true
+                            } label: {
+                                Image(systemName: "doc.viewfinder")
+                                    .font(.title3)
+                                    .frame(width: 52, height: 48)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(auth.accentColor)
+                            .accessibilityLabel("Scan slip")
+                            .disabled(busy || installmentNo != nextOpenInstallmentNo)
+                        }
+                    }
+
                     Button {
                         Task { await markReceived() }
                     } label: {
@@ -97,7 +122,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                             } else {
-                                Text("Confirm payment sent")
+                                Text("I sent this payment")
                                     .font(.subheadline.weight(.semibold))
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
@@ -107,35 +132,6 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     .buttonStyle(.borderedProminent)
                     .tint(auth.accentColor)
                     .disabled(busy || installmentNo != nextOpenInstallmentNo || row.seekerProofImageURLs.isEmpty)
-
-                    Button {
-                        showLibrarySheet = true
-                    } label: {
-                        Label("Upload proof from photos", systemImage: "photo")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(auth.accentColor)
-                    .disabled(busy || installmentNo != nextOpenInstallmentNo)
-
-                    if VNDocumentCameraViewController.isSupported {
-                        Button {
-                            showDocCamera = true
-                        } label: {
-                            Label("Scan proof with camera", systemImage: "doc.viewfinder")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(auth.accentColor)
-                        .disabled(busy || installmentNo != nextOpenInstallmentNo)
-                    }
-                }
-                .sheet(isPresented: $showLibrarySheet) {
-                    libraryPickerSheet
                 }
                 .sheet(isPresented: Binding(
                     get: { previewProofURL != nil },
@@ -145,8 +141,16 @@ struct SeekerLoanPaymentConfirmBlock: View {
                         ZStack {
                             Color.black.ignoresSafeArea()
                             if let previewProofURL {
-                                StorageBackedAsyncImage(reference: previewProofURL, height: min(UIScreen.main.bounds.height * 0.72, 560), cornerRadius: 14, feedThumbnail: false)
+                                GeometryReader { geo in
+                                    StorageBackedAsyncImage(
+                                        reference: previewProofURL,
+                                        height: min(geo.size.height * 0.72, 560),
+                                        cornerRadius: 14,
+                                        feedThumbnail: false
+                                    )
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .padding(.horizontal, AppTheme.screenPadding)
+                                }
                             }
                         }
                         .navigationTitle("Proof image")
@@ -163,40 +167,6 @@ struct SeekerLoanPaymentConfirmBlock: View {
                     Button("OK") { actionError = nil }
                 } message: {
                     Text(actionError ?? "")
-                }
-            }
-        }
-    }
-
-    private var libraryPickerSheet: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                PhotosPicker(selection: $libraryItem, matching: .images) {
-                    Text("Choose from library")
-                        .font(.headline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(auth.accentColor)
-            }
-            .padding(AppTheme.screenPadding)
-            .navigationTitle("Payment slip")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        libraryItem = nil
-                        showLibrarySheet = false
-                    }
-                }
-            }
-            .onChange(of: libraryItem) { _, item in
-                guard let item else { return }
-                showLibrarySheet = false
-                Task {
-                    await handlePickedPhoto(item: item)
-                    await MainActor.run { libraryItem = nil }
                 }
             }
         }

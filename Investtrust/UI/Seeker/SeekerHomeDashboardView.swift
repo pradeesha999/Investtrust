@@ -484,7 +484,7 @@ struct SeekerHomeDashboardView: View {
                             ForEach(dashboardListings) { item in
                                 NavigationLink {
                                     SeekerOpportunityDetailView(
-                                        opportunity: item,
+                                        opportunity: item.overlayingAcceptedIfPresent(investments: seekerInvestments),
                                         onMutate: { Task { await loadHomeData() } },
                                         onAcceptedRequest: { Task { await loadHomeData() } }
                                     )
@@ -1090,7 +1090,7 @@ struct SeekerHomeDashboardView: View {
         if let opp {
             NavigationLink {
                 SeekerOpportunityDetailView(
-                    opportunity: opp,
+                    opportunity: opp.overlayingAcceptedIfPresent(investments: seekerInvestments),
                     onMutate: { Task { await loadHomeData() } },
                     onAcceptedRequest: { Task { await loadHomeData() } }
                 )
@@ -1234,7 +1234,7 @@ struct SeekerHomeDashboardView: View {
                     let n = pendingCount(for: opp.id)
                     NavigationLink {
                         SeekerOpportunityDetailView(
-                            opportunity: opp,
+                            opportunity: opp.overlayingAcceptedIfPresent(investments: seekerInvestments),
                             onMutate: { Task { await loadHomeData() } },
                             onAcceptedRequest: { Task { await loadHomeData() } }
                         )
@@ -1322,6 +1322,7 @@ struct SeekerHomeDashboardView: View {
     }
 
     private func homeListingRow(_ item: OpportunityListing) -> some View {
+        let display = item.overlayingAcceptedIfPresent(investments: seekerInvestments)
         let pending = pendingCount(for: item.id)
         let live = seekerInvestments.contains {
             $0.opportunityId == item.id && ($0.agreementStatus == .active || $0.status.lowercased() == "active")
@@ -1366,7 +1367,7 @@ struct SeekerHomeDashboardView: View {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(item.formattedAmountLKR)")
+                    Text("LKR \(display.formattedAmountLKR)")
                         .font(.caption.weight(.semibold))
                 }
                 Spacer(minLength: 0)
@@ -1374,7 +1375,7 @@ struct SeekerHomeDashboardView: View {
                     Text("Final return")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(projectedFinalReturnText(for: item))
+                    Text(projectedFinalReturnText(for: display))
                         .font(.caption.weight(.semibold))
                 }
                 Spacer(minLength: 0)
@@ -1388,8 +1389,8 @@ struct SeekerHomeDashboardView: View {
                 }
             }
 
-            if !item.termsSummaryLine.isEmpty {
-                Text(item.termsSummaryLine)
+            if !display.termsSummaryLine.isEmpty {
+                Text(display.termsSummaryLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

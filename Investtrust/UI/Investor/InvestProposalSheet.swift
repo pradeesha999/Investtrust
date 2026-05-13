@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Confirms a standard investment request on the listing’s stated terms (no custom amount or checkboxes here—MOA covers legal acceptance).
 struct InvestProposalSheet: View {
@@ -15,15 +16,16 @@ struct InvestProposalSheet: View {
         }
     }
 
-    enum Submission {
-        case standardRequest
-        case negotiatedOffer(amount: Double?, interestRate: Double, timelineMonths: Int, note: String)
-    }
-
     let opportunity: OpportunityListing
-    let onSubmit: (Submission) async throws -> Void
+    let investorId: String
+    /// Called on the main actor after a successful submission + chat card delivery.
+    /// Receives nothing — the parent should refresh its own view state via its own service.
+    let onSubmitted: () -> Void
     private let lockToOfferMode: Bool
     private let lockToStandardMode: Bool
+
+    private let investmentService = InvestmentService()
+    private let chatService = ChatService()
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSubmitting = false
@@ -35,19 +37,25 @@ struct InvestProposalSheet: View {
     @State private var offerRateText = ""
     @State private var offerTimelineText = ""
     @State private var offerNote = ""
+    /// One-shot guard: SwiftUI may run `.onAppear` more than once. Without this, typed values get
+    /// wiped back to listing defaults (so 250k submits as 300k).
+    @State private var didSeedListingDefaults = false
 
     init(
         opportunity: OpportunityListing,
+        investorId: String,
         preferOfferMode: Bool = false,
         lockToOfferMode: Bool = false,
         lockToStandardMode: Bool = false,
-        onSubmit: @escaping (Submission) async throws -> Void
+        onSubmitted: @escaping () -> Void
     ) {
         self.opportunity = opportunity
+        self.investorId = investorId
         self.lockToOfferMode = lockToOfferMode
         self.lockToStandardMode = lockToStandardMode
-        self.onSubmit = onSubmit
-        _requestMode = State(initialValue: preferOfferMode ? .offer : .standard)
+        self.onSubmitted = onSubmitted
+        // Negotiable listings ALWAYS use the offer form. Non-negotiable stay on the standard form.
+        _requestMode = State(initialValue: (preferOfferMode || opportunity.isNegotiable) ? .offer : .standard)
     }
 
     var body: some View {
@@ -59,18 +67,7 @@ struct InvestProposalSheet: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if opportunity.isNegotiable && !lockToOfferMode && !lockToStandardMode {
-                    Section("Choose action") {
-                        Picker("Action", selection: $requestMode) {
-                            ForEach(RequestMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-
-                if opportunity.isNegotiable && effectiveRequestMode == .offer {
+                if opportunity.isNegotiable {
                     Section("Negotiated terms") {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Investment amount (LKR)")
@@ -126,6 +123,7 @@ struct InvestProposalSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Investment request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -158,14 +156,37 @@ struct InvestProposalSheet: View {
             Text(confirmationMessage)
         }
         .onAppear {
-            let cap = max(1, opportunity.maximumInvestors ?? 1)
-            let defaultOfferAmount: Double = cap > 1
-                ? InvestmentService.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
-                : opportunity.amountRequested
-            offerAmountText = Self.formatLKR(defaultOfferAmount)
-            offerRateText = opportunity.interestRate > 0 ? String(format: "%.2f", opportunity.interestRate) : ""
-            offerTimelineText = "\(max(1, opportunity.repaymentTimelineMonths))"
+            guard !didSeedListingDefaults else { return }
+            resetOfferFieldsToListingDefaults()
+            didSeedListingDefaults = true
         }
+    }
+
+    private func listingTicketAmount() -> Double {
+        let cap = max(1, opportunity.maximumInvestors ?? 1)
+        if cap > 1 {
+            return InvestmentService.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+        }
+        return opportunity.amountRequested
+    }
+
+    /// True when parsed offer fields are not the same as the listing (used to avoid losing typed terms if the segmented control was on “Invest now”).
+    private var parsedOfferFieldsDifferFromListing: Bool {
+        guard opportunity.isNegotiable else { return false }
+        guard let amt = parsedAmount, let rate = parsedInterestRate, let tm = parsedTimelineMonths else { return false }
+        let listingAmt = listingTicketAmount()
+        let listingTm = max(1, opportunity.repaymentTimelineMonths)
+        let listingRate = opportunity.interestRate
+        return abs(amt - listingAmt) > 0.01
+            || abs(rate - listingRate) > 0.0001
+            || tm != listingTm
+    }
+
+    private func resetOfferFieldsToListingDefaults() {
+        offerAmountText = Self.formatLKR(listingTicketAmount())
+        offerRateText = opportunity.interestRate > 0 ? String(format: "%.2f", opportunity.interestRate) : ""
+        offerTimelineText = "\(max(1, opportunity.repaymentTimelineMonths))"
+        offerNote = ""
     }
 
     private var introCopy: String {
@@ -291,37 +312,93 @@ struct InvestProposalSheet: View {
     }
 
     private func submit() async {
+        await MainActor.run(resultType: Void.self) {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         submitError = nil
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            if opportunity.isNegotiable, effectiveRequestMode == .offer {
-                guard let amt = parsedAmount, let rate = parsedInterestRate, let tm = parsedTimelineMonths else {
-                    submitError = "Please enter valid offer terms."
-                    return
-                }
-                try await onSubmit(.negotiatedOffer(
-                    amount: amt,
-                    interestRate: rate,
-                    timelineMonths: tm,
-                    note: offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
-                ))
-            } else {
-                guard opportunity.isNegotiable || confirmStandardRequest else {
+            if !opportunity.isNegotiable {
+                guard confirmStandardRequest else {
                     submitError = "Please confirm before sending the request."
                     return
                 }
-                try await onSubmit(.standardRequest)
             }
-            await MainActor.run { dismiss() }
+            let amt = parsedAmount ?? listingTicketAmount()
+            let rate = parsedInterestRate ?? opportunity.interestRate
+            let tm = parsedTimelineMonths ?? max(1, opportunity.repaymentTimelineMonths)
+            guard amt > 0, tm > 0 else {
+                submitError = "Please enter valid offer terms."
+                return
+            }
+            let trimmedNote = offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
+            let negotiated = opportunity.isNegotiable
+
+            print("[OFFER] sheet.submit amt=\(amt) rate=\(rate) months=\(tm) note='\(trimmedNote)' negotiated=\(negotiated)")
+
+            let created = try await investmentService.createOrUpdateOfferRequest(
+                opportunity: opportunity,
+                investorId: investorId,
+                proposedAmount: amt,
+                proposedInterestRate: rate,
+                proposedTimelineMonths: tm,
+                description: trimmedNote,
+                source: .detail_sheet
+            )
+            print("[OFFER] sheet.persisted invId=\(created.id) kind=\(created.requestKind.rawValue) amt=\(created.investmentAmount)")
+
+            let requestKindLabel = negotiated ? "Offer request" : "Investment request"
+            let noteText = trimmedNote.isEmpty
+                ? (negotiated ? "Negotiated offer from listing." : "Default investment request from listing.")
+                : trimmedNote
+            let amountText = Self.lkrFormat(created.effectiveAmount)
+            let rateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
+            let timelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "—"
+
+            let chatId = try await chatService.getOrCreateChat(
+                opportunityId: opportunity.id,
+                seekerId: opportunity.ownerId,
+                investorId: investorId,
+                opportunityTitle: opportunity.title
+            )
+            let snapshot = InvestmentRequestSnapshot(
+                investmentId: created.id,
+                opportunityId: opportunity.id,
+                title: opportunity.title,
+                amountText: amountText,
+                interestRateText: rateText,
+                timelineText: timelineText,
+                note: noteText,
+                requestKindLabel: requestKindLabel
+            )
+            _ = try await chatService.sendInvestmentRequestCard(
+                chatId: chatId,
+                senderId: investorId,
+                snapshot: snapshot
+            )
+
+            await MainActor.run(resultType: Void.self) {
+                onSubmitted()
+                dismiss()
+            }
         } catch {
-            await MainActor.run {
-                if let le = error as? LocalizedError, let d = le.errorDescription {
+            await MainActor.run(resultType: Void.self) {
+                if let le = error as? LocalizedError, let d = le.errorDescription, !d.isEmpty {
                     submitError = d
                 } else {
-                    submitError = (error as NSError).localizedDescription
+                    submitError = FirestoreUserFacingMessage.text(for: error)
                 }
             }
         }
+    }
+
+    private static func lkrFormat(_ value: Double) -> String {
+        let n = NSNumber(value: value)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        let s = f.string(from: n) ?? String(format: "%.2f", value)
+        return "LKR \(s)"
     }
 }

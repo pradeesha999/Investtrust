@@ -30,7 +30,7 @@ struct InvestmentAgreementReviewView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     termsScrollContent
 
-                    if let errorText, !canSign {
+                    if let errorText, !errorText.isEmpty {
                         Text(errorText)
                             .font(.footnote)
                             .foregroundStyle(.red)

@@ -17,7 +17,11 @@ struct InvesttrustApp: App {
     @AppStorage(AppLanguageOption.storageKey()) private var languageRaw: String = AppLanguageOption.system.rawValue
 
     init() {
-        FirebaseApp.configure()
+        // Production: `AppDelegate.init` configures Firebase first (see `AppDelegate.swift`).
+        // Previews / tests without `UIApplicationDelegateAdaptor` still need a configure here.
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure()
+        }
         _authService = State(initialValue: AuthService(userService: UserService()))
     }
 

@@ -98,10 +98,26 @@ final class ChatService {
         return (seeker, investor)
     }
 
+    /// Same two UIDs as on the chat document, in stable order for rules + `array-contains` queries.
+    private func participantIdsForMessages(chatId: String) async throws -> [String] {
+        let snap = try await db.collection("chats").document(chatId).getDocument()
+        guard snap.exists, let data = snap.data() else {
+            throw ChatServiceError.chatNotFound
+        }
+        if let ids = data["participantIds"] as? [String], ids.count >= 2 {
+            return ids
+        }
+        if let seeker = data["seekerId"] as? String, let investor = data["investorId"] as? String {
+            return [seeker, investor]
+        }
+        throw ChatServiceError.chatMissingParticipants
+    }
+
     func sendMessage(chatId: String, senderId: String, text: String) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let participantIds = try await participantIdsForMessages(chatId: chatId)
         let chatRef = db.collection("chats").document(chatId)
         let msgRef = chatRef.collection("messages").document()
 
@@ -111,6 +127,7 @@ final class ChatService {
                 "senderId": senderId,
                 "text": trimmed,
                 "type": "text",
+                "participantIds": participantIds,
                 "createdAt": Timestamp(date: Date())
             ],
             forDocument: msgRef
@@ -135,6 +152,7 @@ final class ChatService {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        let participantIds = try await participantIdsForMessages(chatId: chatId)
         let chatRef = db.collection("chats").document(chatId)
         let inquiryRef = chatRef.collection("messages").document()
         let textRef = chatRef.collection("messages").document()
@@ -153,6 +171,7 @@ final class ChatService {
                 "minTicketText": snapshot.minTicketText,
                 "termsSummary": snapshot.termsSummary,
                 "timelineText": snapshot.timelineText,
+                "participantIds": participantIds,
                 "createdAt": Timestamp(date: now)
             ],
             forDocument: inquiryRef
@@ -162,6 +181,7 @@ final class ChatService {
                 "senderId": senderId,
                 "text": trimmed,
                 "type": "text",
+                "participantIds": participantIds,
                 "createdAt": Timestamp(date: now.addingTimeInterval(0.001))
             ],
             forDocument: textRef
@@ -182,6 +202,7 @@ final class ChatService {
         senderId: String,
         snapshot: InvestmentRequestSnapshot
     ) async throws -> String {
+        let participantIds = try await participantIdsForMessages(chatId: chatId)
         let chatRef = db.collection("chats").document(chatId)
         let msgRef = chatRef.collection("messages").document()
         let now = Date()
@@ -197,6 +218,7 @@ final class ChatService {
             "timelineText": snapshot.timelineText,
             "note": snapshot.note,
             "requestKindLabel": snapshot.requestKindLabel,
+            "participantIds": participantIds,
             "createdAt": Timestamp(date: now)
         ]
         let batch = db.batch()
@@ -218,6 +240,7 @@ final class ChatService {
         senderId: String,
         snapshot: InvestmentOfferSnapshot
     ) async throws -> String {
+        let participantIds = try await participantIdsForMessages(chatId: chatId)
         let chatRef = db.collection("chats").document(chatId)
         let msgRef = chatRef.collection("messages").document()
         let now = Date()
@@ -233,6 +256,7 @@ final class ChatService {
             "timelineText": snapshot.timelineText,
             "descriptionText": snapshot.description,
             "isFixedAmount": snapshot.isFixedAmount,
+            "participantIds": participantIds,
             "createdAt": Timestamp(date: now)
         ]
         let batch = db.batch()
@@ -283,6 +307,25 @@ final class ChatService {
         }
     }
 
+    /// Chats for this exact pair using equality on `seekerId` + `investorId` (both orientations).
+    /// Avoids `participantIds array-contains` queries that can return unrelated docs and fail Firestore rules.
+    private func queryChatsForPair(seekerId: String, investorId: String) async throws -> [QueryDocumentSnapshot] {
+        let forward = try await db.collection("chats")
+            .whereField("seekerId", isEqualTo: seekerId)
+            .whereField("investorId", isEqualTo: investorId)
+            .limit(to: 80)
+            .getDocuments()
+        let flipped = try await db.collection("chats")
+            .whereField("seekerId", isEqualTo: investorId)
+            .whereField("investorId", isEqualTo: seekerId)
+            .limit(to: 80)
+            .getDocuments()
+        var byId: [String: QueryDocumentSnapshot] = [:]
+        for d in forward.documents { byId[d.documentID] = d }
+        for d in flipped.documents { byId[d.documentID] = d }
+        return Array(byId.values)
+    }
+
     /// Finds a previously created chat regardless of legacy id format.
     private func findExistingPairChatId(seekerId: String, investorId: String) async throws -> String? {
         let canonicalId = canonicalChatId(seekerId: seekerId, investorId: investorId)
@@ -295,53 +338,46 @@ final class ChatService {
             // Legacy or unreadable doc at canonical id — continue discovery below.
         }
 
-        func pairMatchDocId(from snapshot: QuerySnapshot) -> String? {
-            snapshot.documents.first { doc in
+        func pairMatchDocId(from docs: [QueryDocumentSnapshot]) -> String? {
+            docs.first { doc in
                 let data = doc.data()
                 return (data["seekerId"] as? String) == seekerId
                     && (data["investorId"] as? String) == investorId
             }?.documentID
         }
 
-        // `participantIds array-contains` keeps every result readable under strict rules.
-        let byInvestor = try await db.collection("chats")
-            .whereField("participantIds", arrayContains: investorId)
-            .limit(to: 200)
-            .getDocuments()
-        if let id = pairMatchDocId(from: byInvestor) { return id }
+        let pairDocs = try await queryChatsForPair(seekerId: seekerId, investorId: investorId)
+        if let id = pairMatchDocId(from: pairDocs) { return id }
 
-        let bySeeker = try await db.collection("chats")
-            .whereField("participantIds", arrayContains: seekerId)
-            .limit(to: 200)
-            .getDocuments()
-        if let id = pairMatchDocId(from: bySeeker) { return id }
+        // Legacy: participantIds without reliable seeker/investor fields (keep narrow queries).
+        do {
+            let byInvestor = try await db.collection("chats")
+                .whereField("participantIds", arrayContains: investorId)
+                .limit(to: 200)
+                .getDocuments()
+            if let id = pairMatchDocId(from: byInvestor.documents) { return id }
 
-        // Legacy fallback when participantIds was not written.
-        let legacyByInvestor = try await db.collection("chats")
-            .whereField("investorId", isEqualTo: investorId)
-            .limit(to: 200)
-            .getDocuments()
-        if let id = pairMatchDocId(from: legacyByInvestor) { return id }
+            let bySeeker = try await db.collection("chats")
+                .whereField("participantIds", arrayContains: seekerId)
+                .limit(to: 200)
+                .getDocuments()
+            if let id = pairMatchDocId(from: bySeeker.documents) { return id }
+        } catch {
+            // Strict rules may reject broad participantIds-only queries; pair equality path is primary.
+        }
 
-        let legacyBySeeker = try await db.collection("chats")
-            .whereField("seekerId", isEqualTo: seekerId)
-            .limit(to: 200)
-            .getDocuments()
-        return pairMatchDocId(from: legacyBySeeker)
+        return nil
     }
 
     /// Deletes duplicate chat documents for a seeker/investor pair and keeps one.
     /// Note: Firestore subcollection docs are not recursively deleted by this call.
     private func cleanupDuplicatePairChats(seekerId: String, investorId: String, keepChatId: String) async throws {
-        let snapshot = try await db.collection("chats")
-            .whereField("participantIds", arrayContains: investorId)
-            .limit(to: 200)
-            .getDocuments()
-
-        let duplicates = snapshot.documents.filter { doc in
+        let pairDocs = try await queryChatsForPair(seekerId: seekerId, investorId: investorId)
+        let duplicates = pairDocs.filter { doc in
             guard doc.documentID != keepChatId else { return false }
             let data = doc.data()
             return (data["seekerId"] as? String) == seekerId
+                && (data["investorId"] as? String) == investorId
         }
 
         guard !duplicates.isEmpty else { return }
@@ -351,5 +387,19 @@ final class ChatService {
             batch.deleteDocument(doc.reference)
         }
         try await batch.commit()
+    }
+}
+
+enum ChatServiceError: LocalizedError {
+    case chatNotFound
+    case chatMissingParticipants
+
+    var errorDescription: String? {
+        switch self {
+        case .chatNotFound:
+            return "Chat not found."
+        case .chatMissingParticipants:
+            return "Chat is missing participant information."
+        }
     }
 }

@@ -96,10 +96,13 @@ struct ChatRoomView: View {
                 }
             }
         }
-        .task(id: chatId) {
-            await loadPartnerHeader()
+        .task(id: "\(chatId)_\(auth.currentUserID ?? "")") {
+            guard auth.currentUserID != nil else { return }
+            let headerOk = await loadPartnerHeader()
+            if headerOk {
+                startListening()
+            }
         }
-        .onAppear { startListening() }
         .onDisappear {
             listener?.remove()
             listener = nil
@@ -143,26 +146,42 @@ struct ChatRoomView: View {
             }
     }
 
-    private func loadPartnerHeader() async {
-        guard let uid = auth.currentUserID else { return }
-        guard let pair = try? await chatService.fetchParticipantIds(chatId: chatId) else { return }
-        let otherId = pair.seekerId == uid ? pair.investorId : pair.seekerId
-        guard let profile = try? await userService.fetchProfile(userID: otherId) else {
+    /// Returns false if the chat document is missing or unreadable (permissions / shape).
+    private func loadPartnerHeader() async -> Bool {
+        guard let uid = auth.currentUserID else { return false }
+        do {
+            guard let pair = try await chatService.fetchParticipantIds(chatId: chatId) else {
+                await MainActor.run {
+                    loadError = "This chat could not be loaded."
+                    showLoadError = true
+                }
+                return false
+            }
+            let otherId = pair.seekerId == uid ? pair.investorId : pair.seekerId
+            guard let profile = try? await userService.fetchProfile(userID: otherId) else {
+                await MainActor.run {
+                    partnerName = "Chat"
+                    partnerAvatarURL = nil
+                }
+                return true
+            }
             await MainActor.run {
-                partnerName = "Chat"
-                partnerAvatarURL = nil
+                let raw = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                partnerName = raw.isEmpty ? "Member" : raw
+                if let s = profile.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   let u = URL(string: s) {
+                    partnerAvatarURL = u
+                } else {
+                    partnerAvatarURL = nil
+                }
             }
-            return
-        }
-        await MainActor.run {
-            let raw = profile.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            partnerName = raw.isEmpty ? "Member" : raw
-            if let s = profile.avatarURL?.trimmingCharacters(in: .whitespacesAndNewlines),
-               let u = URL(string: s) {
-                partnerAvatarURL = u
-            } else {
-                partnerAvatarURL = nil
+            return true
+        } catch {
+            await MainActor.run {
+                loadError = FirestoreUserFacingMessage.text(for: error)
+                showLoadError = true
             }
+            return false
         }
     }
 
@@ -446,8 +465,10 @@ struct ChatRoomView: View {
 
     private func startListening() {
         listener?.remove()
+        guard let uid = auth.currentUserID else { return }
         listener = Firestore.firestore()
             .collection("chats").document(chatId).collection("messages")
+            .whereField("participantIds", arrayContains: uid)
             .order(by: "createdAt", descending: false)
             .addSnapshotListener { snapshot, error in
                 if let error {

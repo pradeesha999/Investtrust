@@ -2,7 +2,7 @@ import PhotosUI
 import SwiftUI
 import VisionKit
 
-/// Full-screen loan repayment schedule: separates open/upcoming from completed, with actions and proof upload.
+/// Full-screen loan repayment schedule: principal flow, live installments, and (when the deal is closed) a full payment history with dates.
 struct LoanRepaymentScheduleView: View {
     private enum ProofUploadTarget: Equatable {
         case installment(Int)
@@ -19,14 +19,15 @@ struct LoanRepaymentScheduleView: View {
     @State private var actionError: String?
     @State private var showDocCamera = false
     @State private var proofUploadTarget: ProofUploadTarget?
-    @State private var showLibrarySheet = false
-    @State private var libraryItem: PhotosPickerItem?
-    @State private var libraryUploadTarget: ProofUploadTarget?
+    @State private var principalLibraryPickItem: PhotosPickerItem?
     @State private var isUpdatingPrincipal = false
     @State private var disputeInstallmentNo: Int?
     @State private var disputeReasonText = ""
     @State private var showPrincipalDisbursementSheet = false
     @State private var previewImageReference: String?
+    @State private var showPrincipalNotReceivedSheet = false
+    @State private var principalNotReceivedReasonText = ""
+    @State private var showPaidInstallmentHistory = false
 
     private let service = InvestmentService()
 
@@ -52,6 +53,19 @@ struct LoanRepaymentScheduleView: View {
         openRows.min(by: { $0.dueDate < $1.dueDate })
     }
 
+    /// One-line explainer for the party viewing this screen (reduces confusion between seeker vs investor steps).
+    private var loanPaymentWorkflowFootnote: String? {
+        guard investment.loanRepaymentsUnlocked, !isInvestmentCompleted else { return nil }
+        guard let uid = currentUserId else { return nil }
+        if uid == investment.seekerId {
+            return "You pay each installment to the investor: attach a slip, then confirm you sent. They confirm it arrived."
+        }
+        if uid == investment.investorId {
+            return "The seeker sends each installment and confirms first. Then you confirm receipt—or report if it didn’t arrive."
+        }
+        return nil
+    }
+
     private var isInvestmentCompleted: Bool {
         investment.status.lowercased() == "completed" || investment.fundingStatus == .closed || (totalCount > 0 && confirmedCount == totalCount)
     }
@@ -64,6 +78,16 @@ struct LoanRepaymentScheduleView: View {
         investment.agreementStatus == .active || investment.fundingStatus != .none
     }
 
+    /// Principal transfer / proof lives inline until the seeker confirms receipt and installments unlock.
+    private var showEmbeddedPrincipalFlow: Bool {
+        !investment.loanRepaymentsUnlocked && canOpenPrincipalDisbursement
+    }
+
+    /// After disbursement is confirmed, the same details move behind the bar button + sheet.
+    private var showPrincipalDisbursementBarButton: Bool {
+        investment.loanRepaymentsUnlocked && canOpenPrincipalDisbursement
+    }
+
     /// Identity for `.task` so calendar reminders refresh when the schedule or agreement state changes.
     private var calendarSyncTaskId: String {
         let parts = investment.loanInstallments
@@ -73,44 +97,79 @@ struct LoanRepaymentScheduleView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
+                if showEmbeddedPrincipalFlow {
+                    repaymentsLockedPrincipalIntro
+                    principalDisbursementCard
+                } else if !investment.loanRepaymentsUnlocked {
+                    repaymentsLockedAwaitingAgreementCallout
+                }
+
                 if investment.loanRepaymentsUnlocked {
                     if isInvestmentCompleted {
-                        completionCard
+                        closedDealSummaryCard
                     }
                     summaryHero
+                    if !isInvestmentCompleted, loanPaymentWorkflowFootnote != nil {
+                        Text(loanPaymentWorkflowFootnote!)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if !isInvestmentCompleted {
                         scheduleSection(
-                            title: "Upcoming & open",
-                            subtitle: "Installments still in progress",
-                            systemImage: "calendar.badge.clock",
+                            title: "Installments",
+                            subtitle: "One at a time, in due-date order",
+                            systemImage: "calendar",
                             rows: openRows,
                             emptyMessage: "All installments are complete."
                         )
                     }
 
-                    scheduleSection(
-                        title: "Past & paid",
-                        subtitle: "Fully confirmed repayments",
-                        systemImage: "checkmark.seal.fill",
-                        rows: completedRows,
-                        emptyMessage: "No completed installments yet."
-                    )
+                    if isInvestmentCompleted {
+                        closedDealPrincipalHistory
+                        paymentHistorySection
+                    } else if !completedRows.isEmpty {
+                        DisclosureGroup(isExpanded: $showPaidInstallmentHistory) {
+                            VStack(spacing: 10) {
+                                ForEach(completedRows) { row in
+                                    installmentCard(row)
+                                }
+                            }
+                            .padding(.top, 6)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.headline)
+                                    .foregroundStyle(.green)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Paid installments")
+                                        .font(.headline)
+                                    Text("\(completedRows.count) finished")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AppTheme.screenPadding)
             .padding(.vertical, 12)
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle("Repayments")
+        .scrollIndicators(.hidden)
+        .background(Color(.systemGroupedBackground).ignoresSafeArea(edges: [.horizontal, .bottom]))
+        .navigationTitle("Loan repayments")
         .navigationBarTitleDisplayMode(.large)
         .safeAreaInset(edge: .bottom) {
-            if canOpenPrincipalDisbursement {
+            if showPrincipalDisbursementBarButton {
                 Button {
                     showPrincipalDisbursementSheet = true
                 } label: {
-                    Label("View principal disbursement", systemImage: "banknote.fill")
+                    Label("Principal transfer", systemImage: "banknote.fill")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: AppTheme.minTapTarget)
@@ -129,45 +188,6 @@ struct LoanRepaymentScheduleView: View {
                 investment: investment,
                 currentUserId: auth.currentUserID
             )
-        }
-        .sheet(isPresented: $showLibrarySheet) {
-            NavigationStack {
-                VStack(spacing: 20) {
-                    Text("Attach a receipt or transfer screenshot.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    PhotosPicker(selection: $libraryItem, matching: .images) {
-                        Label("Choose from library", systemImage: "photo.on.rectangle.angled")
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(auth.accentColor)
-                }
-                .padding(AppTheme.screenPadding)
-                .navigationTitle("Payment proof")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            libraryItem = nil
-                            libraryUploadTarget = nil
-                            showLibrarySheet = false
-                        }
-                    }
-                }
-                .onChange(of: libraryItem) { _, item in
-                    guard let item, let target = libraryUploadTarget else { return }
-                    libraryUploadTarget = nil
-                    showLibrarySheet = false
-                    Task {
-                        await handlePickedPhoto(item: item, target: target)
-                        await MainActor.run { libraryItem = nil }
-                    }
-                }
-            }
         }
         .fullScreenCover(isPresented: $showDocCamera) {
             Group {
@@ -248,16 +268,55 @@ struct LoanRepaymentScheduleView: View {
                 }
             }
         }
+        .sheet(isPresented: $showPrincipalNotReceivedSheet) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Tell the investor why the principal did not arrive (wrong account, amount mismatch, no credit, etc.). They can upload new proof and mark sent again.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $principalNotReceivedReasonText)
+                        .frame(minHeight: 140)
+                        .padding(8)
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    Text("This clears their “sent” status and current proof images for this round.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                }
+                .padding(AppTheme.screenPadding)
+                .navigationTitle("Principal not received")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            principalNotReceivedReasonText = ""
+                            showPrincipalNotReceivedSheet = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Send to investor") {
+                            let t = principalNotReceivedReasonText
+                            principalNotReceivedReasonText = ""
+                            showPrincipalNotReceivedSheet = false
+                            Task { await reportPrincipalNotReceived(reason: t) }
+                        }
+                        .disabled(principalNotReceivedReasonText.trimmingCharacters(in: .whitespacesAndNewlines).count < 6)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showPrincipalDisbursementSheet) {
             NavigationStack {
                 ScrollView(showsIndicators: false) {
                     principalDisbursementCard
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, AppTheme.screenPadding)
                         .padding(.top, 12)
                         .padding(.bottom, 20)
                 }
+                .scrollIndicators(.hidden)
                 .background(Color(.systemGroupedBackground))
-                .navigationTitle("Principal disbursement")
+                .navigationTitle("Principal transfer")
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
@@ -269,13 +328,16 @@ struct LoanRepaymentScheduleView: View {
                 ZStack {
                     Color.black.ignoresSafeArea()
                     if let previewImageReference {
-                        StorageBackedAsyncImage(
-                            reference: previewImageReference,
-                            height: min(UIScreen.main.bounds.height * 0.72, 560),
-                            cornerRadius: 14,
-                            feedThumbnail: false
-                        )
-                        .padding(.horizontal, AppTheme.screenPadding)
+                        GeometryReader { geo in
+                            StorageBackedAsyncImage(
+                                reference: previewImageReference,
+                                height: min(geo.size.height * 0.72, 560),
+                                cornerRadius: 14,
+                                feedThumbnail: false
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.horizontal, AppTheme.screenPadding)
+                        }
                     }
                 }
                 .navigationTitle("Proof image")
@@ -284,16 +346,111 @@ struct LoanRepaymentScheduleView: View {
         }
     }
 
-    // MARK: - Summary
+    @ViewBuilder
+    private var repaymentsLockedPrincipalIntro: some View {
+        let isInvestor = currentUserId == investment.investorId
+        let isSeeker = currentUserId == investment.seekerId
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.orange)
+                    .frame(width: 36, alignment: .center)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Principal before installments")
+                        .font(.headline.weight(.semibold))
+                    Group {
+                        if isInvestor {
+                            Text("Add transfer proof, then mark sent. The seeker confirms receipt to unlock repayments.")
+                        } else if isSeeker {
+                            Text("When the money is in your account, confirm receipt below to unlock the schedule.")
+                        } else {
+                            Text("Principal transfer and confirmation happen here; installments appear after that.")
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .stroke(Color.orange.opacity(0.28), lineWidth: 1)
+        )
+    }
 
-    private var completionCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Investment completed")
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(.primary)
-            Text("All repayment cycles are confirmed and this investment is now closed.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var repaymentsLockedAwaitingAgreementCallout: some View {
+        ContentUnavailableView {
+            Label("Repayments aren’t available yet", systemImage: "doc.text.fill")
+        } description: {
+            Text(
+                "Complete and sign the investment agreement first. "
+                    + "Principal transfer and confirmation will appear on this screen, then your installment schedule."
+            )
+            .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    // MARK: - Closed deal (completed investment)
+
+    private var closedDealSummaryCard: some View {
+        let rateText: String? = {
+            guard let r = investment.finalInterestRate else { return nil }
+            let n = NSNumber(value: r)
+            let f = NumberFormatter()
+            f.maximumFractionDigits = 2
+            f.minimumFractionDigits = 0
+            return (f.string(from: n) ?? "\(r)") + "%"
+        }()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Deal closed")
+                        .font(.title3.weight(.bold))
+                    Text("This loan is fully repaid and the investment is closed. Below is a record of principal, each installment, and the dates confirmations were recorded in the app.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                closedDealFactRow(title: "Loan principal", value: "LKR \(formatAmt(investment.investmentAmount))")
+                if let rateText {
+                    closedDealFactRow(title: "Interest rate (agreed)", value: rateText)
+                }
+                if let months = investment.finalTimelineMonths {
+                    closedDealFactRow(title: "Term", value: "\(months) months")
+                }
+                closedDealFactRow(
+                    title: "Total installment payments",
+                    value: "LKR \(formatAmt(investment.confirmedLoanRepaymentTotal)) · \(confirmedCount) of \(totalCount) in schedule"
+                )
+                if let accepted = investment.acceptedAt {
+                    closedDealFactRow(title: "Deal accepted", value: mediumDate(accepted))
+                }
+                if let updated = investment.updatedAt {
+                    closedDealFactRow(title: "Record last updated", value: mediumDate(updated))
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+
+            Text("Investment ID: \(investment.id)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
         }
         .padding(AppTheme.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -304,6 +461,185 @@ struct LoanRepaymentScheduleView: View {
         )
         .appCardShadow()
     }
+
+    private func closedDealFactRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var closedDealPrincipalHistory: some View {
+        let hasSent = investment.principalSentByInvestorAt != nil
+        let hasReceived = investment.principalReceivedBySeekerAt != nil
+        let hasProof = !investment.principalInvestorProofImageURLs.isEmpty || !investment.principalSeekerProofImageURLs.isEmpty
+        if hasSent || hasReceived || hasProof {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "banknote")
+                        .font(.headline)
+                        .foregroundStyle(auth.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Principal transfer")
+                            .font(.headline)
+                        Text("How the loan amount reached the seeker before repayments started.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if let sent = investment.principalSentByInvestorAt {
+                        historyDateRow(label: "Investor marked principal sent", date: sent)
+                    }
+                    if let received = investment.principalReceivedBySeekerAt {
+                        historyDateRow(label: "Seeker confirmed principal received", date: received)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+
+                let slipTitle = currentUserId == investment.seekerId ? "Your receiving proof" : (currentUserId == investment.investorId ? "Seeker receiving proof" : "Receiving proof")
+                let outTitle = currentUserId == investment.investorId ? "Your transfer proof" : (currentUserId == investment.seekerId ? "Investor transfer proof" : "Transfer proof")
+                if !investment.principalInvestorProofImageURLs.isEmpty || !investment.principalSeekerProofImageURLs.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !investment.principalInvestorProofImageURLs.isEmpty {
+                            proofThumbnailStrip(title: outTitle, urls: investment.principalInvestorProofImageURLs)
+                        }
+                        if !investment.principalSeekerProofImageURLs.isEmpty {
+                            proofThumbnailStrip(title: slipTitle, urls: investment.principalSeekerProofImageURLs)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func historyDateRow(label: String, date: Date) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(mediumDate(date))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var paymentHistorySection: some View {
+        if sorted.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.headline)
+                        .foregroundStyle(auth.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Installment payment history")
+                            .font(.headline)
+                        Text("Each row is one scheduled payment: amount, due date, and when each side confirmed in the app.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                VStack(spacing: 10) {
+                    ForEach(sorted) { row in
+                        installmentHistoryCard(row)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func installmentHistoryCard(_ row: LoanInstallment) -> some View {
+        let isSeeker = currentUserId == investment.seekerId
+        let isInvestor = currentUserId == investment.investorId
+        let slipProofTitle = isSeeker ? "Your payment slip" : (isInvestor ? "Seeker’s slip" : "Payment slip")
+        let receiptProofTitle = isSeeker ? "Investor’s receipt" : (isInvestor ? "Your receipt" : "Receipt")
+        let paid = row.status == .confirmed_paid
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Installment #\(row.installmentNo)")
+                    .font(.subheadline.weight(.bold))
+                Spacer(minLength: 8)
+                if paid {
+                    Label("Paid", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.green)
+                } else {
+                    statusPill(row)
+                }
+            }
+
+            Text("LKR \(formatAmt(row.totalDue))")
+                .font(.title3.weight(.bold))
+            Text("Principal LKR \(formatAmt(row.principalComponent)) · Interest LKR \(formatAmt(row.interestComponent))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                historyDateRow(label: "Due date", date: row.dueDate)
+                if let sent = row.seekerMarkedReceivedAt {
+                    historyDateRow(label: "Seeker marked payment sent", date: sent)
+                } else {
+                    historyMissingRow(label: "Seeker marked payment sent")
+                }
+                if let received = row.investorMarkedPaidAt {
+                    historyDateRow(label: "Investor confirmed payment received", date: received)
+                } else {
+                    historyMissingRow(label: "Investor confirmed payment received")
+                }
+                if paid, let s = row.seekerMarkedReceivedAt, let i = row.investorMarkedPaidAt {
+                    let settled = max(s, i)
+                    historyDateRow(label: "Fully settled in app (latest step)", date: settled)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+
+            installmentProofThumbnails(row, slipTitle: slipProofTitle, receiptTitle: receiptProofTitle)
+        }
+        .padding(AppTheme.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color(uiColor: .separator).opacity(0.35), lineWidth: 1)
+        )
+        .appCardShadow()
+    }
+
+    private func historyMissingRow(label: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text("—")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // MARK: - Summary
 
     private var summaryHero: some View {
         let progress = totalCount > 0 ? Double(confirmedCount) / Double(totalCount) : 0
@@ -335,10 +671,11 @@ struct LoanRepaymentScheduleView: View {
                     .tint(auth.accentColor)
             }
 
-            HStack(spacing: 10) {
-                summaryPill(title: "Paid (confirmed)", value: "LKR \(formatAmt(confirmedTotal))", tint: .green)
-                summaryPill(title: "Principal covered", value: "LKR \(formatAmt(confirmedPrincipal))", tint: .primary)
-                summaryPill(title: "Interest paid", value: "LKR \(formatAmt(confirmedInterest))", tint: auth.accentColor)
+            if confirmedCount > 0 {
+                Text("Paid so far LKR \(formatAmt(confirmedTotal)) · principal \(formatAmt(confirmedPrincipal)) · interest \(formatAmt(confirmedInterest))")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let next = nextOpenRow {
@@ -358,9 +695,17 @@ struct LoanRepaymentScheduleView: View {
                 .padding(12)
                 .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
             } else if isInvestmentCompleted {
-                Text("No pending installments.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("All installments paid")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Total repaid on schedule: LKR \(formatAmt(confirmedTotal)) (principal \(formatAmt(confirmedPrincipal)) · interest \(formatAmt(confirmedInterest))).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
             }
         }
         .padding(AppTheme.cardPadding)
@@ -369,31 +714,34 @@ struct LoanRepaymentScheduleView: View {
         .appCardShadow()
     }
 
-    private func summaryPill(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-    }
-
     private var principalDisbursementCard: some View {
         let isInvestor = currentUserId == investment.investorId
         let isSeeker = currentUserId == investment.seekerId
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Principal disbursement")
+            Text("Loan principal")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
 
             principalStatusChip
+
+            if isInvestor,
+               investment.fundingStatus == .awaiting_disbursement,
+               let seekerNote = investment.principalSeekerNotReceivedReason,
+               !seekerNote.isEmpty,
+               investment.principalSentByInvestorAt == nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Seeker reported: principal not received")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    Text(seekerNote)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            }
 
             if investment.fundingStatus == .disbursed, investment.principalReceivedBySeekerAt != nil {
                 Label("Principal confirmed - repayments are now active", systemImage: "checkmark.seal.fill")
@@ -418,16 +766,30 @@ struct LoanRepaymentScheduleView: View {
                     .tint(auth.accentColor)
                     .disabled(isUpdatingPrincipal || investment.principalInvestorProofImageURLs.isEmpty)
                 } else if isSeeker, investment.principalSentByInvestorAt != nil, investment.principalReceivedBySeekerAt == nil {
-                    Button {
-                        Task { await confirmPrincipalReceived() }
-                    } label: {
-                        Text("Confirm principal received")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
+                    VStack(spacing: 10) {
+                        Button {
+                            Task { await confirmPrincipalReceived() }
+                        } label: {
+                            Text("Confirm principal received")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(auth.accentColor)
+                        .disabled(isUpdatingPrincipal)
+
+                        Button {
+                            showPrincipalNotReceivedSheet = true
+                        } label: {
+                            Text("Principal not received")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                        .disabled(isUpdatingPrincipal)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(auth.accentColor)
-                    .disabled(isUpdatingPrincipal)
                 }
             }
 
@@ -436,12 +798,9 @@ struct LoanRepaymentScheduleView: View {
             if investment.agreementStatus == .active,
                (investment.fundingStatus == .awaiting_disbursement || investment.fundingStatus == .disbursed),
                canAttachPrincipalProof {
-                VStack(spacing: 8) {
-                    Button {
-                        libraryUploadTarget = .principalDisbursement
-                        showLibrarySheet = true
-                    } label: {
-                        Label("Upload principal proof from photos", systemImage: "photo")
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $principalLibraryPickItem, matching: .images) {
+                        Label("Photos", systemImage: "photo")
                             .font(.subheadline.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
@@ -449,19 +808,26 @@ struct LoanRepaymentScheduleView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(auth.accentColor)
                     .disabled(isUpdatingPrincipal)
+                    .onChange(of: principalLibraryPickItem) { _, item in
+                        guard let item else { return }
+                        Task {
+                            await handlePickedPhoto(item: item, target: .principalDisbursement)
+                            await MainActor.run { principalLibraryPickItem = nil }
+                        }
+                    }
 
                     if VNDocumentCameraViewController.isSupported {
                         Button {
                             proofUploadTarget = .principalDisbursement
                             showDocCamera = true
                         } label: {
-                            Label("Scan principal proof", systemImage: "doc.viewfinder")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
+                            Image(systemName: "doc.viewfinder")
+                                .font(.title3)
+                                .frame(width: 52, height: 48)
                         }
                         .buttonStyle(.bordered)
                         .tint(auth.accentColor)
+                        .accessibilityLabel("Scan transfer proof")
                         .disabled(isUpdatingPrincipal)
                     }
                 }
@@ -513,12 +879,62 @@ struct LoanRepaymentScheduleView: View {
         }
     }
 
+    private func installmentWorkflowHint(
+        row: LoanInstallment,
+        isSeeker: Bool,
+        isInvestor: Bool,
+        isCurrentCycle: Bool
+    ) -> String? {
+        guard investment.loanRepaymentsUnlocked, row.status != .confirmed_paid else { return nil }
+        if !isCurrentCycle {
+            return "Finish installment #\(nextOpenRow?.installmentNo ?? 1) before this one."
+        }
+        if isSeeker {
+            if row.seekerMarkedReceivedAt != nil {
+                return "Waiting for the investor to confirm receipt."
+            }
+            return "Add a payment slip, then confirm you sent this installment."
+        }
+        if isInvestor {
+            if row.investorMarkedPaidAt != nil { return nil }
+            if row.seekerMarkedReceivedAt == nil {
+                return "Waiting for the seeker to send this installment."
+            }
+            return "Confirm receipt when funds arrive—or report if they don’t."
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private func installmentSettlementFootnote(_ row: LoanInstallment) -> some View {
+        switch (row.seekerMarkedReceivedAt, row.investorMarkedPaidAt) {
+        case let (s?, i?):
+            Text("Payment sent \(mediumDate(s)) · Receipt confirmed \(mediumDate(i))")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        case let (s?, nil):
+            Text("Payment sent \(mediumDate(s)) · awaiting investor confirmation")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        case let (nil, i?):
+            Text("Receipt confirmed \(mediumDate(i))")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        default:
+            Text("Fully paid")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
     @ViewBuilder
     private func installmentCard(_ row: LoanInstallment) -> some View {
         let isInvestor = currentUserId == investment.investorId
         let isSeeker = currentUserId == investment.seekerId
         let overdue = row.status != .confirmed_paid && row.dueDate < startOfToday
         let isCurrentCycle = row.installmentNo == nextOpenRow?.installmentNo
+        let slipProofTitle = isSeeker ? "Your payment slip" : (isInvestor ? "Seeker’s slip" : "Payment slip")
+        let receiptProofTitle = isSeeker ? "Investor’s receipt" : (isInvestor ? "Your receipt" : "Receipt")
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -541,33 +957,28 @@ struct LoanRepaymentScheduleView: View {
             }
 
             if overdue {
-                Label("Overdue — please update payment status", systemImage: "exclamationmark.triangle.fill")
+                Label("Overdue", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
             }
-            if row.status != .confirmed_paid && isCurrentCycle {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.caption.weight(.semibold))
-                    Text("Current cycle")
-                        .font(.caption.weight(.bold))
-                }
-                .foregroundStyle(auth.accentColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(auth.accentColor.opacity(0.12), in: Capsule())
+
+            if row.status == .confirmed_paid {
+                installmentSettlementFootnote(row)
+            } else if let hint = installmentWorkflowHint(
+                row: row,
+                isSeeker: isSeeker,
+                isInvestor: isInvestor,
+                isCurrentCycle: isCurrentCycle
+            ) {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let sr = row.seekerMarkedReceivedAt {
-                metaLine("Seeker confirmed payment sent", mediumDate(sr))
-            }
-            if let ip = row.investorMarkedPaidAt {
-                metaLine("Investor confirmed receipt", mediumDate(ip))
-            }
-            installmentProofThumbnails(row)
             if row.status == .disputed, let reason = row.latestDisputeReason, !reason.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Investor reported not received")
+                    Text("Issue reported")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.orange)
                     Text(reason)
@@ -579,95 +990,113 @@ struct LoanRepaymentScheduleView: View {
                 .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
             }
 
+            installmentProofThumbnails(row, slipTitle: slipProofTitle, receiptTitle: receiptProofTitle)
+
             if row.status != .confirmed_paid, investment.loanRepaymentsUnlocked {
                 let seekerReady = !row.seekerProofImageURLs.isEmpty || row.investorMarkedPaidAt != nil
                 let seekerConfirmed = row.seekerMarkedReceivedAt != nil
                 if isCurrentCycle {
-                    HStack(spacing: 10) {
-                        if isSeeker, row.seekerMarkedReceivedAt == nil {
+                    if isSeeker, row.seekerMarkedReceivedAt == nil {
+                        HStack(spacing: 10) {
+                            InstallmentProofLibraryPicker(
+                                isInvestor: false,
+                                compact: true,
+                                disabled: busyInstallment != nil,
+                                accentColor: auth.accentColor,
+                                onPicked: { item in
+                                    await handlePickedPhoto(item: item, target: .installment(row.installmentNo))
+                                }
+                            )
+                            if VNDocumentCameraViewController.isSupported {
+                                Button {
+                                    proofUploadTarget = .installment(row.installmentNo)
+                                    showDocCamera = true
+                                } label: {
+                                    Image(systemName: "doc.viewfinder")
+                                        .font(.title3)
+                                        .frame(width: 52, height: 48)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(auth.accentColor)
+                                .accessibilityLabel("Scan payment slip")
+                                .disabled(busyInstallment != nil)
+                            }
+                        }
+
+                        Button {
+                            Task { await markReceived(row.installmentNo) }
+                        } label: {
+                            Text("I sent this payment")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(auth.accentColor)
+                        .disabled(busyInstallment != nil || !seekerReady)
+                    }
+
+                    if isInvestor, row.investorMarkedPaidAt == nil {
+                        if seekerConfirmed {
+                            HStack(spacing: 10) {
+                                InstallmentProofLibraryPicker(
+                                    isInvestor: true,
+                                    compact: true,
+                                    disabled: busyInstallment != nil,
+                                    accentColor: auth.accentColor,
+                                    onPicked: { item in
+                                        await handlePickedPhoto(item: item, target: .installment(row.installmentNo))
+                                    }
+                                )
+                                if VNDocumentCameraViewController.isSupported {
+                                    Button {
+                                        proofUploadTarget = .installment(row.installmentNo)
+                                        showDocCamera = true
+                                    } label: {
+                                        Image(systemName: "doc.viewfinder")
+                                            .font(.title3)
+                                            .frame(width: 52, height: 48)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(auth.accentColor)
+                                    .accessibilityLabel("Scan receipt")
+                                    .disabled(busyInstallment != nil)
+                                }
+                            }
+
                             Button {
-                                Task { await markReceived(row.installmentNo) }
+                                Task { await markPaid(row.installmentNo) }
                             } label: {
-                                Text("Confirm payment sent")
+                                Text("I received this payment")
                                     .font(.subheadline.weight(.semibold))
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(auth.accentColor)
-                            .disabled(busyInstallment != nil || !seekerReady)
-                        }
-                        if isInvestor, row.investorMarkedPaidAt == nil {
-                            VStack(spacing: 8) {
-                                Button {
-                                    Task { await markPaid(row.installmentNo) }
-                                } label: {
-                                    Text("Confirm payment received")
-                                        .font(.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(auth.accentColor)
-                                .disabled(busyInstallment != nil || !seekerConfirmed)
-
-                                Button {
-                                    disputeReasonText = row.latestDisputeReason ?? ""
-                                    disputeInstallmentNo = row.installmentNo
-                                } label: {
-                                    Text("Report not received")
-                                        .font(.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(.orange)
-                                .disabled(busyInstallment != nil || !seekerConfirmed)
-                            }
-                        }
-                    }
-
-                    if (isSeeker && row.seekerMarkedReceivedAt == nil) || (isInvestor && row.investorMarkedPaidAt == nil) {
-                        VStack(spacing: 8) {
-                            Button {
-                                libraryUploadTarget = .installment(row.installmentNo)
-                                showLibrarySheet = true
-                            } label: {
-                                Label(
-                                    isInvestor ? "Upload receipt proof from photos" : "Upload payment slip from photos",
-                                    systemImage: "photo"
-                                )
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 11)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(auth.accentColor)
                             .disabled(busyInstallment != nil)
 
-                            if VNDocumentCameraViewController.isSupported {
-                                Button {
-                                    proofUploadTarget = .installment(row.installmentNo)
-                                    showDocCamera = true
-                                } label: {
-                                    Label(isInvestor ? "Scan receipt with camera" : "Scan slip with camera", systemImage: "doc.viewfinder")
-                                        .font(.subheadline.weight(.semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(auth.accentColor)
-                                .disabled(busyInstallment != nil)
+                            Button {
+                                disputeReasonText = row.latestDisputeReason ?? ""
+                                disputeInstallmentNo = row.installmentNo
+                            } label: {
+                                Text("I didn’t receive it")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
                             }
+                            .buttonStyle(.bordered)
+                            .tint(.orange)
+                            .disabled(busyInstallment != nil)
                         }
                     }
                 } else {
-                    Text("Complete installment #\(nextOpenRow?.installmentNo ?? 1) before updating this one.")
+                    Text("Finish installment #\(nextOpenRow?.installmentNo ?? 1) first.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
             } else if !investment.loanRepaymentsUnlocked {
-                Label("Locked until principal confirmed", systemImage: "lock.fill")
+                Label("Unlocks after principal is confirmed", systemImage: "lock.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
             }
@@ -685,17 +1114,17 @@ struct LoanRepaymentScheduleView: View {
     }
 
     @ViewBuilder
-    private func installmentProofThumbnails(_ row: LoanInstallment) -> some View {
+    private func installmentProofThumbnails(_ row: LoanInstallment, slipTitle: String, receiptTitle: String) -> some View {
         let hasAny = !row.seekerProofImageURLs.isEmpty || !row.investorProofImageURLs.isEmpty
         if !hasAny {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 if !row.seekerProofImageURLs.isEmpty {
-                    proofThumbnailStrip(title: "Seeker payment proof", urls: row.seekerProofImageURLs)
+                    proofThumbnailStrip(title: slipTitle, urls: row.seekerProofImageURLs)
                 }
                 if !row.investorProofImageURLs.isEmpty {
-                    proofThumbnailStrip(title: "Investor receipt proof", urls: row.investorProofImageURLs)
+                    proofThumbnailStrip(title: receiptTitle, urls: row.investorProofImageURLs)
                 }
             }
         }
@@ -707,10 +1136,10 @@ struct LoanRepaymentScheduleView: View {
         if hasAny {
             VStack(alignment: .leading, spacing: 8) {
                 if !investment.principalInvestorProofImageURLs.isEmpty {
-                    proofThumbnailStrip(title: "Investor transfer proof", urls: investment.principalInvestorProofImageURLs)
+                    proofThumbnailStrip(title: "Transfer out", urls: investment.principalInvestorProofImageURLs)
                 }
                 if !investment.principalSeekerProofImageURLs.isEmpty {
-                    proofThumbnailStrip(title: "Seeker receiving proof", urls: investment.principalSeekerProofImageURLs)
+                    proofThumbnailStrip(title: "Received", urls: investment.principalSeekerProofImageURLs)
                 }
             }
         }
@@ -743,6 +1172,7 @@ struct LoanRepaymentScheduleView: View {
                     }
                 }
             }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -755,24 +1185,12 @@ struct LoanRepaymentScheduleView: View {
             .foregroundStyle(statusColor(row))
     }
 
-    private func metaLine(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-            Spacer()
-            Text(value)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private func statusLabel(_ row: LoanInstallment) -> String {
         switch row.status {
         case .scheduled: return "Scheduled"
-        case .awaiting_confirmation: return "Awaiting confirmation"
+        case .awaiting_confirmation: return "Pending"
         case .confirmed_paid: return "Paid"
-        case .disputed: return "Disputed"
+        case .disputed: return "Needs attention"
         }
     }
 
@@ -815,6 +1233,22 @@ struct LoanRepaymentScheduleView: View {
         defer { isUpdatingPrincipal = false }
         do {
             try await service.confirmPrincipalReceivedBySeeker(investmentId: investment.id, userId: uid)
+            await onRefresh()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
+        }
+    }
+
+    private func reportPrincipalNotReceived(reason: String) async {
+        guard let uid = currentUserId else { return }
+        isUpdatingPrincipal = true
+        defer { isUpdatingPrincipal = false }
+        do {
+            try await service.reportPrincipalNotReceivedBySeeker(
+                investmentId: investment.id,
+                userId: uid,
+                reason: reason
+            )
             await onRefresh()
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? (error as NSError).localizedDescription
@@ -958,6 +1392,11 @@ struct LoanRepaymentScheduleView: View {
         case .none:
             return "Awaiting signatures"
         case .awaiting_disbursement:
+            if let reason = investment.principalSeekerNotReceivedReason,
+               !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               investment.principalSentByInvestorAt == nil {
+                return "Seeker reported not received — upload new proof"
+            }
             if let sent = investment.principalSentByInvestorAt {
                 return "Sent \(mediumDate(sent)) · awaiting seeker confirmation"
             }
@@ -978,6 +1417,10 @@ struct LoanRepaymentScheduleView: View {
         switch investment.fundingStatus {
         case .none: return .blue
         case .awaiting_disbursement:
+            if investment.principalSeekerNotReceivedReason != nil,
+               investment.principalSentByInvestorAt == nil {
+                return .orange
+            }
             return investment.principalSentByInvestorAt == nil ? auth.accentColor : .orange
         case .disbursed: return .green
         case .defaulted: return .red
@@ -1003,5 +1446,45 @@ struct LoanRepaymentScheduleView: View {
             return investment.principalSeekerProofImageURLs.isEmpty
         }
         return false
+    }
+}
+
+/// One-tap photo library access for installment proof (no intermediate sheet).
+private struct InstallmentProofLibraryPicker: View {
+    let isInvestor: Bool
+    var compact: Bool = false
+    let disabled: Bool
+    let accentColor: Color
+    let onPicked: (PhotosPickerItem) async -> Void
+
+    @State private var selection: PhotosPickerItem?
+
+    var body: some View {
+        PhotosPicker(selection: $selection, matching: .images) {
+            if compact {
+                Label("Photos", systemImage: "photo")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+            } else {
+                Label(
+                    isInvestor ? "Upload receipt proof from photos" : "Upload payment slip from photos",
+                    systemImage: "photo"
+                )
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(accentColor)
+        .disabled(disabled)
+        .onChange(of: selection) { _, item in
+            guard let item else { return }
+            Task {
+                await onPicked(item)
+                await MainActor.run { selection = nil }
+            }
+        }
     }
 }

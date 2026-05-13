@@ -95,6 +95,9 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let principalReceivedBySeekerAt: Date?
     let principalInvestorProofImageURLs: [String]
     let principalSeekerProofImageURLs: [String]
+    /// Set when the seeker reports that the claimed principal transfer was not received; cleared when the investor marks sent again.
+    let principalSeekerNotReceivedAt: Date?
+    let principalSeekerNotReceivedReason: String?
     let equityMilestones: [EquityMilestoneProgress]
     let equityUpdates: [EquityVentureUpdate]
 
@@ -139,6 +142,8 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         principalReceivedBySeekerAt: Date?,
         principalInvestorProofImageURLs: [String],
         principalSeekerProofImageURLs: [String],
+        principalSeekerNotReceivedAt: Date? = nil,
+        principalSeekerNotReceivedReason: String? = nil,
         equityMilestones: [EquityMilestoneProgress] = [],
         equityUpdates: [EquityVentureUpdate] = []
     ) {
@@ -182,6 +187,8 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         self.principalReceivedBySeekerAt = principalReceivedBySeekerAt
         self.principalInvestorProofImageURLs = principalInvestorProofImageURLs
         self.principalSeekerProofImageURLs = principalSeekerProofImageURLs
+        self.principalSeekerNotReceivedAt = principalSeekerNotReceivedAt
+        self.principalSeekerNotReceivedReason = principalSeekerNotReceivedReason
         self.equityMilestones = equityMilestones
         self.equityUpdates = equityUpdates
     }
@@ -191,6 +198,16 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         let s = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return true }
         return !Self.nonBlockingStatusesForSeeker.contains(s)
+    }
+
+    /// Whether this row should contribute to the top “resolve requests / offers before editing” banner.
+    /// In-flight deals (`agreementStatus == .active` or legacy `active` / `completed` status) are excluded — the copy is about pending requests, not ongoing investments.
+    var triggersSeekerRequestResolutionBanner: Bool {
+        guard blocksSeekerFromManagingOpportunity else { return false }
+        if agreementStatus == .active { return false }
+        let s = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if s == "active" || s == "completed" { return false }
+        return true
     }
 
     /// Statuses that do **not** block the seeker (declined / withdrawn / cancelled).
@@ -255,27 +272,30 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 
     func needsInvestorSignature(currentUserId: String?) -> Bool {
         guard agreementStatus == .pending_signatures else { return false }
-        if let agreement,
-           let currentUserId {
+        guard let currentUserId else { return false }
+        if let agreement {
             return agreement.participants.contains {
                 $0.signerId == currentUserId && $0.signerRole == .investor && !$0.isSigned
             }
         }
+        // Legacy rows without embedded `agreement`: infer only once at least one party has signed.
+        guard signedByInvestorAt != nil || signedBySeekerAt != nil else { return false }
         guard signedByInvestorAt == nil else { return false }
-        guard let currentUserId, let iid = investorId else { return false }
+        guard let iid = investorId else { return false }
         return currentUserId == iid
     }
 
     func needsSeekerSignature(currentUserId: String?) -> Bool {
         guard agreementStatus == .pending_signatures else { return false }
-        if let agreement,
-           let currentUserId {
+        guard let currentUserId else { return false }
+        if let agreement {
             return agreement.participants.contains {
                 $0.signerId == currentUserId && $0.signerRole == .seeker && !$0.isSigned
             }
         }
+        guard signedByInvestorAt != nil || signedBySeekerAt != nil else { return false }
         guard signedBySeekerAt == nil else { return false }
-        guard let currentUserId, let sid = seekerId else { return false }
+        guard let sid = seekerId else { return false }
         return currentUserId == sid
     }
 
@@ -301,8 +321,11 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         investmentType == .loan && !loanInstallments.isEmpty
     }
 
+    /// Whether the loan repayment schedule and installment UI should be shown (not the pre-disbursement principal-only flow).
+    /// Includes `.closed` because completed loans move from `disbursed` → `closed` while the schedule remains the source of truth for history.
+    /// Includes `.defaulted` so parties can still see the schedule after default.
     var loanRepaymentsUnlocked: Bool {
-        investmentType == .loan && fundingStatus == .disbursed
+        investmentType == .loan && [.disbursed, .closed, .defaulted].contains(fundingStatus)
     }
 
     var isOfferRequest: Bool {
@@ -324,4 +347,70 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
             .first
     }
 
+}
+
+extension InvestmentListing {
+    /// Returns a copy with a different embedded `agreement` snapshot (same Firestore row id).
+    func replacingAgreement(_ newAgreement: InvestmentAgreementSnapshot?) -> InvestmentListing {
+        InvestmentListing(
+            id: id,
+            status: status,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            opportunityId: opportunityId,
+            investorId: investorId,
+            seekerId: seekerId,
+            opportunityTitle: opportunityTitle,
+            imageURLs: imageURLs,
+            investmentAmount: investmentAmount,
+            finalInterestRate: finalInterestRate,
+            finalTimelineMonths: finalTimelineMonths,
+            investmentType: investmentType,
+            acceptedAt: acceptedAt,
+            receivedAmount: receivedAmount,
+            requestKind: requestKind,
+            offerStatus: offerStatus,
+            offerSource: offerSource,
+            offeredAmount: offeredAmount,
+            offeredInterestRate: offeredInterestRate,
+            offeredTimelineMonths: offeredTimelineMonths,
+            offerDescription: offerDescription,
+            offerChatId: offerChatId,
+            offerChatMessageId: offerChatMessageId,
+            agreementStatus: agreementStatus,
+            fundingStatus: fundingStatus,
+            signedByInvestorAt: signedByInvestorAt,
+            signedBySeekerAt: signedBySeekerAt,
+            agreementGeneratedAt: agreementGeneratedAt,
+            agreement: newAgreement,
+            loanInstallments: loanInstallments,
+            revenueSharePeriods: revenueSharePeriods,
+            moaPdfURL: moaPdfURL,
+            moaContentHash: moaContentHash,
+            investorSignatureImageURL: investorSignatureImageURL,
+            seekerSignatureImageURL: seekerSignatureImageURL,
+            principalSentByInvestorAt: principalSentByInvestorAt,
+            principalReceivedBySeekerAt: principalReceivedBySeekerAt,
+            principalInvestorProofImageURLs: principalInvestorProofImageURLs,
+            principalSeekerProofImageURLs: principalSeekerProofImageURLs,
+            principalSeekerNotReceivedAt: principalSeekerNotReceivedAt,
+            principalSeekerNotReceivedReason: principalSeekerNotReceivedReason,
+            equityMilestones: equityMilestones,
+            equityUpdates: equityUpdates
+        )
+    }
+
+    /// Some write paths attach `agreement` only to one linked `investments` row. The seeker can read all rows
+    /// for an opportunity — copy the snapshot so review/sign UI matches `signAgreement`’s server-side fallback.
+    func withAgreementHydrated(fromSiblingRows rows: [InvestmentListing]) -> InvestmentListing {
+        guard agreement == nil else { return self }
+        guard let oid = opportunityId, !oid.isEmpty else { return self }
+        guard let snap = rows.lazy.first(where: { row in
+            guard let a = row.agreement else { return false }
+            return a.agreementId == oid || row.id == id
+        })?.agreement else {
+            return self
+        }
+        return replacingAgreement(snap)
+    }
 }

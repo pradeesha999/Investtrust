@@ -60,7 +60,7 @@ struct InvestorDashboardView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 22) {
                     dashboardHeader
-                    totalLiabilityBlock
+                    heroProfitsGainedBlock
                     earningsPeriodSelector
                     earningsStatGrid
                     activitySection
@@ -137,20 +137,31 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Total liability
+    // MARK: - Hero summary (profits)
 
-    private var totalLiabilityBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("TOTAL LIABILITY")
+    /// Net profit across the portfolio: all cash received minus all principal ever deployed (excludes pending requests).
+    private var profitsGainedAllTime: Double {
+        InvestorPortfolioMetrics.pureProfitAllTime(investments)
+    }
+
+    private var heroProfitsGainedBlock: some View {
+        let p = profitsGainedAllTime
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("PROFITS GAINED")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.secondary)
                 .tracking(0.5)
 
-            Text("Rs. \(formatAmount(totalLiability))")
+            Text("Rs. \(formatAmount(p))")
                 .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(dashboardPink)
+                .foregroundStyle(p >= 0 ? Color.green : dashboardPink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+
+            Text("All time. Net of repayments and returns vs principal you put in.")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -198,12 +209,17 @@ struct InvestorDashboardView: View {
             statCard(title: "TOTAL INVESTED", value: "Rs. \(formatAmount(totalInvestedAllTime))", valueColor: .black)
             statCard(title: "RETURNS", value: "Rs. \(formatAmount(totalReturnsReceived))", valueColor: dashboardPink)
             statCard(
-                title: "PROFITS COLLECTED",
-                value: "Rs. \(formatAmount(completedProfitsCollected))",
-                valueColor: .black,
-                subtitle: "Active investments: \(activeInvestmentsCount)"
+                title: "TOTAL LIABILITY",
+                value: "Rs. \(formatAmount(totalLiability))",
+                valueColor: .red,
+                subtitle: liabilityStatPeriodSubtitle
             )
-            statCard(title: "PENDING REQUESTS", value: "\(pendingRequestsCount)", valueColor: dashboardPink)
+            statCard(
+                title: "PENDING REQUESTS",
+                value: "\(pendingRequestsCount)",
+                valueColor: dashboardPink,
+                subtitle: "Active deals: \(activeInvestmentsCount)"
+            )
         }
     }
 
@@ -677,6 +693,29 @@ struct InvestorDashboardView: View {
         max(0, totalProjectedReturn - totalReceived)
     }
 
+    /// Short label tying the liability figure to the chart period controls.
+    private var liabilityStatPeriodSubtitle: String {
+        switch earningsPeriod {
+        case .annual:
+            return "Year \(selectedDashboardYear) · vs projected"
+        case .quarterly:
+            return "\(selectedDashboardYear) · Q\(selectedQuarter)"
+        case .monthly:
+            return liabilityMonthYearLabel + " · vs projected"
+        }
+    }
+
+    private var liabilityMonthYearLabel: String {
+        var c = DateComponents()
+        c.year = selectedDashboardYear
+        c.month = selectedMonth
+        c.day = 1
+        guard let d = Calendar.current.date(from: c) else { return "\(selectedDashboardYear)" }
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMM yyyy")
+        return f.string(from: d)
+    }
+
     private var totalProjectedInterest: Double {
         selectedYearFinancials.gain
     }
@@ -691,14 +730,6 @@ struct InvestorDashboardView: View {
 
     private var activeInvestmentsCount: Int {
         InvestorPortfolioMetrics.activeDealsCount(investments)
-    }
-
-    private var completedProfitsCollected: Double {
-        let completedRows = InvestorPortfolioMetrics.rowsForCompletedTab(investments)
-        return completedRows.reduce(0) { total, inv in
-            let returned = InvestorPortfolioMetrics.returnedValue(for: inv)
-            return total + max(0, returned - inv.effectiveAmount)
-        }
     }
 
     private var pendingRequestsCount: Int {

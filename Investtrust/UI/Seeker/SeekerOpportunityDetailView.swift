@@ -29,12 +29,14 @@ struct SeekerOpportunityDetailView: View {
     @State private var investorProfilesById: [String: UserProfile] = [:]
     @State private var principalConfirmBusyId: String?
     @State private var principalProofBusyId: String?
-    @State private var showPrincipalProofLibrary = false
     @State private var showPrincipalProofCamera = false
     @State private var principalProofPreviewItem: PrincipalProofPreviewItem?
     @State private var showCalendarSyncPrompt = false
-    @State private var principalProofLibraryItem: PhotosPickerItem?
+    @State private var offersByInvestmentId: [String: FirestoreInvestorOffer] = [:]
     @State private var principalProofTargetInvestmentId: String?
+    @State private var showPrincipalNotReceivedSheet = false
+    @State private var principalNotReceivedReasonText = ""
+    @State private var principalNotReceivedForInvestmentId: String?
     @State private var equityUpdateTitle = ""
     @State private var equityUpdateMessage = ""
     @State private var equityGrowthMetric = ""
@@ -45,10 +47,17 @@ struct SeekerOpportunityDetailView: View {
     private let opportunityService = OpportunityService()
     private let userService = UserService()
     private let chatService = ChatService()
+    private let offerService = OfferService()
 
     private struct PrincipalProofPreviewItem: Identifiable {
         let url: String
         var id: String { url }
+    }
+
+    private enum SeekerPrincipalFundingBannerMode {
+        case none
+        case awaitingInvestorPrincipal
+        case awaitingSeekerConfirmation
     }
 
     var onMutate: () -> Void
@@ -70,6 +79,34 @@ struct SeekerOpportunityDetailView: View {
         investments.contains { $0.blocksSeekerFromManagingOpportunity }
     }
 
+    /// Orange “resolve requests first” strip — only while something still looks like an open request/offer, not a live deal.
+    private var showBlockingRequestsBanner: Bool {
+        investments.contains { $0.triggersSeekerRequestResolutionBanner }
+    }
+
+    /// Loan is live but principal has not been marked sent yet — seeker waits on the investor.
+    private var seekerPrincipalBannerMode: SeekerPrincipalFundingBannerMode {
+        var anyAwaitingInvestorPrincipal = false
+        var anyAwaitingSeekerConfirmation = false
+        for inv in investments {
+            guard inv.investmentType == .loan else { continue }
+            let oid = inv.opportunityId ?? ""
+            guard oid.isEmpty || oid == opportunity.id else { continue }
+            let s = inv.status.lowercased()
+            let dealLive = inv.agreementStatus == .active || s == "active"
+            guard dealLive else { continue }
+            guard inv.fundingStatus == .awaiting_disbursement else { continue }
+            if inv.principalSentByInvestorAt == nil {
+                anyAwaitingInvestorPrincipal = true
+            } else if inv.principalReceivedBySeekerAt == nil {
+                anyAwaitingSeekerConfirmation = true
+            }
+        }
+        if anyAwaitingInvestorPrincipal { return .awaitingInvestorPrincipal }
+        if anyAwaitingSeekerConfirmation { return .awaitingSeekerConfirmation }
+        return .none
+    }
+
     private var canEditOrDelete: Bool {
         !hasBlockingRequests
     }
@@ -85,6 +122,16 @@ struct SeekerOpportunityDetailView: View {
         hasAcceptedOrActiveDeal
     }
 
+    /// Financial cards: use agreed economics from an accepted / in-flight investment when the
+    /// `opportunities` snapshot is still on pre-offer defaults (Firestore sync / cache issues).
+    private var opportunityForSeekerDisplay: OpportunityListing {
+        let rows = investments.filter { ($0.opportunityId ?? "") == opportunity.id }
+        if let inv = OpportunityListing.primarySeekerDisplayInvestment(rowsForSameOpportunity: rows) {
+            return opportunity.withSeekerAcceptedEconomics(from: inv)
+        }
+        return opportunity
+    }
+
     private var pendingRequestRows: [InvestmentListing] {
         let pending = investments.filter { $0.status.lowercased() == "pending" }
         var bestByInvestor: [String: InvestmentListing] = [:]
@@ -96,8 +143,10 @@ struct SeekerOpportunityDetailView: View {
             }
             if let existing = bestByInvestor[investorId] {
                 let preferred: InvestmentListing
-                if row.isOfferRequest != existing.isOfferRequest {
-                    preferred = row.isOfferRequest ? row : existing
+                let rowIsOfferLike = seekerTreatsRowAsOffer(row)
+                let existingIsOfferLike = seekerTreatsRowAsOffer(existing)
+                if rowIsOfferLike != existingIsOfferLike {
+                    preferred = rowIsOfferLike ? row : existing
                 } else {
                     preferred = row.recencyDate > existing.recencyDate ? row : existing
                 }
@@ -233,10 +282,10 @@ struct SeekerOpportunityDetailView: View {
         }
 
         VStack(alignment: .leading, spacing: 16) {
-            overviewCard(for: opportunity)
-            keyNumbersCard(for: opportunity)
+            overviewCard(for: opportunityForSeekerDisplay)
+            keyNumbersCard(for: opportunityForSeekerDisplay)
             incomeFundsTimelineCard(for: opportunity)
-            dealTermsCard(for: opportunity)
+            dealTermsCard(for: opportunityForSeekerDisplay)
             executionPlanCard(for: opportunity)
         }
         .padding(.horizontal, AppTheme.screenPadding)
@@ -323,9 +372,9 @@ struct SeekerOpportunityDetailView: View {
                        pair.installment.status != .confirmed_paid {
                         Divider()
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Record this payment")
+                            Text("This installment")
                                 .font(.headline)
-                            Text("Upload your bank slip or receipt, then confirm when the money has reached you.")
+                            Text("Add a bank slip, then confirm you paid the investor.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -386,7 +435,7 @@ struct SeekerOpportunityDetailView: View {
                             Text(displayName(for: inv.investorId.flatMap { investorProfilesById[$0] }, investorId: inv.investorId))
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Text("LKR \(formatAmount(inv.effectiveAmount))")
+                            Text("LKR \(formatAmount(seekerResolvedAmount(inv)))")
                                 .font(.subheadline.weight(.bold))
                         }
                         if inv.principalSentByInvestorAt == nil {
@@ -418,97 +467,67 @@ struct SeekerOpportunityDetailView: View {
                                 )
                             }
                             if inv.principalSeekerProofImageURLs.isEmpty {
-                                Menu {
+                                VStack(spacing: 8) {
                                     if VNDocumentCameraViewController.isSupported {
                                         Button {
                                             principalProofTargetInvestmentId = inv.id
                                             showPrincipalProofCamera = true
                                         } label: {
                                             Label("Scan proof", systemImage: "doc.viewfinder")
-                                        }
-                                    }
-                                    Button {
-                                        principalProofTargetInvestmentId = inv.id
-                                        showPrincipalProofLibrary = true
-                                    } label: {
-                                        Label("Upload from photos", systemImage: "photo")
-                                    }
-                                } label: {
-                                    Label(
-                                        principalProofBusyId == inv.id ? "Uploading..." : "Attach receiving proof",
-                                        systemImage: "paperclip"
-                                    )
-                                    .font(.subheadline.weight(.semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(principalProofBusyId != nil)
-                            }
-                            if inv.principalSentByInvestorAt != nil {
-                                Button {
-                                    Task { await confirmPrincipalReceived(investmentId: inv.id) }
-                                } label: {
-                                    Group {
-                                        if principalConfirmBusyId == inv.id {
-                                            ProgressView()
-                                                .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 10)
-                                        } else {
-                                            Text("Confirm principal received")
                                                 .font(.subheadline.weight(.semibold))
                                                 .frame(maxWidth: .infinity)
-                                                .padding(.vertical, 12)
+                                                .padding(.vertical, 10)
                                         }
+                                        .buttonStyle(.bordered)
+                                        .tint(auth.accentColor)
+                                        .disabled(principalProofBusyId != nil)
+                                    }
+                                    SeekerPrincipalReceivingPhotoPicker(disabled: principalProofBusyId != nil) { item in
+                                        await uploadPrincipalProofFromPicker(item: item, investmentId: inv.id)
                                     }
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(auth.accentColor)
-                                .disabled(principalConfirmBusyId != nil || inv.principalSeekerProofImageURLs.isEmpty)
+                            }
+                            if inv.principalSentByInvestorAt != nil {
+                                VStack(spacing: 8) {
+                                    Button {
+                                        Task { await confirmPrincipalReceived(investmentId: inv.id) }
+                                    } label: {
+                                        Group {
+                                            if principalConfirmBusyId == inv.id {
+                                                ProgressView()
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 10)
+                                            } else {
+                                                Text("Confirm principal received")
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 12)
+                                            }
+                                        }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(auth.accentColor)
+                                    .disabled(principalConfirmBusyId != nil || inv.principalSeekerProofImageURLs.isEmpty)
+
+                                    Button {
+                                        principalNotReceivedForInvestmentId = inv.id
+                                        principalNotReceivedReasonText = ""
+                                        showPrincipalNotReceivedSheet = true
+                                    } label: {
+                                        Text("Principal not received")
+                                            .font(.subheadline.weight(.semibold))
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 10)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.orange)
+                                    .disabled(principalConfirmBusyId != nil)
+                                }
                             }
                         }
                     }
                     .padding(12)
                     .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-                }
-            }
-        }
-        .sheet(isPresented: $showPrincipalProofLibrary) {
-            NavigationStack {
-                VStack(spacing: 16) {
-                    Text("Choose proof of receiving the principal transfer.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    PhotosPicker(selection: $principalProofLibraryItem, matching: .images) {
-                        Label("Choose from library", systemImage: "photo.on.rectangle.angled")
-                            .font(.headline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(auth.accentColor)
-                }
-                .padding(AppTheme.screenPadding)
-                .navigationTitle("Principal proof")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            principalProofLibraryItem = nil
-                            principalProofTargetInvestmentId = nil
-                            showPrincipalProofLibrary = false
-                        }
-                    }
-                }
-                .onChange(of: principalProofLibraryItem) { _, item in
-                    guard let item, let id = principalProofTargetInvestmentId else { return }
-                    showPrincipalProofLibrary = false
-                    principalProofTargetInvestmentId = nil
-                    Task {
-                        await uploadPrincipalProofFromPicker(item: item, investmentId: id)
-                        await MainActor.run { principalProofLibraryItem = nil }
-                    }
                 }
             }
         }
@@ -540,17 +559,62 @@ struct SeekerOpportunityDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showPrincipalNotReceivedSheet) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Explain why the principal did not show up. The investor can upload new proof and mark sent again.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: $principalNotReceivedReasonText)
+                        .frame(minHeight: 140)
+                        .padding(8)
+                        .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    Text("This clears their “sent” status and current proof images for this round.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
+                }
+                .padding(AppTheme.screenPadding)
+                .navigationTitle("Principal not received")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            principalNotReceivedReasonText = ""
+                            principalNotReceivedForInvestmentId = nil
+                            showPrincipalNotReceivedSheet = false
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Send to investor") {
+                            let id = principalNotReceivedForInvestmentId
+                            let t = principalNotReceivedReasonText
+                            principalNotReceivedReasonText = ""
+                            principalNotReceivedForInvestmentId = nil
+                            showPrincipalNotReceivedSheet = false
+                            if let id {
+                                Task { await reportPrincipalNotReceivedBySeeker(investmentId: id, reason: t) }
+                            }
+                        }
+                        .disabled(principalNotReceivedReasonText.trimmingCharacters(in: .whitespacesAndNewlines).count < 6)
+                    }
+                }
+            }
+        }
         .sheet(item: $principalProofPreviewItem) { item in
             NavigationStack {
                 ZStack {
                     Color.black.ignoresSafeArea()
-                    StorageBackedAsyncImage(
-                        reference: item.url,
-                        height: min(UIScreen.main.bounds.height * 0.72, 560),
-                        cornerRadius: 16,
-                        feedThumbnail: false
-                    )
-                    .padding(.horizontal, AppTheme.screenPadding)
+                    GeometryReader { geo in
+                        StorageBackedAsyncImage(
+                            reference: item.url,
+                            height: min(geo.size.height * 0.72, 560),
+                            cornerRadius: 16,
+                            feedThumbnail: false
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, AppTheme.screenPadding)
+                    }
                 }
                 .navigationTitle("Proof image")
                 .navigationBarTitleDisplayMode(.inline)
@@ -565,6 +629,28 @@ struct SeekerOpportunityDetailView: View {
         defer { principalConfirmBusyId = nil }
         do {
             try await investmentService.confirmPrincipalReceivedBySeeker(investmentId: investmentId, userId: uid)
+            await loadInvestments()
+            await MainActor.run { onMutate() }
+        } catch {
+            if let le = error as? LocalizedError, let d = le.errorDescription {
+                actionError = d
+            } else {
+                actionError = (error as NSError).localizedDescription
+            }
+        }
+    }
+
+    private func reportPrincipalNotReceivedBySeeker(investmentId: String, reason: String) async {
+        guard let uid = auth.currentUserID else { return }
+        actionError = nil
+        principalConfirmBusyId = investmentId
+        defer { principalConfirmBusyId = nil }
+        do {
+            try await investmentService.reportPrincipalNotReceivedBySeeker(
+                investmentId: investmentId,
+                userId: uid,
+                reason: reason
+            )
             await loadInvestments()
             await MainActor.run { onMutate() }
         } catch {
@@ -673,8 +759,13 @@ struct SeekerOpportunityDetailView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                if hasBlockingRequests {
+                if showBlockingRequestsBanner {
                     blockingBanner
+                        .padding(.horizontal, AppTheme.screenPadding)
+                }
+
+                if seekerPrincipalBannerMode != .none {
+                    seekerPrincipalFundingBanner
                         .padding(.horizontal, AppTheme.screenPadding)
                 }
 
@@ -689,13 +780,13 @@ struct SeekerOpportunityDetailView: View {
                         seekerEquityProgressSection
                             .padding(.horizontal, AppTheme.screenPadding)
                     }
-                    overviewCard(for: opportunity)
+                    overviewCard(for: opportunityForSeekerDisplay)
                         .padding(.horizontal, AppTheme.screenPadding)
-                    keyNumbersCard(for: opportunity)
+                    keyNumbersCard(for: opportunityForSeekerDisplay)
                         .padding(.horizontal, AppTheme.screenPadding)
                     incomeFundsTimelineCard(for: opportunity)
                         .padding(.horizontal, AppTheme.screenPadding)
-                    dealTermsCard(for: opportunity)
+                    dealTermsCard(for: opportunityForSeekerDisplay)
                         .padding(.horizontal, AppTheme.screenPadding)
                     executionPlanCard(for: opportunity)
                         .padding(.horizontal, AppTheme.screenPadding)
@@ -873,6 +964,7 @@ struct SeekerOpportunityDetailView: View {
                     acceptingFor = nil
                     actionError = nil
                     actionSuccess = "Request accepted and investor notified."
+                    await reloadOpportunityFromServer()
                     await loadInvestments()
                     onMutate()
                     onAcceptedRequest?()
@@ -880,10 +972,11 @@ struct SeekerOpportunityDetailView: View {
             }
         }
         .sheet(item: $agreementToReview) { inv in
+            let shown = inv.withAgreementHydrated(fromSiblingRows: investments)
             NavigationStack {
                 InvestmentAgreementReviewView(
-                    investment: inv,
-                    canSign: inv.needsSeekerSignature(currentUserId: auth.currentUserID),
+                    investment: shown,
+                    canSign: shown.needsSeekerSignature(currentUserId: auth.currentUserID),
                     onSign: { signaturePNG in
                         guard let uid = auth.currentUserID else {
                             throw InvestmentService.InvestmentServiceError.notSignedIn
@@ -1166,6 +1259,61 @@ struct SeekerOpportunityDetailView: View {
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
                 .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var seekerPrincipalFundingBanner: some View {
+        switch seekerPrincipalBannerMode {
+        case .none:
+            EmptyView()
+        case .awaitingInvestorPrincipal:
+            seekerPrincipalFundingBannerShell(
+                icon: "clock.badge.checkmark",
+                iconTint: .blue,
+                fill: Color.blue.opacity(0.12),
+                stroke: Color.blue.opacity(0.25),
+                title: "Awaiting investor principal",
+                message: "The investor must transfer the agreed principal, attach transfer proof, then mark the transfer as sent before you can confirm receipt and unlock repayments."
+            )
+        case .awaitingSeekerConfirmation:
+            seekerPrincipalFundingBannerShell(
+                icon: "checkmark.circle.fill",
+                iconTint: .orange,
+                fill: Color.orange.opacity(0.12),
+                stroke: Color.orange.opacity(0.25),
+                title: "Confirm principal receipt",
+                message: "The investor has marked the transfer as sent. When the funds are in your account, confirm receipt in the loan section below to activate the repayment schedule."
+            )
+        }
+    }
+
+    private func seekerPrincipalFundingBannerShell(
+        icon: String,
+        iconTint: Color,
+        fill: Color,
+        stroke: Color,
+        title: String,
+        message: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(iconTint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(stroke, lineWidth: 1)
         )
     }
 
@@ -1717,20 +1865,57 @@ struct SeekerOpportunityDetailView: View {
         return String(cleaned.prefix(1)).uppercased()
     }
 
+    private func seekerCanonicalOffer(for inv: InvestmentListing) -> FirestoreInvestorOffer? {
+        offersByInvestmentId[inv.id]
+    }
+
+    /// True when this row is a negotiated offer (either encoded on the investment doc or stored in `offers`).
+    private func seekerTreatsRowAsOffer(_ inv: InvestmentListing) -> Bool {
+        inv.isOfferRequest || seekerCanonicalOffer(for: inv) != nil
+    }
+
+    private func seekerResolvedAmount(_ inv: InvestmentListing) -> Double {
+        if let o = seekerCanonicalOffer(for: inv) { return o.amount }
+        return inv.effectiveAmount
+    }
+
+    private func seekerResolvedRate(_ inv: InvestmentListing) -> Double? {
+        if let o = seekerCanonicalOffer(for: inv) { return o.interestRate }
+        return inv.effectiveFinalInterestRate
+    }
+
+    private func seekerResolvedMonths(_ inv: InvestmentListing) -> Int? {
+        if let o = seekerCanonicalOffer(for: inv) { return o.timelineMonths }
+        return inv.effectiveFinalTimelineMonths
+    }
+
+    private func seekerResolvedOfferNote(_ inv: InvestmentListing) -> String? {
+        if let o = seekerCanonicalOffer(for: inv), let d = o.description, !d.isEmpty { return d }
+        if let n = inv.offerDescription, !n.isEmpty { return n }
+        return nil
+    }
+
+    private func offerSourceLabel(for inv: InvestmentListing) -> String? {
+        let raw = seekerCanonicalOffer(for: inv)?.source ?? inv.offerSource?.rawValue
+        guard let raw, !raw.isEmpty else { return nil }
+        let parsed = InvestmentOfferSource(rawValue: raw) ?? .detail_sheet
+        return parsed == .chat ? "From chat" : nil
+    }
+
     private func requestRow(_ inv: InvestmentListing) -> some View {
         let pending = inv.status.lowercased() == "pending"
-        let isOffer = inv.isOfferRequest
+        let isOffer = seekerTreatsRowAsOffer(inv)
         let chromeTint: Color = isOffer ? .red : auth.accentColor
         let profile = inv.investorId.flatMap { investorProfilesById[$0] }
         let investorName = displayName(for: profile, investorId: inv.investorId)
-        let displayAmount = inv.effectiveAmount
+        let displayAmount = seekerResolvedAmount(inv)
         let displayRate: String = {
-            let value = inv.effectiveFinalInterestRate
+            let value = seekerResolvedRate(inv)
             guard let value else { return "-" }
             return "\(formatRate(value))%"
         }()
         let displayTimeline: String = {
-            let value = inv.effectiveFinalTimelineMonths
+            let value = seekerResolvedMonths(inv)
             guard let value else { return "-" }
             return "\(value) months"
         }()
@@ -1766,7 +1951,7 @@ struct SeekerOpportunityDetailView: View {
                 .frame(minWidth: 126, alignment: .trailing)
             }
 
-            if inv.isOfferRequest {
+            if seekerTreatsRowAsOffer(inv) {
                 HStack(spacing: 8) {
                     Text("Offer")
                         .font(.caption2.weight(.bold))
@@ -1774,8 +1959,8 @@ struct SeekerOpportunityDetailView: View {
                         .padding(.vertical, 4)
                         .background(Color.red.opacity(0.16), in: Capsule())
                         .foregroundStyle(.red)
-                    if let source = inv.offerSource {
-                        Text(source == .chat ? "From chat" : "From request sheet")
+                    if let sourceLabel = offerSourceLabel(for: inv) {
+                        Text(sourceLabel)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -1783,26 +1968,11 @@ struct SeekerOpportunityDetailView: View {
                 }
             }
 
-            if inv.isOfferRequest {
-                VStack(alignment: .leading, spacing: 4) {
-                    let amount = inv.effectiveAmount
-                    if amount > 0 {
-                        Text("Offered amount: LKR \(formatAmount(amount))")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                    if let rate = inv.effectiveFinalInterestRate, let months = inv.effectiveFinalTimelineMonths {
-                        Text(String(format: "Offered terms: %.2f%% • %d months", rate, months))
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                    if let note = inv.offerDescription, !note.isEmpty {
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(3)
-                    }
-                }
+            if seekerTreatsRowAsOffer(inv), let note = seekerResolvedOfferNote(inv), !note.isEmpty {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(3)
             }
 
             if let investorId = inv.investorId {
@@ -1940,6 +2110,20 @@ struct SeekerOpportunityDetailView: View {
         }
     }
 
+    private func reloadOpportunityFromServer() async {
+        guard auth.currentUserID == opportunity.ownerId else { return }
+        let oid = opportunity.id
+        do {
+            if let fresh = try await opportunityService.fetchOpportunityFromServer(opportunityId: oid) {
+                await MainActor.run { opportunity = fresh }
+            }
+        } catch {
+            if let fresh = try? await opportunityService.fetchOpportunity(opportunityId: oid) {
+                await MainActor.run { opportunity = fresh }
+            }
+        }
+    }
+
     private func loadInvestments() async {
         loadError = nil
         isLoadingInvestments = true
@@ -1952,8 +2136,21 @@ struct SeekerOpportunityDetailView: View {
             for row in visible {
                 print("  • inv=\(row.id) inv=\(row.investorId ?? "nil") status=\(row.status) requestKind=\(row.requestKind.rawValue) offered=\(row.offeredAmount ?? -1)/\(row.offeredInterestRate ?? -1)/\(row.offeredTimelineMonths ?? -1) effective=\(row.effectiveAmount)/\(row.effectiveFinalInterestRate ?? -1)/\(row.effectiveFinalTimelineMonths ?? -1)")
             }
+            var offerMap: [String: FirestoreInvestorOffer] = [:]
+            if auth.currentUserID == opportunity.ownerId, let uid = auth.currentUserID {
+                offerMap = (try? await offerService.fetchOffersKeyedByInvestmentId(
+                    opportunityId: opportunity.id,
+                    listingOwnerSeekerId: uid
+                )) ?? [:]
+            }
             investments = visible
+            offersByInvestmentId = offerMap
             investorProfilesById = await loadInvestorProfiles(for: visible)
+            // Listing document may have been updated (e.g. accepted negotiated terms). This view keeps a
+            // snapshot in `@State`; refetch from server so hero / key numbers are not stuck on cache.
+            if auth.currentUserID == opportunity.ownerId {
+                await reloadOpportunityFromServer()
+            }
             if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
                !showCalendarSyncPrompt,
                visible.contains(where: { $0.agreementStatus == .active }) {
@@ -1970,6 +2167,7 @@ struct SeekerOpportunityDetailView: View {
             }
         } catch {
             loadError = (error as NSError).localizedDescription
+            offersByInvestmentId = [:]
         }
     }
 
@@ -2000,7 +2198,7 @@ struct SeekerOpportunityDetailView: View {
 
     private func requestStatusLabel(for inv: InvestmentListing) -> String {
         if inv.status.lowercased() == "pending" {
-            return inv.isOfferRequest ? "Offer pending" : "Pending decision"
+            return seekerTreatsRowAsOffer(inv) ? "Offer pending" : "Pending decision"
         }
         return inv.lifecycleDisplayTitle
     }
@@ -2015,7 +2213,7 @@ struct SeekerOpportunityDetailView: View {
             break
         }
         switch inv.status.lowercased() {
-        case "pending": return inv.isOfferRequest ? .red : .orange
+        case "pending": return seekerTreatsRowAsOffer(inv) ? .red : .orange
         case "accepted", "active": return .green
         case "declined", "rejected": return .red
         default: return .secondary
@@ -2111,4 +2309,32 @@ struct SeekerOpportunityDetailView: View {
         }
     }
 
+}
+
+/// One-tap photo library for principal receiving proof (no intermediate sheet).
+private struct SeekerPrincipalReceivingPhotoPicker: View {
+    @Environment(AuthService.self) private var auth
+    let disabled: Bool
+    let onPick: (PhotosPickerItem) async -> Void
+
+    @State private var selection: PhotosPickerItem?
+
+    var body: some View {
+        PhotosPicker(selection: $selection, matching: .images) {
+            Label("Upload from photos", systemImage: "photo")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+        }
+        .buttonStyle(.bordered)
+        .tint(auth.accentColor)
+        .disabled(disabled)
+        .onChange(of: selection) { _, item in
+            guard let item else { return }
+            Task {
+                await onPick(item)
+                await MainActor.run { selection = nil }
+            }
+        }
+    }
 }

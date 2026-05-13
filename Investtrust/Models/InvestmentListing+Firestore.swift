@@ -7,12 +7,10 @@ extension InvestmentListing {
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
         let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
 
-        // Investment amount
+        // Investment amount (Firestore may store numerics as Int / Int64 / Double / NSNumber.)
         let investmentAmount: Double = {
-            if let v = data["investmentAmount"] as? Double { return v }
-            if let n = data["investmentAmount"] as? NSNumber { return n.doubleValue }
-            if let v = data["finalAmount"] as? Double { return v }
-            if let n = data["finalAmount"] as? NSNumber { return n.doubleValue }
+            if let v = Self.parseDouble(data["investmentAmount"]) { return v }
+            if let v = Self.parseDouble(data["finalAmount"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let amount = v["amount"] {
                 return Self.parseDouble(amount) ?? 0
             }
@@ -20,8 +18,7 @@ extension InvestmentListing {
         }()
 
         let finalInterestRate: Double? = {
-            if let v = data["finalInterestRate"] as? Double { return v }
-            if let n = data["finalInterestRate"] as? NSNumber { return n.doubleValue }
+            if let v = Self.parseDouble(data["finalInterestRate"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let rate = v["interestRate"] {
                 return Self.parseDouble(rate)
             }
@@ -29,8 +26,7 @@ extension InvestmentListing {
         }()
 
         let finalTimelineMonths: Int? = {
-            if let v = data["finalTimelineMonths"] as? Int { return v }
-            if let n = data["finalTimelineMonths"] as? NSNumber { return n.intValue }
+            if let v = Self.parseInt(data["finalTimelineMonths"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let timeline = v["timelineMonths"] {
                 return Self.parseInt(timeline)
             }
@@ -47,18 +43,18 @@ extension InvestmentListing {
         }()
 
         let receivedAmount: Double = {
-            if let v = data["receivedAmount"] as? Double { return max(0, v) }
-            if let n = data["receivedAmount"] as? NSNumber { return max(0, n.doubleValue) }
-            return 0
+            max(0, Self.parseDouble(data["receivedAmount"]) ?? 0)
         }()
         let offerMap = data["offer"] as? [String: Any]
         let requestKind: InvestmentRequestKind = {
+            // Prefer explicit offer flags before `requestKind` so Firestore rows stay readable if
+            // `requestKind` is stale but `isOfferRequest` / nested `offer.isOffer` are correct.
+            if Self.parseBool(data["isOfferRequest"]) == true { return .offer_request }
+            if Self.parseBool(offerMap?["isOffer"]) == true { return .offer_request }
             if let raw = data["requestKind"] as? String,
                let kind = InvestmentRequestKind(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 return kind
             }
-            if let isOffer = data["isOfferRequest"] as? Bool, isOffer { return .offer_request }
-            if let isOffer = offerMap?["isOffer"] as? Bool, isOffer { return .offer_request }
             return .default_request
         }()
         let offerStatus: InvestmentOfferStatus = {
@@ -119,6 +115,12 @@ extension InvestmentListing {
         let principalReceivedBySeekerAt: Date? = (data["principalReceivedBySeekerAt"] as? Timestamp)?.dateValue()
         let principalInvestorProofImageURLs: [String] = data["principalInvestorProofImageURLs"] as? [String] ?? []
         let principalSeekerProofImageURLs: [String] = data["principalSeekerProofImageURLs"] as? [String] ?? []
+        let principalSeekerNotReceivedAt: Date? = (data["principalSeekerNotReceivedAt"] as? Timestamp)?.dateValue()
+        let principalSeekerNotReceivedReason: String? = {
+            let t = (data["principalSeekerNotReceivedReason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return t.isEmpty ? nil : t
+        }()
 
         let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
 
@@ -276,6 +278,8 @@ extension InvestmentListing {
             principalReceivedBySeekerAt: principalReceivedBySeekerAt,
             principalInvestorProofImageURLs: principalInvestorProofImageURLs,
             principalSeekerProofImageURLs: principalSeekerProofImageURLs,
+            principalSeekerNotReceivedAt: principalSeekerNotReceivedAt,
+            principalSeekerNotReceivedReason: principalSeekerNotReceivedReason,
             equityMilestones: equityMilestones,
             equityUpdates: equityUpdates
         )
@@ -365,9 +369,19 @@ extension InvestmentListing {
         )
     }
 
-    private static func parseDouble(_ value: Any) -> Double? {
+    private static func parseBool(_ value: Any?) -> Bool? {
+        if let b = value as? Bool { return b }
+        if let n = value as? NSNumber { return n.boolValue }
+        if let i = value as? Int { return i != 0 }
+        return nil
+    }
+
+    private static func parseDouble(_ value: Any?) -> Double? {
+        guard let value else { return nil }
         if let v = value as? Double { return v }
         if let n = value as? NSNumber { return n.doubleValue }
+        if let v = value as? Int { return Double(v) }
+        if let v = value as? Int64 { return Double(v) }
         if let s = value as? String {
             let cleaned = s.replacingOccurrences(of: ",", with: "")
             return Double(cleaned)
@@ -375,8 +389,10 @@ extension InvestmentListing {
         return nil
     }
 
-    private static func parseInt(_ value: Any) -> Int? {
+    private static func parseInt(_ value: Any?) -> Int? {
+        guard let value else { return nil }
         if let v = value as? Int { return v }
+        if let v = value as? Int64 { return Int(v) }
         if let n = value as? NSNumber { return n.intValue }
         if let s = value as? String {
             let digits = s.filter(\.isNumber)

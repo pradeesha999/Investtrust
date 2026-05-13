@@ -15,6 +15,14 @@ final class InvestmentService {
     private static let maxProofBytes: Int = 8 * 1024 * 1024
     private static let overdueGraceDays: Int = 7
 
+    /// Firestore `PERMISSION_DENIED` (rules) — used to fall back when `offers` writes are rejected (e.g. rules not deployed).
+    private static func isFirestorePermissionDenied(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == "FIRFirestoreErrorDomain", ns.code == 7 { return true }
+        if ns.domain.contains("Firestore"), ns.code == 7 { return true }
+        return false
+    }
+
     private struct OfferRecord {
         let amount: Double
         let interestRate: Double
@@ -59,6 +67,8 @@ final class InvestmentService {
         case notEquityDeal
         case updateMessageTooShort
         case milestoneTitleMissing
+        case principalNotMarkedSentByInvestor
+        case principalAlreadyReceivedBySeeker
 
         var errorDescription: String? {
             switch self {
@@ -136,6 +146,10 @@ final class InvestmentService {
                 return "Write a short update with at least a few words."
             case .milestoneTitleMissing:
                 return "Select a milestone before updating its status."
+            case .principalNotMarkedSentByInvestor:
+                return "The investor has not marked the principal as sent yet."
+            case .principalAlreadyReceivedBySeeker:
+                return "Principal has already been confirmed as received."
             }
         }
     }
@@ -286,14 +300,7 @@ final class InvestmentService {
         guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
-        let finalAmount: Double = {
-            let cap = max(1, opp.maximumInvestors ?? 1)
-            if cap <= 1 {
-                let amt = proposedAmount ?? opp.amountRequested
-                return amt
-            }
-            return Self.fixedEqualSplitAmount(total: opp.amountRequested, investors: cap)
-        }()
+        let finalAmount = Self.resolveRequestedTicketAmount(opp: opp, proposedAmount: proposedAmount)
         guard finalAmount > 0 else {
             throw InvestmentServiceError.invalidAmount
         }
@@ -354,8 +361,14 @@ final class InvestmentService {
         return created
     }
 
-    /// Create/update a pending investment request sourced from a negotiated offer.
-    /// For multi-investor opportunities (`maximumInvestors > 1`), amount is always fixed equal split.
+    /// Creates a **single** pending `investments` row with the requested economics on the primary fields
+    /// `investmentAmount`, `finalInterestRate`, and `finalTimelineMonths` (easy to read in Firebase console).
+    ///
+    /// - **Negotiated offer** (`listedTermsOnly == false`): also writes `offered*` / `offer` and an `offers/{id}` doc.
+    /// - **Listed terms only** (`listedTermsOnly == true`): same primary fields from the opportunity (split ticket when
+    ///   `maximumInvestors > 1`), `requestKind` is `default_request`, no separate `offers` row.
+    ///
+    /// Supersedes any older **pending** rows for this investor/opportunity so the seeker always sees one current row.
     func createOrUpdateOfferRequest(
         opportunity: OpportunityListing,
         investorId: String,
@@ -365,7 +378,8 @@ final class InvestmentService {
         description: String,
         source: InvestmentOfferSource,
         chatId: String? = nil,
-        chatMessageId: String? = nil
+        chatMessageId: String? = nil,
+        listedTermsOnly: Bool = false
     ) async throws -> InvestmentListing {
         guard let opp = try await opportunityService.fetchOpportunity(opportunityId: opportunity.id) else {
             throw InvestmentServiceError.notFound
@@ -373,10 +387,16 @@ final class InvestmentService {
         guard investorId != opp.ownerId else {
             throw InvestmentServiceError.cannotInvestInOwnListing
         }
-        let resolvedAmount: Double = proposedAmount ?? opp.amountRequested
-        let resolvedRate: Double = proposedInterestRate
-        let resolvedMonths: Int = proposedTimelineMonths
-        print("[OFFER] service.createOrUpdateOfferRequest → opp=\(opp.id) inv=\(investorId) amount=\(resolvedAmount) rate=\(resolvedRate) months=\(resolvedMonths)")
+
+        let amount = Self.resolveRequestedTicketAmount(
+            opp: opp,
+            proposedAmount: listedTermsOnly ? nil : proposedAmount
+        )
+        let resolvedRate = listedTermsOnly ? opp.interestRate : proposedInterestRate
+        let resolvedMonths = listedTermsOnly ? max(1, opp.repaymentTimelineMonths) : proposedTimelineMonths
+
+        print("[OFFER] service.createOrUpdateOfferRequest listedOnly=\(listedTermsOnly) opp=\(opp.id) inv=\(investorId) investmentAmount=\(amount) finalRate=\(resolvedRate) finalMonths=\(resolvedMonths)")
+
         guard resolvedMonths > 0 else {
             throw InvestmentServiceError.invalidOfferTerms
         }
@@ -391,7 +411,6 @@ final class InvestmentService {
             throw InvestmentServiceError.profileIncomplete
         }
 
-        let amount = resolvedAmount
         guard amount > 0 else {
             throw InvestmentServiceError.invalidAmount
         }
@@ -433,23 +452,8 @@ final class InvestmentService {
             "status": "pending",
             "agreementStatus": AgreementStatus.none.rawValue,
             "fundingStatus": FundingStatus.none.rawValue,
-            "requestKind": InvestmentRequestKind.offer_request.rawValue,
             "offerStatus": InvestmentOfferStatus.pending.rawValue,
-            "isOfferRequest": true,
-            "offerSource": source.rawValue,
-            "offeredAmount": amount,
-            "offeredInterestRate": resolvedRate,
-            "offeredTimelineMonths": resolvedMonths,
-            "offerDescription": trimmedDescription,
-            "offer": [
-                "isOffer": true,
-                "amount": amount,
-                "interestRate": resolvedRate,
-                "timelineMonths": resolvedMonths,
-                "description": trimmedDescription,
-                "source": source.rawValue,
-                "updatedAt": Timestamp(date: now)
-            ] as [String: Any],
+            // Primary economics — always what you see in console / seeker UI.
             "investmentAmount": amount,
             "finalInterestRate": resolvedRate,
             "finalTimelineMonths": resolvedMonths,
@@ -461,73 +465,116 @@ final class InvestmentService {
             "loanInstallments": [],
             "revenueSharePeriods": []
         ]
+
+        if listedTermsOnly {
+            payload["requestKind"] = InvestmentRequestKind.default_request.rawValue
+            payload["isOfferRequest"] = false
+        } else {
+            payload["requestKind"] = InvestmentRequestKind.offer_request.rawValue
+            payload["isOfferRequest"] = true
+            payload["offerSource"] = source.rawValue
+            payload["offeredAmount"] = amount
+            payload["offeredInterestRate"] = resolvedRate
+            payload["offeredTimelineMonths"] = resolvedMonths
+            payload["offerDescription"] = trimmedDescription
+            payload["offer"] = [
+                "isOffer": true,
+                "amount": amount,
+                "interestRate": resolvedRate,
+                "timelineMonths": resolvedMonths,
+                "description": trimmedDescription,
+                "source": source.rawValue,
+                "updatedAt": Timestamp(date: now)
+            ] as [String: Any]
+        }
+
         if let firstThumb = opp.imageStoragePaths.first?.trimmingCharacters(in: .whitespacesAndNewlines),
            !firstThumb.isEmpty {
             payload["thumbnailImageURL"] = firstThumb
         }
-        if let chatId, !chatId.isEmpty { payload["offerChatId"] = chatId }
-        if let chatMessageId, !chatMessageId.isEmpty { payload["offerChatMessageId"] = chatMessageId }
+        if !listedTermsOnly {
+            if let chatId, !chatId.isEmpty { payload["offerChatId"] = chatId }
+            if let chatMessageId, !chatMessageId.isEmpty { payload["offerChatMessageId"] = chatMessageId }
+        }
 
-        // Always create a fresh offer row so values cannot inherit from previous default requests.
         let ref = db.collection("investments").document()
         payload["createdAt"] = Timestamp(date: now)
-        let offerRef = db.collection("offers").document()
-        payload["offerRecordId"] = offerRef.documentID
-        try await ref.setData(payload)
-        try await offerRef.setData([
-            "investmentId": ref.documentID,
-            "opportunityId": opp.id,
-            "investorId": investorId,
-            "seekerId": opp.ownerId,
-            "amount": amount,
-            "interestRate": resolvedRate,
-            "timelineMonths": resolvedMonths,
-            "description": trimmedDescription,
-            "source": source.rawValue,
-            "status": InvestmentOfferStatus.pending.rawValue,
-            "createdAt": Timestamp(date: now),
-            "updatedAt": Timestamp(date: now)
-        ])
+
+        if listedTermsOnly {
+            try await ref.setData(payload)
+        } else {
+            let offerRef = db.collection("offers").document()
+            payload["offerRecordId"] = offerRef.documentID
+            let offerPayload = FirestoreInvestorOffer.creationPayload(
+                investmentId: ref.documentID,
+                opportunityId: opp.id,
+                investorId: investorId,
+                seekerId: opp.ownerId,
+                amount: amount,
+                interestRate: resolvedRate,
+                timelineMonths: resolvedMonths,
+                description: trimmedDescription,
+                source: source.rawValue,
+                status: InvestmentOfferStatus.pending.rawValue,
+                now: now
+            )
+            let batch = db.batch()
+            batch.setData(payload, forDocument: ref)
+            batch.setData(offerPayload, forDocument: offerRef)
+            do {
+                try await batch.commit()
+            } catch {
+                guard Self.isFirestorePermissionDenied(error) else { throw error }
+                var fallbackPayload = payload
+                fallbackPayload.removeValue(forKey: "offerRecordId")
+                print("[OFFER] investment+offer batch denied; saving investment doc only (deploy Firestore rules for `offers`). \(error)")
+                try await ref.setData(fallbackPayload)
+            }
+        }
 
         var snap = try await ref.getDocument()
         guard let merged = snap.data(), let parsed = InvestmentListing(id: ref.documentID, data: merged) else {
             throw InvestmentServiceError.notFound
         }
-        // Safety: force-write canonical offer fields once and re-read so UI/chat always receive offer terms.
-        if !parsed.isOfferRequest
-            || parsed.offeredAmount == nil
-            || parsed.offeredInterestRate == nil
-            || parsed.offeredTimelineMonths == nil {
-            try await ref.updateData([
-                "requestKind": InvestmentRequestKind.offer_request.rawValue,
-                "offerStatus": InvestmentOfferStatus.pending.rawValue,
-                "isOfferRequest": true,
-                "offerSource": source.rawValue,
-                "offeredAmount": amount,
-                "offeredInterestRate": resolvedRate,
-                "offeredTimelineMonths": resolvedMonths,
-                "offerDescription": trimmedDescription,
-                "offer": [
-                    "isOffer": true,
-                    "amount": amount,
-                    "interestRate": resolvedRate,
-                    "timelineMonths": resolvedMonths,
-                    "description": trimmedDescription,
-                    "source": source.rawValue,
+
+        if !listedTermsOnly {
+            // Safety: force-write canonical offer + primary fields once if decode/cache missed anything.
+            if !parsed.isOfferRequest
+                || parsed.offeredAmount == nil
+                || parsed.offeredInterestRate == nil
+                || parsed.offeredTimelineMonths == nil
+                || abs(parsed.investmentAmount - amount) > 0.01 {
+                try await ref.updateData([
+                    "requestKind": InvestmentRequestKind.offer_request.rawValue,
+                    "offerStatus": InvestmentOfferStatus.pending.rawValue,
+                    "isOfferRequest": true,
+                    "offerSource": source.rawValue,
+                    "offeredAmount": amount,
+                    "offeredInterestRate": resolvedRate,
+                    "offeredTimelineMonths": resolvedMonths,
+                    "offerDescription": trimmedDescription,
+                    "offer": [
+                        "isOffer": true,
+                        "amount": amount,
+                        "interestRate": resolvedRate,
+                        "timelineMonths": resolvedMonths,
+                        "description": trimmedDescription,
+                        "source": source.rawValue,
+                        "updatedAt": Timestamp(date: now)
+                    ] as [String: Any],
+                    "investmentAmount": amount,
+                    "finalInterestRate": resolvedRate,
+                    "finalTimelineMonths": resolvedMonths,
                     "updatedAt": Timestamp(date: now)
-                ] as [String: Any],
-                "investmentAmount": amount,
-                "finalInterestRate": resolvedRate,
-                "finalTimelineMonths": resolvedMonths,
-                "createdAt": Timestamp(date: now),
-                "updatedAt": Timestamp(date: now)
-            ])
-            snap = try await ref.getDocument()
+                ])
+                snap = try await ref.getDocument()
+            }
         }
+
         guard let finalData = snap.data(), let row = InvestmentListing(id: ref.documentID, data: finalData) else {
             throw InvestmentServiceError.notFound
         }
-        print("[OFFER] service wrote doc id=\(ref.documentID) status=\(row.status) requestKind=\(row.requestKind.rawValue) offered=\(row.offeredAmount ?? -1)/\(row.offeredInterestRate ?? -1)/\(row.offeredTimelineMonths ?? -1)")
+        print("[OFFER] service wrote id=\(ref.documentID) kind=\(row.requestKind.rawValue) investmentAmount=\(row.investmentAmount) finalRate=\(row.finalInterestRate ?? -1) months=\(row.finalTimelineMonths ?? -1)")
         return row
     }
 
@@ -584,7 +631,8 @@ final class InvestmentService {
         let now = Date()
         let canonicalOffer = try? await fetchLatestOfferRecord(
             investmentId: inv.id,
-            opportunityId: serverOpportunity.id
+            opportunityId: serverOpportunity.id,
+            seekerUid: seekerId
         )
         let acceptedAmount = canonicalOffer?.amount ?? inv.offeredAmount ?? inv.investmentAmount
         let acceptedInterestRate = canonicalOffer?.interestRate ?? inv.offeredInterestRate ?? inv.finalInterestRate ?? serverOpportunity.interestRate
@@ -605,8 +653,15 @@ final class InvestmentService {
             acceptedUpdates["offerStatus"] = InvestmentOfferStatus.accepted.rawValue
         }
         try await invRef.updateData(acceptedUpdates)
+        try await opportunityService.applyAcceptedInvestmentTermsToListing(
+            opportunity: serverOpportunity,
+            ownerId: seekerId,
+            acceptedAmount: acceptedAmount,
+            acceptedRate: acceptedInterestRate,
+            acceptedTimelineMonths: acceptedTimelineMonths
+        )
         if inv.requestKind == .offer_request {
-            try await markOfferAccepted(investmentId: inv.id, opportunityId: serverOpportunity.id, at: now)
+            try await markOfferAccepted(investmentId: inv.id, opportunityId: serverOpportunity.id, seekerId: seekerId, at: now)
         }
         try await reconcileMasterAgreementForOpportunity(opportunity: serverOpportunity, seekerId: seekerId, now: now)
 
@@ -802,7 +857,6 @@ final class InvestmentService {
         agreement: InvestmentAgreementSnapshot,
         triggeringUserId: String
     ) async throws {
-        let opportunityId = inv.opportunityId ?? agreement.agreementId
         let candidateIds: [String] = {
             let linked = agreement.linkedInvestmentIds.filter { !$0.isEmpty }
             if !linked.isEmpty { return Array(Set(linked)) }
@@ -882,6 +936,8 @@ final class InvestmentService {
                 rowUpdates["principalReceivedBySeekerAt"] = FieldValue.delete()
                 rowUpdates["principalInvestorProofImageURLs"] = FieldValue.delete()
                 rowUpdates["principalSeekerProofImageURLs"] = FieldValue.delete()
+                rowUpdates["principalSeekerNotReceivedAt"] = FieldValue.delete()
+                rowUpdates["principalSeekerNotReceivedReason"] = FieldValue.delete()
                 let months = max(1, row.finalTimelineMonths ?? agreement.termsSnapshot.repaymentTimelineMonths ?? 1)
                 let rate = row.finalInterestRate ?? agreement.termsSnapshot.interestRate ?? 0
                 let plan = agreement.loanRepaymentPlan
@@ -1066,6 +1122,8 @@ final class InvestmentService {
         let now = Date()
         try await invRef.updateData([
             "principalSentByInvestorAt": Timestamp(date: now),
+            "principalSeekerNotReceivedAt": FieldValue.delete(),
+            "principalSeekerNotReceivedReason": FieldValue.delete(),
             "updatedAt": Timestamp(date: now)
         ])
     }
@@ -1094,6 +1152,50 @@ final class InvestmentService {
         try await invRef.updateData([
             "fundingStatus": FundingStatus.disbursed.rawValue,
             "principalReceivedBySeekerAt": Timestamp(date: now),
+            "principalSeekerNotReceivedAt": FieldValue.delete(),
+            "principalSeekerNotReceivedReason": FieldValue.delete(),
+            "updatedAt": Timestamp(date: now)
+        ])
+    }
+
+    /// Seeker reports that the principal the investor marked as sent was not received. Clears “sent” and proof URLs so the investor can upload fresh proof and mark sent again.
+    func reportPrincipalNotReceivedBySeeker(
+        investmentId: String,
+        userId: String,
+        reason: String
+    ) async throws {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 6 else {
+            throw InvestmentServiceError.disputeReasonTooShort
+        }
+        let invRef = db.collection("investments").document(investmentId)
+        let snap = try await invRef.getDocument()
+        guard let data = snap.data(), let inv = InvestmentListing(id: investmentId, data: data) else {
+            throw InvestmentServiceError.notFound
+        }
+        guard inv.investmentType == .loan else {
+            throw InvestmentServiceError.notLoanOrNoSchedule
+        }
+        guard userId == inv.seekerId else {
+            throw InvestmentServiceError.wrongPartyForInstallmentAction
+        }
+        guard inv.fundingStatus == .awaiting_disbursement else {
+            throw InvestmentServiceError.fundingStatusNotAwaitingDisbursement
+        }
+        guard inv.principalSentByInvestorAt != nil else {
+            throw InvestmentServiceError.principalNotMarkedSentByInvestor
+        }
+        guard inv.principalReceivedBySeekerAt == nil else {
+            throw InvestmentServiceError.principalAlreadyReceivedBySeeker
+        }
+
+        let now = Date()
+        try await invRef.updateData([
+            "principalSentByInvestorAt": FieldValue.delete(),
+            "principalInvestorProofImageURLs": [],
+            "principalSeekerProofImageURLs": [],
+            "principalSeekerNotReceivedAt": Timestamp(date: now),
+            "principalSeekerNotReceivedReason": trimmed,
             "updatedAt": Timestamp(date: now)
         ])
     }
@@ -1238,11 +1340,17 @@ final class InvestmentService {
             throw InvestmentServiceError.installmentOutOfOrder
         }
 
+        var row = rows[idx]
+        if userId == inv.investorId {
+            guard row.seekerMarkedReceivedAt != nil else {
+                throw InvestmentServiceError.seekerMustConfirmPaymentFirst
+            }
+        }
+
         let filename = "proof-\(investmentId)-\(installmentNo)-\(UUID().uuidString.prefix(8)).jpg"
         let asset = try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
         let url = asset.secureURL
 
-        var row = rows[idx]
         if userId == inv.seekerId {
             row.seekerProofImageURLs.append(url)
         } else if userId == inv.investorId {
@@ -1562,7 +1670,8 @@ final class InvestmentService {
         if let representativeRow {
             let canonicalOffer = try? await fetchLatestOfferRecord(
                 investmentId: representativeRow.id,
-                opportunityId: opportunity.id
+                opportunityId: opportunity.id,
+                seekerUid: seekerId
             )
             switch opportunity.investmentType {
             case .loan:
@@ -1691,6 +1800,21 @@ final class InvestmentService {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Amount for this investor’s ticket: listing split for multi-investor listings unless the caller passes an explicit offer amount.
+    private static func resolveRequestedTicketAmount(
+        opp: OpportunityListing,
+        proposedAmount: Double?
+    ) -> Double {
+        let cap = max(1, opp.maximumInvestors ?? 1)
+        if cap <= 1 {
+            return proposedAmount ?? opp.amountRequested
+        }
+        if let proposedAmount, proposedAmount > 0 {
+            return proposedAmount
+        }
+        return fixedEqualSplitAmount(total: opp.amountRequested, investors: cap)
+    }
+
     static func fixedEqualSplitAmount(total: Double, investors: Int) -> Double {
         guard total > 0, investors > 0 else { return 0 }
         let raw = total / Double(investors)
@@ -1704,11 +1828,12 @@ final class InvestmentService {
         return formatter.string(from: NSNumber(value: amount)) ?? String(format: "%.0f", amount)
     }
 
-    private func fetchLatestOfferRecord(investmentId: String, opportunityId: String) async throws -> OfferRecord? {
+    private func fetchLatestOfferRecord(investmentId: String, opportunityId: String, seekerUid: String) async throws -> OfferRecord? {
         let byInvestment = try await db.collection("offers")
             .whereField("investmentId", isEqualTo: investmentId)
+            .whereField("seekerId", isEqualTo: seekerUid)
             .limit(to: 20)
-            .getDocuments()
+            .getDocuments(source: .server)
         let docs = byInvestment.documents.sorted {
             let l = ($0.data()["updatedAt"] as? Timestamp)?.dateValue() ?? .distantPast
             let r = ($1.data()["updatedAt"] as? Timestamp)?.dateValue() ?? .distantPast
@@ -1719,8 +1844,9 @@ final class InvestmentService {
         }
         let byOpportunity = try await db.collection("offers")
             .whereField("opportunityId", isEqualTo: opportunityId)
+            .whereField("seekerId", isEqualTo: seekerUid)
             .limit(to: 50)
-            .getDocuments()
+            .getDocuments(source: .server)
         let fallback = byOpportunity.documents
             .filter { (($0.data()["investmentId"] as? String) ?? "") == investmentId }
             .sorted {
@@ -1733,16 +1859,18 @@ final class InvestmentService {
         return Self.offerRecord(from: fallback.data())
     }
 
-    private func markOfferAccepted(investmentId: String, opportunityId: String, at now: Date) async throws {
+    private func markOfferAccepted(investmentId: String, opportunityId: String, seekerId: String, at now: Date) async throws {
         let byInvestment = try await db.collection("offers")
             .whereField("investmentId", isEqualTo: investmentId)
+            .whereField("seekerId", isEqualTo: seekerId)
             .limit(to: 20)
-            .getDocuments()
+            .getDocuments(source: .server)
         let offerDocs = byInvestment.documents.isEmpty
             ? try await db.collection("offers")
                 .whereField("opportunityId", isEqualTo: opportunityId)
+                .whereField("seekerId", isEqualTo: seekerId)
                 .limit(to: 50)
-                .getDocuments()
+                .getDocuments(source: .server)
             : byInvestment
         let matches = offerDocs.documents.filter {
             (($0.data()["investmentId"] as? String) ?? "") == investmentId

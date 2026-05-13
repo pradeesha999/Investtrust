@@ -39,6 +39,12 @@ struct OpportunityDetailView: View {
         let opportunity: OpportunityListing
     }
 
+    private enum InvestorPrincipalTopBannerMode {
+        case none
+        case mustSendPrincipalAndProof
+        case awaitingSeekerReceiptConfirmation
+    }
+
     /// Production path: load from Firestore by id (avoids `NavigationLink(value:)` / `Hashable` mismatches in lists).
     init(opportunityId: String) {
         self.opportunityId = opportunityId
@@ -90,27 +96,26 @@ struct OpportunityDetailView: View {
             await loadOpportunityFromServer()
         }
         .sheet(isPresented: $showInvestSheet) {
-            if let opportunity {
-                // Negotiable listings: do not lock to “listed terms only” — that path calls
-                // `createInvestmentRequest` and ignores offer economics. Default segment to
-                // Make offer so the primary button hits `createOrUpdateOfferRequest`.
+            if let opportunity, let uid = auth.currentUserID {
                 InvestProposalSheet(
                     opportunity: opportunity,
+                    investorId: uid,
                     preferOfferMode: opportunity.isNegotiable,
                     lockToStandardMode: !opportunity.isNegotiable
-                ) { submission in
-                    try await submitInvestmentSubmission(submission, for: opportunity)
+                ) {
+                    handleProposalSubmitted(for: opportunity)
                 }
             }
         }
         .sheet(isPresented: $showOfferSheet) {
-            if let opportunity {
+            if let opportunity, let uid = auth.currentUserID {
                 InvestProposalSheet(
                     opportunity: opportunity,
+                    investorId: uid,
                     preferOfferMode: true,
                     lockToOfferMode: true
-                ) { submission in
-                    try await submitInvestmentSubmission(submission, for: opportunity)
+                ) {
+                    handleProposalSubmitted(for: opportunity)
                 }
             }
         }
@@ -182,10 +187,31 @@ struct OpportunityDetailView: View {
         userProfileLoaded?.profileDetails?.isCompleteForInvesting == true
     }
 
+    private var investorPrincipalTopBannerMode: InvestorPrincipalTopBannerMode {
+        guard let req = myLatestRequest, let uid = auth.currentUserID else { return .none }
+        guard req.investorId == uid else { return .none }
+        guard req.investmentType == .loan else { return .none }
+        guard req.fundingStatus == .awaiting_disbursement else { return .none }
+        let s = req.status.lowercased()
+        guard req.agreementStatus == .active || s == "active" else { return .none }
+        if req.principalSentByInvestorAt == nil {
+            return .mustSendPrincipalAndProof
+        }
+        if req.principalReceivedBySeekerAt == nil {
+            return .awaitingSeekerReceiptConfirmation
+        }
+        return .none
+    }
+
     @ViewBuilder
     private func detailContent(_ opportunity: OpportunityListing) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
+                if investorPrincipalTopBannerMode != .none {
+                    investorPrincipalTopBanner
+                        .padding(.horizontal, AppTheme.screenPadding)
+                }
+
                 heroSection(for: opportunity)
                     .padding(.horizontal, AppTheme.screenPadding)
                     .padding(.top, 8)
@@ -555,7 +581,7 @@ struct OpportunityDetailView: View {
                     .foregroundStyle(.secondary)
             }
         case .equity:
-            let eq = myLatestRequest?.effectiveFinalInterestRate ?? o.terms.equityPercentage
+            let eq = activeRequestForDisplay?.effectiveFinalInterestRate ?? o.terms.equityPercentage
             if let eq, eq > 0 {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(formatRate(eq))%")
@@ -1033,6 +1059,61 @@ struct OpportunityDetailView: View {
     }
 
     @ViewBuilder
+    private var investorPrincipalTopBanner: some View {
+        switch investorPrincipalTopBannerMode {
+        case .none:
+            EmptyView()
+        case .mustSendPrincipalAndProof:
+            investorPrincipalTopBannerShell(
+                icon: "arrow.up.doc.fill",
+                iconTint: .orange,
+                fill: Color.orange.opacity(0.12),
+                stroke: Color.orange.opacity(0.25),
+                title: "Send principal & transfer proof",
+                message: "Transfer the loan principal to the seeker, attach screenshots or PDFs of the transfer as proof, then mark the transfer as sent. The seeker must confirm receipt before repayments begin."
+            )
+        case .awaitingSeekerReceiptConfirmation:
+            investorPrincipalTopBannerShell(
+                icon: "hourglass",
+                iconTint: .blue,
+                fill: Color.blue.opacity(0.12),
+                stroke: Color.blue.opacity(0.25),
+                title: "Awaiting seeker confirmation",
+                message: "You marked the principal as sent. The seeker will confirm when the funds arrive in their account."
+            )
+        }
+    }
+
+    private func investorPrincipalTopBannerShell(
+        icon: String,
+        iconTint: Color,
+        fill: Color,
+        stroke: Color,
+        title: String,
+        message: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(iconTint)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                .strokeBorder(stroke, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
     private func statusShell(tint: Color, icon: String, title: String, message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             statusHeader(tint: tint, icon: icon, title: title, message: message)
@@ -1163,10 +1244,15 @@ struct OpportunityDetailView: View {
         }
     }
 
+    /// Returns the investor's request only when the seeker has actually agreed to the proposed
+    /// terms. While the offer is still `pending`, the opportunity detail page must keep showing
+    /// the seeker's listed values (amount / rate / months) — the offer's economics only become
+    /// the "displayed" terms after acceptance.
     private var activeRequestForDisplay: InvestmentListing? {
         guard let req = myLatestRequest else { return nil }
         let s = req.status.lowercased()
-        if ["declined", "rejected", "cancelled", "withdrawn"].contains(s) {
+        let acceptedStatuses: Set<String> = ["accepted", "active", "completed", "defaulted"]
+        guard acceptedStatuses.contains(s) || req.acceptedAt != nil else {
             return nil
         }
         return req
@@ -1665,70 +1751,15 @@ struct OpportunityDetailView: View {
         showInvestSheet = true
     }
 
-    private func submitInvestmentSubmission(_ submission: InvestProposalSheet.Submission, for opportunity: OpportunityListing) async throws {
-        guard let uid = auth.currentUserID else {
-            throw InvestmentService.InvestmentServiceError.notSignedIn
-        }
-        let created: InvestmentListing
-        let requestKindLabel: String
-        let noteText: String
-        let snapshotAmountText: String
-        let snapshotRateText: String
-        let snapshotTimelineText: String
-        switch submission {
-        case .standardRequest:
-            created = try await investmentService.createInvestmentRequest(
-                opportunity: opportunity,
-                investorId: uid
-            )
-            requestKindLabel = "Investment request"
-            noteText = "Default investment request from listing."
-            snapshotAmountText = Self.lkrText(created.investmentAmount)
-            snapshotRateText = created.finalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
-            snapshotTimelineText = created.finalTimelineMonths.map { "\($0) months" } ?? "—"
-        case .negotiatedOffer(let amount, let rate, let months, let note):
-            // Forward the investor's actual offer values; do not substitute listing defaults or hard-coded numbers.
-            print("[OFFER] submit → opportunityId=\(opportunity.id) amount=\(amount ?? -1) rate=\(rate) months=\(months) note=\(note)")
-            created = try await investmentService.createOrUpdateOfferRequest(
-                opportunity: opportunity,
-                investorId: uid,
-                proposedAmount: amount,
-                proposedInterestRate: rate,
-                proposedTimelineMonths: months,
-                description: note,
-                source: .detail_sheet
-            )
-            print("[OFFER] persisted → invId=\(created.id) requestKind=\(created.requestKind.rawValue) offered=\(created.offeredAmount ?? -1)/\(created.offeredInterestRate ?? -1)/\(created.offeredTimelineMonths ?? -1) effective=\(created.effectiveAmount)")
-            requestKindLabel = "Offer request"
-            noteText = note.isEmpty ? "Negotiated offer from listing." : note
-            snapshotAmountText = Self.lkrText(created.effectiveAmount)
-            snapshotRateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
-            snapshotTimelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "—"
-        }
-        let chatId = try await chatService.getOrCreateChat(
-            opportunityId: opportunity.id,
-            seekerId: opportunity.ownerId,
-            investorId: uid,
-            opportunityTitle: opportunity.title
-        )
-        let requestSnapshot = InvestmentRequestSnapshot(
-            investmentId: created.id,
-            opportunityId: opportunity.id,
-            title: opportunity.title,
-            amountText: snapshotAmountText,
-            interestRateText: snapshotRateText,
-            timelineText: snapshotTimelineText,
-            note: noteText,
-            requestKindLabel: requestKindLabel
-        )
-        _ = try await chatService.sendInvestmentRequestCard(
-            chatId: chatId,
-            senderId: uid,
-            snapshot: requestSnapshot
-        )
-        await loadMyRequest(for: opportunity)
-        await MainActor.run {
-            showRequestSuccess = true
+    /// The sheet now performs the full submission + chat-card delivery itself, so the parent
+    /// only needs to refresh its local state. This avoids passing typed data across the
+    /// SwiftUI sheet's closure boundary, which was producing corrupted values on this build.
+    private func handleProposalSubmitted(for opportunity: OpportunityListing) {
+        Task {
+            await loadMyRequest(for: opportunity)
+            await MainActor.run {
+                showRequestSuccess = true
+            }
         }
     }
 

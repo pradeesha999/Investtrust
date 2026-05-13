@@ -188,3 +188,88 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
         return String(rate)
     }
 }
+
+// MARK: - Seeker UI: show agreed deal economics
+
+extension OpportunityListing {
+    /// Matches `OpportunityService`’s per-slot ticket sizing (equal split when `maximumInvestors` > 1).
+    static func listingMinimumTicket(amountRequested: Double, maximumInvestors: Int?) -> Double {
+        let cap = max(1, maximumInvestors ?? 1)
+        guard amountRequested > 0 else { return 0 }
+        if cap > 1 {
+            let raw = amountRequested / Double(cap)
+            return (raw * 100).rounded() / 100
+        }
+        return amountRequested
+    }
+
+    /// Picks the investment row whose economics should represent the listing after acceptance / while ongoing.
+    static func primarySeekerDisplayInvestment(rowsForSameOpportunity: [InvestmentListing]) -> InvestmentListing? {
+        let candidates = rowsForSameOpportunity.filter { inv in
+            let s = inv.status.lowercased()
+            if ["accepted", "active", "completed"].contains(s) { return true }
+            if inv.acceptedAt != nil { return true }
+            if inv.agreementStatus == .pending_signatures || inv.agreementStatus == .active { return true }
+            return false
+        }
+        guard !candidates.isEmpty else { return nil }
+        return candidates.max { a, b in
+            let da = a.acceptedAt ?? a.updatedAt ?? a.createdAt ?? .distantPast
+            let db = b.acceptedAt ?? b.updatedAt ?? b.createdAt ?? .distantPast
+            return da < db
+        }
+    }
+
+    /// Builds a listing snapshot using the **accepted** investment’s amount / rate / months so seeker UI
+    /// matches the agreed deal even when the `opportunities` document is still on pre-offer defaults.
+    func withSeekerAcceptedEconomics(from inv: InvestmentListing) -> OpportunityListing {
+        let amt = inv.effectiveAmount
+        guard amt > 0 else { return self }
+        var t = terms
+        switch investmentType {
+        case .loan:
+            if let r = inv.effectiveFinalInterestRate { t.interestRate = r }
+            if let m = inv.effectiveFinalTimelineMonths { t.repaymentTimelineMonths = m }
+        case .equity:
+            if let r = inv.effectiveFinalInterestRate { t.equityPercentage = r }
+            if let m = inv.effectiveFinalTimelineMonths { t.equityTimelineMonths = m }
+        }
+        let minInv = Self.listingMinimumTicket(amountRequested: amt, maximumInvestors: maximumInvestors)
+        let resolvedMin = minInv > 0 ? minInv : minimumInvestment
+        return OpportunityListing(
+            id: id,
+            ownerId: ownerId,
+            title: title,
+            category: category,
+            description: description,
+            investmentType: investmentType,
+            amountRequested: amt,
+            minimumInvestment: resolvedMin,
+            maximumInvestors: maximumInvestors,
+            terms: t,
+            useOfFunds: useOfFunds,
+            incomeGenerationMethod: incomeGenerationMethod,
+            milestones: milestones,
+            location: location,
+            riskLevel: riskLevel,
+            verificationStatus: verificationStatus,
+            viewCount: viewCount,
+            isNegotiable: isNegotiable,
+            documentURLs: documentURLs,
+            status: status,
+            createdAt: createdAt,
+            imageStoragePaths: imageStoragePaths,
+            videoStoragePath: videoStoragePath,
+            videoURL: videoURL,
+            mediaWarnings: mediaWarnings,
+            imagePublicIds: imagePublicIds,
+            videoPublicId: videoPublicId
+        )
+    }
+
+    func overlayingAcceptedIfPresent(investments: [InvestmentListing]) -> OpportunityListing {
+        let rows = investments.filter { $0.opportunityId == id }
+        guard let inv = Self.primarySeekerDisplayInvestment(rowsForSameOpportunity: rows) else { return self }
+        return withSeekerAcceptedEconomics(from: inv)
+    }
+}

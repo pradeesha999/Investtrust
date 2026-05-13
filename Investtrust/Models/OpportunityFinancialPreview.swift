@@ -12,10 +12,8 @@ enum OpportunityFinancialPreview {
         return f.string(from: n) ?? String(format: "%.0f", rounded)
     }
 
-    static func mediumDate(_ date: Date) -> String {
-        let df = DateFormatter()
-        df.dateStyle = .medium
-        return df.string(from: date)
+    nonisolated static func mediumDate(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted))
     }
 
     /// Wizard timeline field: months (or weeks when frequency is weekly) → months used for interest math.

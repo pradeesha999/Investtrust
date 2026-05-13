@@ -1,0 +1,45 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "opportunityId", "order": "ASCENDING" },
+        { "fieldPath": "seekerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "investmentId", "order": "ASCENDING" },
+        { "fieldPath": "seekerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "investmentId", "order": "ASCENDING" },
+        { "fieldPath": "investorId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "chats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "seekerId", "order": "ASCENDING" },
+        { "fieldPath": "investorId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "participantIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

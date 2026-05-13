@@ -11,6 +11,9 @@
     "firebase": "firebase",
     "firebase:login": "firebase login",
     "firebase:provision:storage": "bash scripts/provision-default-storage-bucket.sh",
-    "firebase:deploy:storage": "firebase deploy --only storage"
+    "firebase:deploy:storage": "firebase deploy --only storage",
+    "firebase:deploy:firestore": "firebase deploy --only firestore",
+    "firebase:deploy:firestore:rules": "firebase deploy --only firestore:rules",
+    "firebase:deploy:firestore:indexes": "firebase deploy --only firestore:indexes"
   }
 }
