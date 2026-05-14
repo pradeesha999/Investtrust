@@ -924,6 +924,8 @@ struct OpportunityDetailView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(isRevokingRequest)
+
+                contactSeekerCardButton(for: opportunity)
             }
             .padding(AppTheme.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -944,17 +946,7 @@ struct OpportunityDetailView: View {
                     .padding(.vertical, 6)
                     .background(Color.green.opacity(0.12), in: Capsule())
 
-                Button {
-                    Task { await openChatWithSeeker(opportunity: opportunity) }
-                } label: {
-                    Label("Contact seeker", systemImage: "bubble.left.and.bubble.right.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: AppTheme.minTapTarget)
-                }
-                .buttonStyle(.bordered)
-                .tint(auth.accentColor)
-                .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
+                contactSeekerCardButton(for: opportunity)
             }
             .padding(AppTheme.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -975,6 +967,7 @@ struct OpportunityDetailView: View {
                     }
                     calloutRow(title: "Time remaining", value: timeline.daysLeft > 0 ? "\(timeline.daysLeft) days left" : "Completed")
                 }
+                contactSeekerCardButton(for: opportunity)
             }
             .padding(AppTheme.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1007,13 +1000,21 @@ struct OpportunityDetailView: View {
                     .buttonStyle(.bordered)
                     .tint(auth.accentColor)
                 }
+                contactSeekerCardButton(for: opportunity)
             }
             .padding(AppTheme.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
             .appCardShadow()
         } else if status == "accepted" {
-            statusShell(tint: .green, icon: "checkmark.circle.fill", title: "Accepted", message: "Check the Invest tab for status and use Chat to coordinate.")
+            VStack(alignment: .leading, spacing: 12) {
+                statusHeader(tint: .green, icon: "checkmark.circle.fill", title: "Accepted", message: "Check the Invest tab for status and use Chat to coordinate.")
+                contactSeekerCardButton(for: opportunity)
+            }
+            .padding(AppTheme.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+            .appCardShadow()
         } else if !profileReadyForInvesting {
             VStack(alignment: .leading, spacing: 12) {
                 statusHeader(tint: .orange, icon: "person.text.rectangle", title: "Complete your profile", message: "Legal name, phone, country, city, a short bio, and experience level are required before you can send an investment request.")
@@ -1616,7 +1617,9 @@ struct OpportunityDetailView: View {
 
     @ViewBuilder
     private func floatingActionBar(for opportunity: OpportunityListing) -> some View {
-        if auth.currentUserID != nil, auth.currentUserID != opportunity.ownerId {
+        // Show for any viewer who isn’t the seeker (including brief nil `currentUserID` during
+        // session restore) so “Contact seeker” stays visible while a deal is in progress.
+        if auth.currentUserID != opportunity.ownerId {
             VStack(spacing: 8) {
                 if showsPrimaryInvestmentFloatingAction(for: opportunity) {
                     HStack(spacing: 10) {
@@ -1684,6 +1687,20 @@ struct OpportunityDetailView: View {
                 .stroke(auth.accentColor, lineWidth: 1.5)
         )
         .foregroundStyle(auth.accentColor)
+        .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
+    }
+
+    private func contactSeekerCardButton(for opportunity: OpportunityListing) -> some View {
+        Button {
+            Task { await openChatWithSeeker(opportunity: opportunity) }
+        } label: {
+            Label("Contact seeker", systemImage: "bubble.left.and.bubble.right.fill")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: AppTheme.minTapTarget)
+        }
+        .buttonStyle(.bordered)
+        .tint(auth.accentColor)
         .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
     }
 

@@ -168,6 +168,7 @@ struct SeekerLoanPaymentConfirmBlock: View {
                 } message: {
                     Text(actionError ?? "")
                 }
+                .imageUploadProgressOverlay(isPresented: busy, cornerRadius: AppTheme.controlCornerRadius)
             }
         }
     }

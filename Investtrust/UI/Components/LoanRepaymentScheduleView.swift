@@ -835,6 +835,7 @@ struct LoanRepaymentScheduleView: View {
         }
         .padding(AppTheme.cardPadding)
         .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .imageUploadProgressOverlay(isPresented: isUpdatingPrincipal, cornerRadius: AppTheme.cardCornerRadius)
         .appCardShadow()
     }
 
@@ -1110,6 +1111,7 @@ struct LoanRepaymentScheduleView: View {
                     lineWidth: isCurrentCycle && row.status != .confirmed_paid ? 1.5 : 1
                 )
         )
+        .imageUploadProgressOverlay(isPresented: busyInstallment == row.installmentNo, cornerRadius: AppTheme.cardCornerRadius)
         .appCardShadow()
     }
 

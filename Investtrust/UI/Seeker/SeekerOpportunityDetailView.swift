@@ -486,6 +486,10 @@ struct SeekerOpportunityDetailView: View {
                                         await uploadPrincipalProofFromPicker(item: item, investmentId: inv.id)
                                     }
                                 }
+                                .imageUploadProgressOverlay(
+                                    isPresented: principalProofBusyId == inv.id,
+                                    cornerRadius: AppTheme.controlCornerRadius
+                                )
                             }
                             if inv.principalSentByInvestorAt != nil {
                                 VStack(spacing: 8) {
@@ -2154,7 +2158,7 @@ struct SeekerOpportunityDetailView: View {
             if !LoanRepaymentCalendarSync.hasCalendarSyncPreference,
                !showCalendarSyncPrompt,
                visible.contains(where: { $0.agreementStatus == .active }) {
-                showCalendarSyncPrompt = true
+                await MainActor.run { showCalendarSyncPrompt = true }
             }
             if let uid = auth.currentUserID {
                 for row in visible where row.agreementStatus == .active {

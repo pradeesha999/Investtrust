@@ -45,9 +45,19 @@ extension View {
         shadow(color: Color.primary.opacity(0.08), radius: 10, x: 0, y: 3)
     }
 
-    /// Lightweight, HIG-friendly section header subtitle style.
-    func appSectionSubtitleStyle() -> some View {
-        font(.caption)
-            .foregroundStyle(.secondary)
+    /// Centered spinner + light dim while a photo is read or uploaded (proofs, payments, principal).
+    func imageUploadProgressOverlay(isPresented: Bool, cornerRadius: CGFloat = AppTheme.cardCornerRadius) -> some View {
+        overlay {
+            if isPresented {
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color.black.opacity(0.08))
+                    ProgressView()
+                        .controlSize(.regular)
+                }
+                .allowsHitTesting(true)
+                .accessibilityLabel("Uploading image")
+            }
+        }
     }
 }

@@ -147,6 +147,9 @@ enum LoanRepaymentCalendarSync {
         else { return }
         guard investment.agreementStatus == .active else { return }
         guard let opportunity else { return }
+        // Must not call `ensureCalendarAccess()` until the user has opted in — otherwise EventKit
+        // shows the system permission sheet first and the in-app consent alert never appears reliably.
+        guard isCalendarSyncEnabled else { return }
         guard await ensureCalendarAccess() else { return }
         performOneTimeCleanupIfNeeded()
 
@@ -230,6 +233,7 @@ enum LoanRepaymentCalendarSync {
         guard let uid = currentUserId,
               uid == investment.investorId || uid == investment.seekerId
         else { return }
+        guard isCalendarSyncEnabled else { return }
         guard await ensureCalendarAccess() else { return }
         performOneTimeCleanupIfNeeded()
 
