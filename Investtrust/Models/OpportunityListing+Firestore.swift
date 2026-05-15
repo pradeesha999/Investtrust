@@ -1,6 +1,8 @@
 import FirebaseFirestore
 import Foundation
 
+// Firestore deserialisation for OpportunityListing.
+// Parses raw Firestore document data into the strongly-typed model used across the app.
 extension OpportunityListing {
     init(document: QueryDocumentSnapshot) {
         self.init(documentID: document.documentID, data: document.data())
@@ -39,7 +41,7 @@ extension OpportunityListing {
 
         var terms = OpportunityFirestoreCoding.parseTerms(from: data, type: investmentType)
 
-        // Legacy listings: only top-level loan fields.
+        // Older listings stored loan fields at the top level instead of inside a `terms` map
         if investmentType == .loan {
             if terms.interestRate == nil {
                 terms.interestRate = Self.parseInterest(from: data)
@@ -65,6 +67,13 @@ extension OpportunityListing {
 
         let riskLevel = RiskLevel.parse(data["riskLevel"] as? String)
         let verificationStatus = VerificationStatus.parse(data["verificationStatus"] as? String)
+        let viewCount: Int? = {
+            if let v = data["viewCount"] as? Int { return max(0, v) }
+            if let n = data["viewCount"] as? NSNumber { return max(0, n.intValue) }
+            if let v = data["views"] as? Int { return max(0, v) }
+            if let n = data["views"] as? NSNumber { return max(0, n.intValue) }
+            return nil
+        }()
         let isNegotiable: Bool = {
             if let v = data["isNegotiable"] as? Bool { return v }
             if let n = data["isNegotiable"] as? NSNumber { return n.boolValue }
@@ -143,6 +152,7 @@ extension OpportunityListing {
             location: location,
             riskLevel: riskLevel,
             verificationStatus: verificationStatus,
+            viewCount: viewCount,
             isNegotiable: isNegotiable,
             documentURLs: documentURLs,
             status: status,
@@ -167,7 +177,7 @@ extension OpportunityListing {
             ?? 0
     }
 
-    /// Firestore may store numbers as `Double`, `Int`, `Int64`, or `NSNumber`.
+    // Firestore may store numbers as `Double`, `Int`, `Int64`, or `NSNumber`.
     private static func numberToDouble(_ value: Any?) -> Double? {
         guard let value else { return nil }
         if let d = value as? Double { return d }

@@ -6,9 +6,8 @@
 import SwiftUI
 import UIKit
 
-// MARK: - Haptics (respects Settings → Sounds & Haptics)
-
-/// Light tactile feedback for successful actions. The system suppresses this when haptics are disabled.
+// Haptic feedback helpers used across the app.
+// All calls check the in-app haptics preference before firing so the user can turn them off in Settings.
 enum AppHaptics {
     static func selection() {
         guard AppAccessibilityPreferences.hapticsEnabled else { return }
@@ -39,10 +38,9 @@ enum AppHaptics {
     }
 }
 
-// MARK: - Animation helpers (pass `effectiveReduceMotion` from the environment)
-
+// Animation helpers that respect Reduce Motion — used for all screen transitions and state changes
 extension Animation {
-    /// Prefer this instead of long ease-in-out when the user has Reduce Motion enabled.
+    // Returns a very fast linear animation when Reduce Motion is on, otherwise a standard ease-in-out
     static func accessibleContentTransition(reduceMotion: Bool) -> Animation {
         reduceMotion ? .linear(duration: 0.01) : .easeInOut(duration: 0.2)
     }

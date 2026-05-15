@@ -5,6 +5,7 @@
 
 import SwiftUI
 
+// Sign-in screen. Supports email/password login, Google Sign In, and Face ID/Touch ID auto-login.
 struct LoginView: View {
     @Environment(AuthService.self) private var auth
     @State private var email = ""
@@ -24,52 +25,55 @@ struct LoginView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         titleBlock
 
-                        fieldSection(title: "Email", isFocused: focusedField == .email) {
-                            TextField("Email", text: $email)
-                                .textContentType(.emailAddress)
-                                .keyboardType(.emailAddress)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .focused($focusedField, equals: .email)
-                                .submitLabel(.next)
-                                .onSubmit { focusedField = .password }
-                        }
-                        .padding(.top, 28)
+                        authCard {
+                            fieldSection(title: "Email", isFocused: focusedField == .email) {
+                                TextField("Email", text: $email)
+                                    .textContentType(.emailAddress)
+                                    .keyboardType(.emailAddress)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .focused($focusedField, equals: .email)
+                                    .submitLabel(.next)
+                                    .onSubmit { focusedField = .password }
+                            }
+                            .padding(.top, 4)
 
-                        fieldSection(title: "Password", isFocused: focusedField == .password) {
-                            SecureField("Password", text: $password)
-                                .textContentType(.password)
-                                .textInputAutocapitalization(.never)
-                                .focused($focusedField, equals: .password)
-                                .submitLabel(.go)
-                                .onSubmit { Task { await signIn() } }
-                        }
-                        .padding(.top, 24)
-
-                        forgotPasswordRow
-                            .padding(.top, 16)
-
-                        if let message = auth.errorMessage {
-                            Text(message)
-                                .font(.footnote)
-                                .foregroundStyle(.red)
-                                .padding(.top, 12)
-                                .accessibilityIdentifier("authError")
-                        }
-
-                        signInButton
+                            fieldSection(title: "Password", isFocused: focusedField == .password) {
+                                SecureField("Password", text: $password)
+                                    .textContentType(.password)
+                                    .textInputAutocapitalization(.never)
+                                    .focused($focusedField, equals: .password)
+                                    .submitLabel(.go)
+                                    .onSubmit { Task { await signIn() } }
+                            }
                             .padding(.top, 20)
 
-                        if auth.canSignInWithBiometrics {
-                            faceIDSignInButton
+                            forgotPasswordRow
                                 .padding(.top, 12)
+
+                            if let message = auth.errorMessage {
+                                Text(message)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                                    .padding(.top, 12)
+                                    .accessibilityIdentifier("authError")
+                            }
+
+                            signInButton
+                                .padding(.top, 18)
+
+                            if auth.canSignInWithBiometrics {
+                                faceIDSignInButton
+                                    .padding(.top, 10)
+                            }
+
+                            signUpFooter
+                                .padding(.top, 22)
+
+                            googleButton
+                                .padding(.top, 20)
                         }
-
-                        signUpFooter
-                            .padding(.top, 28)
-
-                        googleButton
-                            .padding(.top, 36)
+                        .padding(.top, 20)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer(minLength: 0)
@@ -80,13 +84,25 @@ struct LoginView: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
-        .background {
-            AuthScreenBackground()
-        }
+        .background(Color.white.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordSheet(initialEmail: email)
         }
+    }
+
+    private func authCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(.systemGray5), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 14, y: 6)
     }
 
     private var titleBlock: some View {
@@ -241,7 +257,7 @@ struct LoginView: View {
     }
 }
 
-// MARK: - Forgot password
+// Forgot password
 
 private struct ForgotPasswordSheet: View {
     @Environment(\.dismiss) private var dismiss

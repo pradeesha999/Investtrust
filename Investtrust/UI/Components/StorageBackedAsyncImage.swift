@@ -2,13 +2,12 @@ import FirebaseStorage
 import SwiftUI
 import UIKit
 
-/// Loads an image from a Firebase Storage path, `gs://` URL, Firebase **HTTPS** download URL, or any other `https://` URL.
-/// Uses `CachedImageLoader` so carousels don’t re-fetch when pages change.
+// Loads and caches images from Firebase Storage paths or HTTPS URLs for use in opportunity cards and carousels
 struct StorageBackedAsyncImage: View {
     let reference: String?
     var height: CGFloat = 220
     var cornerRadius: CGFloat = 16
-    /// When `true`, Cloudinary `res.cloudinary.com/.../image/upload/...` URLs get a width-limited transform so feed rows don’t download full-size originals.
+    // When `true`, Cloudinary `res.cloudinary.com/.../image/upload/...` URLs get a width-limited transform so feed rows don’t download full-size originals.
     var feedThumbnail: Bool = false
 
     @State private var uiImage: UIImage?

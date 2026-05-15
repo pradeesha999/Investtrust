@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import VisionKit
 
-/// Presents `VNDocumentCameraViewController` and returns scanned page images as JPEG data.
+// VisionKit document scanner wrapper used for scanning payment proof documents
 struct DocumentCameraView: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
     var onScannedImages: ([Data]) -> Void

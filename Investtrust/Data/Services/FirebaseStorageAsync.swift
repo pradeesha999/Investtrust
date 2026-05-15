@@ -1,6 +1,7 @@
 import FirebaseStorage
 import Foundation
 
+// Adds async/await wrappers to Firebase Storage's callback-based API
 extension StorageReference {
     func putDataAsync(_ data: Data, metadata: StorageMetadata?) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in

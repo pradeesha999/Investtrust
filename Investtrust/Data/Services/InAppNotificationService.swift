@@ -1,5 +1,7 @@
 import Foundation
 
+// Generates in-app notifications by inspecting the user's active deals.
+// Surfaces action items like "Sign the MOA" or "Upload payment proof" on the notification bell.
 final class InAppNotificationService {
     private let investmentService = InvestmentService()
 
@@ -47,12 +49,15 @@ final class InAppNotificationService {
             }
             if inv.investmentType == .loan, inv.fundingStatus == .awaiting_disbursement, inv.principalSentByInvestorAt == nil {
                 let needsProof = inv.principalInvestorProofImageURLs.isEmpty
+                let seekerReported = inv.principalSeekerNotReceivedReason != nil
                 notes.append(
                     InAppNotification(
-                        id: "investor-principal-\(inv.id)",
-                        title: needsProof ? "Upload principal proof" : "Mark principal sent",
-                        message: "\(safeTitle(inv)) is waiting for principal disbursement.",
-                        createdAt: inv.updatedFallbackDate,
+                        id: seekerReported ? "investor-principal-retry-\(inv.id)" : "investor-principal-\(inv.id)",
+                        title: seekerReported ? "Seeker reported principal not received" : (needsProof ? "Upload principal proof" : "Mark principal sent"),
+                        message: seekerReported
+                            ? "\(safeTitle(inv)): upload new transfer proof and mark sent again."
+                            : "\(safeTitle(inv)) is waiting for principal disbursement.",
+                        createdAt: inv.principalSeekerNotReceivedAt ?? inv.updatedFallbackDate,
                         kind: .actionRequired,
                         route: .actionOngoing
                     )
@@ -175,6 +180,19 @@ final class InAppNotificationService {
                     )
                 }
             }
+            if inv.investmentType == .loan,
+               let accepted = latestAcceptedInstallment(in: inv) {
+                notes.append(
+                    InAppNotification(
+                        id: "seeker-payment-accepted-\(inv.id)-\(accepted.installmentNo)",
+                        title: "Payment accepted",
+                        message: "Investor confirmed installment #\(accepted.installmentNo) for \(safeTitle(inv)).",
+                        createdAt: accepted.investorMarkedPaidAt ?? inv.updatedFallbackDate,
+                        kind: .info,
+                        route: .actionSeekerOpportunity
+                    )
+                )
+            }
             if inv.investmentType == .equity,
                inv.agreementStatus == .active,
                inv.equityUpdates.isEmpty {
@@ -196,6 +214,12 @@ final class InAppNotificationService {
     private func safeTitle(_ inv: InvestmentListing) -> String {
         let title = inv.opportunityTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? "your deal" : title
+    }
+
+    private func latestAcceptedInstallment(in inv: InvestmentListing) -> LoanInstallment? {
+        inv.loanInstallments
+            .filter { $0.status == .confirmed_paid && $0.investorMarkedPaidAt != nil }
+            .max { ($0.investorMarkedPaidAt ?? .distantPast) < ($1.investorMarkedPaidAt ?? .distantPast) }
     }
 }
 

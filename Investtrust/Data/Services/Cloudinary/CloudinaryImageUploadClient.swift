@@ -1,6 +1,7 @@
 import Foundation
 
-/// Unsigned image upload to Cloudinary (`upload_preset` only — no API secret in the app).
+// Uploads JPEG image data to Cloudinary using an unsigned upload preset.
+// Returns the delivery URL and public ID for the uploaded asset.
 enum CloudinaryImageUploadClient {
     enum UploadError: LocalizedError {
         case invalidResponse
@@ -24,8 +25,7 @@ enum CloudinaryImageUploadClient {
         let public_id: String?
     }
 
-    /// Uploads image bytes; returns delivery URL and optional `public_id` (for deletes).
-    /// - Parameter mimeType: Multipart `Content-Type` for the file part (e.g. `image/jpeg`, `image/png`).
+    // Uploads the image and returns the Cloudinary delivery URL plus the public_id for later deletion
     static func uploadImageData(
         _ data: Data,
         filename: String = "image.jpg",
@@ -39,7 +39,7 @@ enum CloudinaryImageUploadClient {
         )
     }
 
-    /// Uploads any file type via Cloudinary `auto` resource detection (useful for PDFs/docs).
+    // Uploads any file type via Cloudinary `auto` resource detection (useful for PDFs/docs).
     static func uploadFileData(
         _ data: Data,
         filename: String,

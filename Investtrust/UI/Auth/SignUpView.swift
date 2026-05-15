@@ -5,6 +5,8 @@
 
 import SwiftUI
 
+// Account creation screen. Takes email and password, creates a Firebase account,
+// and navigates back to the main app on success.
 struct SignUpView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss

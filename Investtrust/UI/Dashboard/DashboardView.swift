@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// First tab: investor portfolio home, or seeker owner home (capital + activity).
+// The Home tab — shows either the investor portfolio dashboard or the seeker's home screen
+// depending on the user's active profile mode
 struct DashboardView: View {
     @Environment(AuthService.self) private var auth
 

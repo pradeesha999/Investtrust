@@ -5,6 +5,8 @@
 
 import SwiftUI
 
+// Listing card shown in the market browse feed and search results.
+// Taps navigate to OpportunityDetailView where the investor can review and invest.
 struct OpportunityCard: View {
     @Environment(AuthService.self) private var auth
 
@@ -150,7 +152,7 @@ struct OpportunityCard: View {
         return "LKR \(OpportunityFinancialPreview.formatLKRInteger(total))"
     }
 
-    /// Feed: images only (first photo, Cloudinary-thumbnail when applicable). Video plays on the detail screen — never load a player here.
+    // Feed: images only (first photo, Cloudinary-thumbnail when applicable). Video plays on the detail screen — never load a player here.
     @ViewBuilder
     private var cardMedia: some View {
         if let first = opp.imageStoragePaths.first {

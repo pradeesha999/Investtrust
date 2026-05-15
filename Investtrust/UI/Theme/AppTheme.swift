@@ -5,12 +5,12 @@
 
 import SwiftUI
 
-/// Shared tokens for non-auth surfaces (cards, spacing, elevation).
+// Design tokens used across all non-auth screens — card styles, spacing, corner radii, and tap targets
 enum AppTheme {
-    /// Seeker default when `AuthService` is unavailable (e.g. some previews). Prefer `auth.accentColor`.
+    // Fallback accent when AuthService isn't available (e.g. Xcode previews). Use auth.accentColor at runtime.
     static var accentFallback: Color { ProfileTheme.seekerBlue }
 
-    /// Elevated cards on `systemGroupedBackground`.
+    // White card surface that sits on top of the grouped background
     static var cardBackground: Color {
         Color(uiColor: .systemBackground)
     }
@@ -40,14 +40,24 @@ enum AppTheme {
 }
 
 extension View {
-    /// Subtle card elevation that works in light and dark mode.
+    // Adds a subtle drop shadow to deal cards that looks natural in both light and dark mode
     func appCardShadow() -> some View {
         shadow(color: Color.primary.opacity(0.08), radius: 10, x: 0, y: 3)
     }
 
-    /// Lightweight, HIG-friendly section header subtitle style.
-    func appSectionSubtitleStyle() -> some View {
-        font(.caption)
-            .foregroundStyle(.secondary)
+    // Dimmed spinner overlay shown while a payment proof or principal photo is uploading
+    func imageUploadProgressOverlay(isPresented: Bool, cornerRadius: CGFloat = AppTheme.cardCornerRadius) -> some View {
+        overlay {
+            if isPresented {
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color.black.opacity(0.08))
+                    ProgressView()
+                        .controlSize(.regular)
+                }
+                .allowsHitTesting(true)
+                .accessibilityLabel("Uploading image")
+            }
+        }
     }
 }

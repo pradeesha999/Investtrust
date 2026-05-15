@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-/// Empty, error, and inline status messaging (aligned across dashboards).
+// Reusable empty-state and error block used across all dashboard tabs.
+// Shows an icon, title, message, and an optional action button.
 struct StatusBlock: View {
     @Environment(AuthService.self) private var auth
 

@@ -1,22 +1,18 @@
 import FirebaseFirestore
 import Foundation
 
-// MARK: - Enums
+// Core enums and schema helpers for opportunity listings.
+// Defines investment types, repayment options, risk levels, and Firestore encoding/decoding.
 
+// The two deal types the seeker can choose when creating an opportunity
 enum InvestmentType: String, CaseIterable, Codable, Sendable {
     case loan
     case equity
-    case revenue_share
-    case project
-    case custom
 
     var displayName: String {
         switch self {
         case .loan: return "Loan"
         case .equity: return "Equity"
-        case .revenue_share: return "Revenue share"
-        case .project: return "Project"
-        case .custom: return "Custom"
         }
     }
 
@@ -31,8 +27,7 @@ enum InvestmentType: String, CaseIterable, Codable, Sendable {
 enum RepaymentFrequency: String, CaseIterable, Codable, Sendable {
     case monthly
     case weekly
-    /// Single payment at end of term (full principal + simple interest).
-    case one_time
+    case one_time  // full principal + interest paid in one lump sum at maturity
 
     var displayName: String {
         switch self {
@@ -112,18 +107,18 @@ enum VentureStage: String, CaseIterable, Codable, Sendable {
     case scaling
 }
 
-// MARK: - Milestone
+// Milestone
 
 struct OpportunityMilestone: Equatable, Hashable, Codable, Sendable {
     var title: String
     var description: String
-    /// Legacy: calendar target from older listings (creation-based).
+    // Legacy: calendar target from older listings (creation-based).
     var expectedDate: Date?
-    /// Days after investment acceptance this milestone is due (preferred).
+    // Days after investment acceptance this milestone is due (preferred).
     var dueDaysAfterAcceptance: Int?
 }
 
-// MARK: - Terms (stored under `terms` in Firestore)
+// Terms (stored under `terms` in Firestore)
 
 struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     var interestRate: Double?
@@ -157,7 +152,7 @@ struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     }
 }
 
-// MARK: - Firestore encode/decode
+// Firestore encode/decode
 
 enum OpportunityFirestoreCoding {
     static func termsDictionary(from t: OpportunityTerms, type: InvestmentType) -> [String: Any] {
@@ -179,16 +174,6 @@ enum OpportunityFirestoreCoding {
             if let v = t.demoLinks { m["demoLinks"] = v }
             if let v = t.equityRoiTimeline { m["equityRoiTimeline"] = v.rawValue }
             if let v = t.exitPlan { m["exitPlan"] = v }
-        case .revenue_share:
-            if let v = t.revenueSharePercent { m["revenueSharePercent"] = v }
-            if let v = t.targetReturnAmount { m["targetReturnAmount"] = v }
-            if let v = t.maxDurationMonths { m["maxDurationMonths"] = v }
-        case .project:
-            if let v = t.expectedReturnType { m["expectedReturnType"] = v.rawValue }
-            if let v = t.expectedReturnValue { m["expectedReturnValue"] = v }
-            if let d = t.completionDate { m["completionDate"] = Timestamp(date: d) }
-        case .custom:
-            if let v = t.customTermsSummary { m["customTermsSummary"] = v }
         }
         return m
     }
@@ -251,18 +236,6 @@ enum OpportunityFirestoreCoding {
                 t.equityRoiTimeline = EquityRoiTimeline(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
             }
             t.exitPlan = str("exitPlan")
-        case .revenue_share:
-            t.revenueSharePercent = dbl("revenueSharePercent")
-            t.targetReturnAmount = dbl("targetReturnAmount")
-            t.maxDurationMonths = intg("maxDurationMonths")
-        case .project:
-            if let raw = nested["expectedReturnType"] as? String ?? data["expectedReturnType"] as? String {
-                t.expectedReturnType = ExpectedReturnType(rawValue: raw.lowercased())
-            }
-            t.expectedReturnValue = str("expectedReturnValue")
-            t.completionDate = date("completionDate")
-        case .custom:
-            t.customTermsSummary = str("customTermsSummary")
         }
         return t
     }
@@ -294,7 +267,7 @@ enum OpportunityFirestoreCoding {
         return Self.sortedMilestonesChronologically(parsed)
     }
 
-    /// Earliest `daysAfterAcceptance` first; then legacy `expectedDate`; undated last (stable by title).
+    // Earliest `daysAfterAcceptance` first; then legacy `expectedDate`; undated last (stable by title).
     static func sortedMilestonesChronologically(_ items: [OpportunityMilestone]) -> [OpportunityMilestone] {
         items.sorted { a, b in
             func tierAndSortValue(_ m: OpportunityMilestone) -> (Int, Double, String) {

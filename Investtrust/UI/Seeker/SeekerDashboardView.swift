@@ -7,20 +7,6 @@
 
 import SwiftUI
 
-private enum SeekerOpportunitySegment: String, CaseIterable {
-    case open
-    case ongoing
-    case completed
-
-    var title: String {
-        switch self {
-        case .open: return "Open"
-        case .ongoing: return "Ongoing"
-        case .completed: return "Completed"
-        }
-    }
-}
-
 struct SeekerDashboardView: View {
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter
@@ -28,6 +14,9 @@ struct SeekerDashboardView: View {
     @State private var myOpportunities: [OpportunityListing] = []
     @State private var seekerInvestments: [InvestmentListing] = []
     @State private var selectedSegment: SeekerOpportunitySegment = .open
+    @State private var opportunityFilterQuery = ""
+    @State private var selectedInvestmentType: InvestmentType?
+    @State private var fundingBracket: OpportunityFundingBracket = .any
     @State private var isLoading = false
     @State private var loadError: String?
 
@@ -83,81 +72,132 @@ struct SeekerDashboardView: View {
         }
     }
 
+    private var filteredDisplayedOpportunities: [OpportunityListing] {
+        let query = opportunityFilterQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var list = displayedOpportunities
+        if let type = selectedInvestmentType {
+            list = list.filter { $0.investmentType == type }
+        }
+        if fundingBracket != .any {
+            list = list.filter { fundingBracket.contains(amount: $0.amountRequested) }
+        }
+        guard !query.isEmpty else { return list }
+        return list.filter { item in
+            item.title.lowercased().contains(query) || item.category.lowercased().contains(query)
+        }
+    }
+
+    private var hasActiveOpportunityConstraints: Bool {
+        !opportunityFilterQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || selectedInvestmentType != nil
+            || fundingBracket != .any
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
-                    headerCard
-
-                    if !myOpportunities.isEmpty {
+            VStack(spacing: 0) {
+                // Segment + search/filter — always sticky, never scrolls away
+                if !myOpportunities.isEmpty {
+                    VStack(spacing: 8) {
                         Picker("Opportunity status", selection: $selectedSegment) {
                             ForEach(SeekerOpportunitySegment.allCases, id: \.self) { segment in
                                 Text(segment.title).tag(segment)
                             }
                         }
                         .pickerStyle(.segmented)
-                        .padding(.top, 4)
-                    } else {
-                        EmptyView()
-                    }
+                        .padding(.top, 26)
 
-                    if let loadError {
-                        Text(loadError)
-                            .font(.subheadline)
-                            .foregroundStyle(.red)
-                            .padding(AppTheme.cardPadding)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(AppTheme.cardBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
-                            .appCardShadow()
-                    } else if isLoading && myOpportunities.isEmpty {
-                        ProgressView("Loading…")
-                            .frame(maxWidth: .infinity)
-                            .padding(20)
-                    } else if myOpportunities.isEmpty {
-                        StatusBlock(
-                            icon: "tray",
-                            title: "No listings yet",
-                            message: "Tap Add opportunity to publish your first investment request."
-                        )
-                    } else if displayedOpportunities.isEmpty {
-                        StatusBlock(
-                            icon: "tray",
-                            title: selectedSegment == .open ? "No open opportunities" : (selectedSegment == .ongoing ? "No ongoing opportunities" : "No completed opportunities"),
-                            message: selectedSegment == .open
-                                ? "Open listings will appear here."
-                                : (selectedSegment == .ongoing ? "Accepted deals in progress appear here." : "Finished deals appear here.")
-                        )
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(displayedOpportunities) { item in
-                                NavigationLink {
-                                    SeekerOpportunityDetailView(
-                                        opportunity: item,
-                                        onMutate: {
-                                            Task { await loadMyOpportunities() }
-                                        },
-                                        onAcceptedRequest: {
-                                            selectedSegment = .ongoing
-                                            Task { await loadMyOpportunities() }
-                                        }
-                                    )
-                                } label: {
-                                    seekerListingRow(item)
+                        searchAndFilterBar
+                    }
+                    .padding(.horizontal, AppTheme.screenPadding)
+                    .padding(.bottom, 8)
+                    .background(Color(.systemGroupedBackground))
+                }
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
+                        if myOpportunities.isEmpty {
+                            headerCard
+                        }
+
+                        if let loadError {
+                            Text(loadError)
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                                .padding(AppTheme.cardPadding)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(AppTheme.cardBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                                .appCardShadow()
+                        } else if isLoading && myOpportunities.isEmpty {
+                            ProgressView("Loading…")
+                                .frame(maxWidth: .infinity)
+                                .padding(20)
+                        } else if myOpportunities.isEmpty {
+                            StatusBlock(
+                                icon: "tray",
+                                title: "No listings yet",
+                                message: "Tap Add opportunity to publish your first investment request."
+                            )
+                        } else if displayedOpportunities.isEmpty {
+                            StatusBlock(
+                                icon: "tray",
+                                title: selectedSegment == .open ? "No open opportunities" : (selectedSegment == .ongoing ? "No ongoing opportunities" : "No completed opportunities"),
+                                message: selectedSegment == .open
+                                    ? "Open listings will appear here."
+                                    : (selectedSegment == .ongoing ? "Accepted deals in progress appear here." : "Finished deals appear here.")
+                            )
+                        } else if filteredDisplayedOpportunities.isEmpty {
+                            StatusBlock(
+                                icon: "line.3.horizontal.decrease.circle",
+                                title: "No matches",
+                                message: "Try a different keyword to filter opportunities."
+                            )
+                        } else {
+                            LazyVStack(spacing: 10) {
+                                ForEach(filteredDisplayedOpportunities) { item in
+                                    NavigationLink {
+                                        SeekerOpportunityDetailView(
+                                            opportunity: item.overlayingAcceptedIfPresent(investments: seekerInvestments),
+                                            onMutate: {
+                                                Task { await loadMyOpportunities() }
+                                            },
+                                            onAcceptedRequest: {
+                                                selectedSegment = .ongoing
+                                                Task { await loadMyOpportunities() }
+                                            }
+                                        )
+                                    } label: {
+                                        seekerListingRow(item)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
+                    .padding(AppTheme.screenPadding)
                 }
-                .padding(AppTheme.screenPadding)
+                .refreshable { await loadMyOpportunities() }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Opportunity")
+            .navigationBarTitleDisplayMode(.inline)
             .task { await loadMyOpportunities() }
-            .refreshable { await loadMyOpportunities() }
             .onAppear {
+                selectedSegment = tabRouter.seekerOpportunitySegment
                 consumeExternalCreateWizardIntentIfNeeded()
+            }
+            .onChange(of: selectedSegment) { _, newValue in
+                tabRouter.seekerOpportunitySegment = newValue
+                // Reset search/filter so each segment is independent
+                opportunityFilterQuery = ""
+                selectedInvestmentType = nil
+                fundingBracket = .any
+            }
+            .onChange(of: tabRouter.seekerOpportunitySegment) { _, newValue in
+                if selectedSegment != newValue {
+                    selectedSegment = newValue
+                }
             }
             .onChange(of: tabRouter.openSeekerCreateWizard) { _, _ in
                 consumeExternalCreateWizardIntentIfNeeded()
@@ -217,6 +257,76 @@ struct SeekerDashboardView: View {
         showCreateFlow = true
     }
 
+    private func resetOpportunityFilters() {
+        opportunityFilterQuery = ""
+        selectedInvestmentType = nil
+        fundingBracket = .any
+    }
+
+    private var searchAndFilterBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                TextField("Search opportunities", text: $opportunityFilterQuery)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.subheadline)
+                if !opportunityFilterQuery.isEmpty {
+                    Button {
+                        opportunityFilterQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    .stroke(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+            )
+
+            Menu {
+                if hasActiveOpportunityConstraints {
+                    Button("Reset filters", role: .destructive) { resetOpportunityFilters() }
+                }
+                Section("Investment type") {
+                    Picker("Type", selection: $selectedInvestmentType) {
+                        Text("All types").tag(Optional<InvestmentType>.none)
+                        ForEach(InvestmentType.allCases, id: \.self) { type in
+                            Text(type.displayName).tag(Optional(type))
+                        }
+                    }
+                }
+                Section("Funding goal") {
+                    Picker("Funding goal", selection: $fundingBracket) {
+                        ForEach(OpportunityFundingBracket.allCases) { b in
+                            Text(b.menuTitle).tag(b)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: hasActiveOpportunityConstraints
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle")
+                    .font(.title3)
+                    .foregroundStyle(hasActiveOpportunityConstraints ? auth.accentColor : .primary)
+                    .padding(8)
+                    .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                            .stroke(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+                    )
+            }
+        }
+    }
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Create an opportunity")
@@ -246,7 +356,9 @@ struct SeekerDashboardView: View {
     }
 
     private func seekerListingRow(_ item: OpportunityListing) -> some View {
+        let display = item.overlayingAcceptedIfPresent(investments: seekerInvestments)
         let statusText = item.status.capitalized
+        let pendingRequests = pendingRequestCount(for: item.id)
         return VStack(alignment: .leading, spacing: 12) {
             seekerRowMedia(item)
 
@@ -261,11 +373,20 @@ struct SeekerDashboardView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+                    if pendingRequests > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "bell.badge.fill")
+                                .font(.caption.weight(.semibold))
+                            Text(pendingRequests == 1 ? "1 new request" : "\(pendingRequests) new requests")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(.red)
+                    }
                 }
                 Spacer(minLength: 8)
-                if item.interestRate > 0 {
+                if display.interestRate > 0 {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(formatRate(item.interestRate))%")
+                        Text("\(formatRate(display.interestRate))%")
                             .font(.title3.weight(.bold))
                             .foregroundStyle(auth.accentColor)
                         Text("Interest")
@@ -300,15 +421,15 @@ struct SeekerDashboardView: View {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(item.formattedAmountLKR)")
+                    Text("LKR \(display.formattedAmountLKR)")
                         .font(.subheadline.weight(.semibold))
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Min ticket")
+                    Text("Final return")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(item.formattedMinimumLKR)")
+                    Text(projectedFinalReturnText(for: display))
                         .font(.caption.weight(.semibold))
                 }
                 Spacer(minLength: 0)
@@ -361,6 +482,26 @@ struct SeekerDashboardView: View {
         let f = DateFormatter()
         f.dateStyle = .medium
         return f.string(from: d)
+    }
+
+    private func projectedFinalReturnText(for item: OpportunityListing) -> String {
+        let principal = item.amountRequested
+        let rate = item.interestRate
+        let months = item.repaymentTimelineMonths
+        guard principal > 0, rate > 0, months > 0 else { return "—" }
+        let total = LoanScheduleGenerator.totalRepayable(
+            principal: principal,
+            annualRatePercent: rate,
+            termMonths: months
+        )
+        return "LKR \(OpportunityFinancialPreview.formatLKRInteger(total))"
+    }
+
+    private func pendingRequestCount(for opportunityId: String) -> Int {
+        seekerInvestments.filter { inv in
+            guard inv.opportunityId == opportunityId else { return false }
+            return inv.status.lowercased() == "pending"
+        }.count
     }
 
     @ViewBuilder

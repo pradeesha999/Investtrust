@@ -1,10 +1,7 @@
 import Foundation
 
-/// Deletes assets from Cloudinary when an opportunity is removed. Requires `CLOUDINARY_API_KEY` + `CLOUDINARY_API_SECRET`
-/// in Info.plist for signed destroy calls. If unset, this is a no-op (upload preset alone cannot delete).
-///
-/// **Production:** Prefer a Firebase Callable Function or backend that holds the secret — Cloudinary docs discourage
-/// embedding `api_secret` in client apps.
+// Deletes images and videos from Cloudinary when the seeker removes an opportunity.
+// Only works when API credentials are configured — otherwise the delete is silently skipped.
 enum CloudinaryDestroyClient {
     private struct DestroyResponse: Decodable {
         let result: String?
@@ -15,7 +12,7 @@ enum CloudinaryDestroyClient {
         let message: String?
     }
 
-    /// Best-effort: deletes stored public ids and, as fallback, parses ids from delivery URLs.
+    // Tries stored public IDs first; falls back to parsing IDs from delivery URLs for older listings
     static func deleteAssetsForOpportunity(
         imagePublicIds: [String],
         videoPublicId: String?,
@@ -91,7 +88,7 @@ enum CloudinaryDestroyClient {
 }
 
 private extension String {
-    /// RFC 3986-ish form encoding for Cloudinary POST bodies.
+    // RFC 3986-ish form encoding for Cloudinary POST bodies.
     var formURLEncoded: String {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
         return addingPercentEncoding(withAllowedCharacters: allowed) ?? self

@@ -1,13 +1,13 @@
 import Foundation
 
-/// Derives `public_id` from `res.cloudinary.com` delivery URLs when Firestore has no stored id (older listings).
+// Parses the Cloudinary public_id out of a delivery URL for older listings that didn't store it separately
 enum CloudinaryPublicIdExtractor {
     enum ResourceFolder: String {
         case image
         case video
     }
 
-    /// e.g. `https://res.cloudinary.com/.../image/upload/v1234/folder/file.jpg` → `folder/file`
+    // Extracts the public_id path segment (e.g. "folder/file") from a Cloudinary HTTPS URL
     static func publicId(fromDeliveryURL string: String) -> String? {
         guard let url = URL(string: string),
               let host = url.host?.lowercased(),

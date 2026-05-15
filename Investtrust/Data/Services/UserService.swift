@@ -7,14 +7,37 @@ import FirebaseAuth
 import FirebaseFirestore
 import Foundation
 
+// Reads and writes user profile data in the `users` Firestore collection.
+// Called by AuthService on sign-in to load and sync the active profile and roles.
 final class UserService {
     private let db = Firestore.firestore()
 
+    // Fetches the user's profile document (nil when the document doesn't exist yet)
     func fetchProfile(userID: String) async throws -> UserProfile? {
         let ref = db.collection("users").document(userID)
         let snapshot = try await ref.getDocument()
         guard snapshot.exists, let data = snapshot.data() else { return nil }
         return Self.userProfile(from: data)
+    }
+
+    // Falls back to querying by UID field when the document ID doesn't match the Firebase UID (legacy data)
+    func fetchProfileResolvingLegacyIDs(userID: String) async throws -> UserProfile? {
+        if let direct = try await fetchProfile(userID: userID) {
+            return direct
+        }
+
+        let keys = ["uid", "userId", "id"]
+        for key in keys {
+            let query = db.collection("users")
+                .whereField(key, isEqualTo: userID)
+                .limit(to: 1)
+            let snapshot = try await query.getDocuments()
+            if let doc = snapshot.documents.first,
+               let parsed = Self.userProfile(from: doc.data()) {
+                return parsed
+            }
+        }
+        return nil
     }
 
     func ensureUserDocumentExists(for user: User) async throws {
@@ -47,7 +70,7 @@ final class UserService {
         )
     }
 
-    /// Persists shared profile fields under `profile` (merge). Legacy `investorProfile` is no longer written.
+    // Persists shared profile fields under `profile` (merge). Legacy `investorProfile` is no longer written.
     func saveProfileDetails(userID: String, details: ProfileDetails) async throws {
         let ref = db.collection("users").document(userID)
         var payload: [String: Any] = [
@@ -75,8 +98,8 @@ final class UserService {
         }
     }
 
-    /// Backfills profile identity fields from Firebase Auth (e.g. Google photo/name)
-    /// without overriding values the user already customized in-app.
+    // Backfills profile identity fields from Firebase Auth (e.g. Google photo/name)
+    // without overriding values the user already customized in-app.
     func syncIdentityFromAuthIfNeeded(for user: User) async throws {
         let ref = db.collection("users").document(user.uid)
         let snapshot = try await ref.getDocument()
@@ -104,7 +127,7 @@ final class UserService {
         try await ref.setData(payload, merge: true)
     }
 
-    /// Opportunity listings created + investment stats (shown on public profile).
+    // Opportunity listings created + investment stats (shown on public profile).
     func fetchProfileActivityMetrics(userID: String) async throws -> ProfileActivityMetrics {
         let opportunityService = OpportunityService()
         let investmentService = InvestmentService()
@@ -204,6 +227,30 @@ final class UserService {
             if let m = data["investorProfile"] as? [String: Any] {
                 return parseProfileDetailsMap(m)
             }
+            if let m = data["seekerProfile"] as? [String: Any] {
+                return parseProfileDetailsMap(m)
+            }
+            if let lifted = liftedProfileMap(from: data) {
+                return parseProfileDetailsMap(lifted)
+            }
+            return nil
+        }()
+
+        let displayName: String? = {
+            let direct = (data["displayName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let direct, !direct.isEmpty { return direct }
+            let fallbacks = [
+                data["name"] as? String,
+                data["fullName"] as? String,
+                data["legalFullName"] as? String,
+                (data["profile"] as? [String: Any])?["legalFullName"] as? String,
+                (data["investorProfile"] as? [String: Any])?["legalFullName"] as? String,
+                (data["seekerProfile"] as? [String: Any])?["legalFullName"] as? String
+            ]
+            for raw in fallbacks {
+                let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !trimmed.isEmpty { return trimmed }
+            }
             return nil
         }()
 
@@ -212,10 +259,34 @@ final class UserService {
             updatedAt: updatedAt,
             activeProfile: activeProfile,
             roles: .init(investor: investor, seeker: seeker),
-            displayName: data["displayName"] as? String,
-            avatarURL: data["avatarURL"] as? String,
+            displayName: displayName,
+            avatarURL: (
+                (data["avatarURL"] as? String)
+                ?? (data["photoURL"] as? String)
+                ?? (data["photoUrl"] as? String)
+            ),
             profileDetails: profileDetails
         )
+    }
+
+    private static func liftedProfileMap(from data: [String: Any]) -> [String: Any]? {
+        var out: [String: Any] = [:]
+        let keys = [
+            "legalFullName",
+            "phoneNumber",
+            "country",
+            "city",
+            "shortBio",
+            "experienceLevel",
+            "pastWorkProjects",
+            "verificationStatus"
+        ]
+        for key in keys {
+            if let value = data[key] {
+                out[key] = value
+            }
+        }
+        return out.isEmpty ? nil : out
     }
 
     private static func parseProfileDetailsMap(_ m: [String: Any]) -> ProfileDetails {

@@ -6,7 +6,8 @@
 import EventKit
 import Foundation
 
-/// Adds calendar entries for loan installment due dates (all-day, one-day-before alarm) after the agreement is active.
+// Syncs loan installment and equity milestone due dates to the user's device calendar.
+// Creates all-day events with a one-day-before alarm so neither party misses a payment.
 @MainActor
 enum LoanRepaymentCalendarSync {
     private static let store = EKEventStore()
@@ -14,8 +15,9 @@ enum LoanRepaymentCalendarSync {
     private static let milestonePersistenceKey = "investtrust.milestoneCalendarEventIds.v1"
     private static let preferenceEnabledKey = "investtrust.calendarSyncEnabled.v1"
     private static let preferenceDecidedKey = "investtrust.calendarSyncDecided.v1"
+    private static let oneTimeCleanupKey = "investtrust.calendarOneTimeCleanup.v1"
 
-    /// Replaces any previously synced events for this investment, then adds one all-day event per unpaid installment.
+    // Removes old calendar events for this deal and creates new ones for all unpaid installments
     static func replaceInstallmentReminders(
         investmentId: String,
         opportunityTitle: String,
@@ -72,7 +74,7 @@ enum LoanRepaymentCalendarSync {
         persistRepaymentEventIds(newIds, investmentId: investmentId)
     }
 
-    /// Replaces milestone reminders for one investment context.
+    // Removes old milestone calendar events and creates new ones for upcoming milestones on equity deals
     static func replaceMilestoneReminders(
         investmentId: String,
         opportunityTitle: String,
@@ -135,7 +137,7 @@ enum LoanRepaymentCalendarSync {
         persistMilestoneEventIds(newIds, investmentId: investmentId)
     }
 
-    /// Unified sync entrypoint for post-sign events.
+    // Unified sync entrypoint for post-sign events.
     static func syncPostAgreementEvents(
         investment: InvestmentListing,
         opportunity: OpportunityListing?,
@@ -146,6 +148,11 @@ enum LoanRepaymentCalendarSync {
         else { return }
         guard investment.agreementStatus == .active else { return }
         guard let opportunity else { return }
+        // Must not call `ensureCalendarAccess()` until the user has opted in — otherwise EventKit
+        // shows the system permission sheet first and the in-app consent alert never appears reliably.
+        guard isCalendarSyncEnabled else { return }
+        guard await ensureCalendarAccess() else { return }
+        performOneTimeCleanupIfNeeded()
 
         if investment.investmentType == .loan, !investment.loanInstallments.isEmpty {
             await replaceInstallmentReminders(
@@ -168,7 +175,7 @@ enum LoanRepaymentCalendarSync {
         )
     }
 
-    /// Removes locally synced calendar rows and UserDefaults keys for this investment (e.g. after revoke or server delete).
+    // Removes locally synced calendar rows and UserDefaults keys for this investment (e.g. after revoke or server delete).
     static func clearReminders(forInvestmentId investmentId: String) {
         removeStoredRepaymentEvents(forInvestmentId: investmentId)
         removeStoredMilestoneEvents(forInvestmentId: investmentId)
@@ -193,6 +200,14 @@ enum LoanRepaymentCalendarSync {
         saveMilestoneIdMap([:])
     }
 
+    private static func performOneTimeCleanupIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: oneTimeCleanupKey) else { return }
+        clearAllReminders()
+        removeAllInvesttrustEventsFromCalendar()
+        defaults.set(true, forKey: oneTimeCleanupKey)
+    }
+
     static var hasCalendarSyncPreference: Bool {
         UserDefaults.standard.bool(forKey: preferenceDecidedKey)
     }
@@ -211,7 +226,7 @@ enum LoanRepaymentCalendarSync {
         await ensureCalendarAccess()
     }
 
-    /// Call when the user opens the repayment hub so the other party (who did not run finalization) gets the same reminders.
+    // Call when the user opens the repayment hub so the other party (who did not run finalization) gets the same reminders.
     static func syncIfEligible(investment: InvestmentListing, currentUserId: String?) async {
         guard investment.investmentType == .loan else { return }
         guard investment.agreementStatus == .active else { return }
@@ -219,6 +234,9 @@ enum LoanRepaymentCalendarSync {
         guard let uid = currentUserId,
               uid == investment.investorId || uid == investment.seekerId
         else { return }
+        guard isCalendarSyncEnabled else { return }
+        guard await ensureCalendarAccess() else { return }
+        performOneTimeCleanupIfNeeded()
 
         await replaceInstallmentReminders(
             investmentId: investment.id,
@@ -230,7 +248,7 @@ enum LoanRepaymentCalendarSync {
         )
     }
 
-    // MARK: - Calendar access
+// Calendar access
 
     private static func ensureCalendarAccess() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
@@ -260,7 +278,24 @@ enum LoanRepaymentCalendarSync {
         }
     }
 
-    // MARK: - Persistence
+    private static func removeAllInvesttrustEventsFromCalendar() {
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .year, value: -10, to: Date()) ?? Date.distantPast
+        let end = cal.date(byAdding: .year, value: 10, to: Date()) ?? Date.distantFuture
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let matches = store.events(matching: predicate).filter { event in
+            let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let notes = (event.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return title.contains("investtrust") || notes.contains("investtrust")
+        }
+        for event in matches {
+            try? store.remove(event, span: .thisEvent)
+        }
+        saveRepaymentIdMap([:])
+        saveMilestoneIdMap([:])
+    }
+
+// Persistence
 
     private static func removeStoredRepaymentEvents(forInvestmentId investmentId: String) {
         let map = loadRepaymentIdMap()
@@ -322,7 +357,7 @@ enum LoanRepaymentCalendarSync {
         UserDefaults.standard.set(data, forKey: milestonePersistenceKey)
     }
 
-    // MARK: - Copy
+// Copy
 
     private static func notesForInstallment(
         opportunityTitle: String,

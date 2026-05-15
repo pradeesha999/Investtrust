@@ -1,7 +1,10 @@
 import SwiftUI
 import FirebaseAuth
+import PhotosUI
+import UIKit
 
-/// Shared profile form for investors and opportunity builders (stored in `users.profile`).
+// Profile edit screen for both investors and seekers.
+// Fills in the required fields (name, phone, bio, experience) that gate the "Invest" button.
 struct ProfileEditView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -17,6 +20,8 @@ struct ProfileEditView: View {
     @State private var pastWorkProjects = ""
     @State private var avatarURL = ""
     @State private var authPhotoURL = ""
+    @State private var selectedAvatarItem: PhotosPickerItem?
+    @State private var selectedAvatarData: Data?
 
     @State private var isSaving = false
     @State private var loadError: String?
@@ -49,6 +54,25 @@ struct ProfileEditView: View {
             }
 
             Section("Photo") {
+                if let selectedAvatarData,
+                   let preview = UIImage(data: selectedAvatarData) {
+                    HStack(spacing: 12) {
+                        Image(uiImage: preview)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 56, height: 56)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color(.separator).opacity(0.25), lineWidth: 1))
+                        Text("Selected photo will be uploaded when you save.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
+                    Label("Upload from gallery", systemImage: "photo.on.rectangle")
+                }
+
                 TextField("Profile picture URL (optional)", text: $avatarURL)
                     .textContentType(.URL)
                     .keyboardType(.URL)
@@ -63,6 +87,7 @@ struct ProfileEditView: View {
                 if !avatarURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button("Remove profile photo", role: .destructive) {
                         avatarURL = ""
+                        selectedAvatarData = nil
                     }
                 }
                 Text("Use a full URL like https://example.com/photo.jpg")
@@ -119,6 +144,10 @@ struct ProfileEditView: View {
         }
         .task(id: auth.currentUserID) {
             await load()
+        }
+        .onChange(of: selectedAvatarItem) { _, item in
+            guard let item else { return }
+            Task { await loadPickedAvatar(item) }
         }
     }
 
@@ -193,14 +222,35 @@ struct ProfileEditView: View {
         defer { isSaving = false }
         do {
             try await userService.saveProfileDetails(userID: uid, details: next)
-            let trimmedAvatar = avatarURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            try await userService.updateAvatarURL(userID: uid, url: trimmedAvatar.isEmpty ? nil : trimmedAvatar)
+            let finalAvatarURL: String?
+            if let selectedAvatarData {
+                let payload = ImageJPEGUploadPayload.jpegForUpload(from: selectedAvatarData)
+                try await InappropriateImageGate.validateImageDataForUpload(payload)
+                let filename = "avatar-\(uid)-\(UUID().uuidString.prefix(8)).jpg"
+                let uploaded = try await CloudinaryImageUploadClient.uploadImageData(payload, filename: filename)
+                finalAvatarURL = uploaded.secureURL
+            } else {
+                let trimmedAvatar = avatarURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                finalAvatarURL = trimmedAvatar.isEmpty ? nil : trimmedAvatar
+            }
+            try await userService.updateAvatarURL(userID: uid, url: finalAvatarURL)
             dismiss()
         } catch {
             saveError = (error as NSError).localizedDescription
             saveAlertTitle = "Couldn't save"
             saveAlertMessage = saveError ?? ""
             showSaveAlert = true
+        }
+    }
+
+    @MainActor
+    private func loadPickedAvatar(_ item: PhotosPickerItem) async {
+        do {
+            if let data = try await item.loadTransferable(type: Data.self), !data.isEmpty {
+                selectedAvatarData = data
+            }
+        } catch {
+            saveError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 }

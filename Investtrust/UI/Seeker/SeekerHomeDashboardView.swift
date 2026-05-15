@@ -1,9 +1,4 @@
-//
-//  SeekerHomeDashboardView.swift
-//  Investtrust
-//
-//  Seeker **Home** tab: capital overview, investor activity, and listings.
-//
+// Seeker Home tab — capital received overview, earnings chart, investor activity, and listing status cards.
 
 import SwiftUI
 
@@ -15,18 +10,27 @@ private enum SeekerHomeEarningsPeriod: String, CaseIterable {
     var title: String {
         switch self {
         case .annual: return "Annual"
-        case .quarterly: return "Quartely"
+        case .quarterly: return "Quarterly"
         case .monthly: return "Monthly"
         }
     }
 }
 
-private struct SeekerHomeYearActivity: Identifiable {
-    var id: Int { year }
-    let year: Int
+private struct SeekerHomeChartBucket: Identifiable {
+    let id: String
+    let axisLabel: String
     let principal: Double
     let interest: Double
     var total: Double { principal + interest }
+}
+
+private struct SeekerTopInvestor: Identifiable {
+    let id: String
+    let displayName: String
+    let avatarURL: String?
+    let totalAmount: Double
+    let dealsCount: Int
+    let sinceDate: Date
 }
 
 struct SeekerHomeDashboardView: View {
@@ -35,9 +39,12 @@ struct SeekerHomeDashboardView: View {
     @State private var myOpportunities: [OpportunityListing] = []
     @State private var seekerInvestments: [InvestmentListing] = []
     @State private var profile: UserProfile?
+    @State private var investorProfiles: [String: UserProfile] = [:]
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var earningsPeriod: SeekerHomeEarningsPeriod = .annual
+    @State private var selectedDashboardYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var hasInitializedYearSelection = false
 
     private let opportunityService = OpportunityService()
     private let investmentService = InvestmentService()
@@ -103,7 +110,7 @@ struct SeekerHomeDashboardView: View {
     private func committedPrincipal(for opportunityId: String) -> Double {
         seekerInvestments
             .filter { $0.opportunityId == opportunityId && !isDeclinedLike($0) }
-            .reduce(0) { $0 + $1.investmentAmount }
+            .reduce(0) { $0 + $1.effectiveAmount }
     }
 
     private var opportunitiesNeedingAttention: [OpportunityListing] {
@@ -112,74 +119,330 @@ struct SeekerHomeDashboardView: View {
             .sorted { pendingCount(for: $0.id) > pendingCount(for: $1.id) }
     }
 
+    private var dashboardListings: [OpportunityListing] {
+        myOpportunities.filter { opp in
+            let related = seekerInvestments.filter { $0.opportunityId == opp.id }
+            if related.isEmpty {
+                return opp.normalizedListingStatus == "open"
+            }
+            return related.contains { inv in
+                let s = inv.status.lowercased()
+                return ["pending", "accepted", "active"].contains(s)
+                    || inv.agreementStatus == .pending_signatures
+                    || inv.agreementStatus == .active
+            }
+        }
+    }
+
     private var currentYear: Int {
         Calendar.current.component(.year, from: Date())
     }
 
     private var yearOptions: [Int] {
-        Array(((currentYear - 4)...currentYear).reversed())
+        Array(((currentYear - 6)...currentYear + 1).reversed())
     }
 
-    private var yearActivities: [SeekerHomeYearActivity] {
-        var byYear: [Int: (principal: Double, interest: Double)] = [:]
+    // Investments that affect seeker financial metrics (must be accepted/active/completed, not just pending requests).
+    private var qualifyingInvestments: [InvestmentListing] {
+        seekerInvestments.filter { inv in
+            let s = inv.status.lowercased()
+            if isDeclinedLike(inv) || s == "pending" { return false }
+            return true
+        }
+    }
+
+    // Uses the most recent known lifecycle timestamp so chart bucketing reflects when deal activity actually happened.
+    private func attributionDate(for inv: InvestmentListing) -> Date? {
+        [
+            inv.createdAt,
+            inv.acceptedAt,
+            inv.agreementGeneratedAt,
+            inv.signedBySeekerAt,
+            inv.signedByInvestorAt
+        ]
+        .compactMap(\.self)
+        .max()
+    }
+
+    // Seeker view semantics:
+    // - principal = capital received
+    // - gain = liability still owed to investors (projected return - already repaid)
+    private func principalAndProjectedGain(for inv: InvestmentListing) -> (principal: Double, gain: Double) {
+        let principal = inv.effectiveAmount
+        let projected = InvestorPortfolioMetrics.projectedMaturityValue(for: inv)
+        let repaid = InvestorPortfolioMetrics.returnedValue(for: inv)
+        let outstanding = max(0, projected - repaid)
+        return (principal, outstanding)
+    }
+
+    private func sumPrincipalGain(_ rows: [InvestmentListing]) -> (principal: Double, gain: Double) {
+        rows.reduce(into: (0.0, 0.0)) { acc, inv in
+            let pair = principalAndProjectedGain(for: inv)
+            acc.0 += pair.principal
+            acc.1 += pair.gain
+        }
+    }
+
+    private func investments(inCalendarYear year: Int) -> [InvestmentListing] {
         let cal = Calendar.current
-        for opp in myOpportunities {
-            guard let date = opp.createdAt else { continue }
-            let year = cal.component(.year, from: date)
-            let principal = opp.amountRequested
-            let interest = opp.amountRequested * (opp.interestRate / 100.0)
-            var entry = byYear[year] ?? (0, 0)
-            entry.principal += principal
-            entry.interest += interest
-            byYear[year] = entry
+        return qualifyingInvestments.filter {
+            guard let d = attributionDate(for: $0) else { return false }
+            return cal.component(.year, from: d) == year
         }
+    }
 
-        let years = ((currentYear - 5)...currentYear)
-        var out: [SeekerHomeYearActivity] = []
-        for y in years {
-            let entry = byYear[y] ?? (0, 0)
-            out.append(SeekerHomeYearActivity(year: y, principal: entry.principal, interest: entry.interest))
-        }
+    private var ongoingInvestments: [InvestmentListing] {
+        timelineScopedInvestments.filter { InvestorPortfolioMetrics.isOngoingDeal($0) }
+    }
 
-        if out.allSatisfy({ $0.total == 0 }) {
-            return [
-                SeekerHomeYearActivity(year: currentYear - 5, principal: 280_000, interest: 130_000),
-                SeekerHomeYearActivity(year: currentYear - 4, principal: 230_000, interest: 70_000),
-                SeekerHomeYearActivity(year: currentYear - 3, principal: 400_000, interest: 160_000),
-                SeekerHomeYearActivity(year: currentYear - 2, principal: 530_000, interest: 320_000),
-                SeekerHomeYearActivity(year: currentYear - 1, principal: 360_000, interest: 410_000),
-                SeekerHomeYearActivity(year: currentYear, principal: 80_000, interest: 0)
-            ]
+    private var completedInvestments: [InvestmentListing] {
+        timelineScopedInvestments.filter { InvestorPortfolioMetrics.isCompletedDeal($0) }
+    }
+
+    private var activeInvestmentsCount: Int {
+        ongoingInvestments.count
+    }
+
+    private var pendingRequestsCount: Int {
+        let cal = Calendar.current
+        return seekerInvestments.filter { inv in
+            guard inv.status.lowercased() == "pending" else { return false }
+            let date = attributionDate(for: inv) ?? inv.createdAt
+            guard let date else { return false }
+            switch earningsPeriod {
+            case .annual:
+                return cal.component(.year, from: date) == selectedDashboardYear
+            case .quarterly:
+                guard cal.component(.year, from: date) == selectedDashboardYear else { return false }
+                let q = (cal.component(.month, from: date) - 1) / 3 + 1
+                return q == selectedQuarter
+            case .monthly:
+                return cal.component(.year, from: date) == selectedDashboardYear
+                    && cal.component(.month, from: date) == selectedMonth
+            }
+        }.count
+    }
+
+    private var selectedQuarter: Int {
+        if selectedDashboardYear == currentYear {
+            return (Calendar.current.component(.month, from: Date()) - 1) / 3 + 1
         }
-        return out
+        return 4
+    }
+
+    private var selectedMonth: Int {
+        if selectedDashboardYear == currentYear {
+            return Calendar.current.component(.month, from: Date())
+        }
+        return 12
+    }
+
+    private var timelineScopedInvestments: [InvestmentListing] {
+        let cal = Calendar.current
+        switch earningsPeriod {
+        case .annual:
+            return investments(inCalendarYear: selectedDashboardYear)
+        case .quarterly:
+            return qualifyingInvestments.filter { inv in
+                guard let d = attributionDate(for: inv) else { return false }
+                guard cal.component(.year, from: d) == selectedDashboardYear else { return false }
+                let q = (cal.component(.month, from: d) - 1) / 3 + 1
+                return q == selectedQuarter
+            }
+        case .monthly:
+            return qualifyingInvestments.filter { inv in
+                guard let d = attributionDate(for: inv) else { return false }
+                return cal.component(.year, from: d) == selectedDashboardYear && cal.component(.month, from: d) == selectedMonth
+            }
+        }
+    }
+
+    // KPI cards + headline: totals for selected timeline scope.
+    private var selectedYearFinancials: (principal: Double, gain: Double, fundedProjectCount: Int) {
+        let rows = timelineScopedInvestments
+        let sums = sumPrincipalGain(rows)
+        let oppIds = Set(rows.compactMap(\.opportunityId).filter { !$0.isEmpty })
+        return (sums.principal, sums.gain, oppIds.count)
     }
 
     private var totalPrincipal: Double {
-        yearActivities.reduce(0) { $0 + $1.principal }
+        selectedYearFinancials.principal
     }
 
     private var totalInterest: Double {
-        yearActivities.reduce(0) { $0 + $1.interest }
+        selectedYearFinancials.gain
     }
 
+    // Primary headline: total capital received for selected timeline.
     private var totalEarnings: Double {
-        totalPrincipal + totalInterest
+        totalPrincipal
     }
 
-    private var roi: Double {
-        guard totalPrincipal > 0 else { return 0 }
-        return totalInterest / totalPrincipal * 100
+    private var ongoingProjectCount: Int {
+        Set(ongoingInvestments.compactMap(\.opportunityId).filter { !$0.isEmpty }).count
     }
 
-    private var chartYAxisValues: [Double] {
-        stride(from: 100_000.0, through: 900_000.0, by: 100_000.0).reversed()
+    private var completedProjectCount: Int {
+        Set(completedInvestments.compactMap(\.opportunityId).filter { !$0.isEmpty }).count
+    }
+
+    private var dashboardProjectCount: Int {
+        let funded = selectedYearFinancials.fundedProjectCount
+        if funded > 0 { return funded }
+        let cal = Calendar.current
+        return myOpportunities.filter {
+            guard let d = $0.createdAt else { return false }
+            return cal.component(.year, from: d) == selectedDashboardYear
+        }.count
+    }
+
+    private var nextPaymentInfo: (title: String, amount: Double, days: Int)? {
+        let today = Calendar.current.startOfDay(for: Date())
+        let upcoming = InvestorPortfolioMetrics
+            .upcomingPayments(withinDays: 3650, rows: ongoingInvestments)
+            .first(where: { Calendar.current.startOfDay(for: $0.date) >= today })
+        guard let upcoming else { return nil }
+        let days = max(0, Calendar.current.dateComponents([.day], from: today, to: Calendar.current.startOfDay(for: upcoming.date)).day ?? 0)
+        return (upcoming.title, upcoming.amount, days)
+    }
+
+    private var topInvestors: [SeekerTopInvestor] {
+        var totals: [String: (amount: Double, deals: Int, earliest: Date)] = [:]
+        for inv in qualifyingInvestments {
+            guard let iid = inv.investorId, !iid.isEmpty else { continue }
+            guard let d = attributionDate(for: inv) else { continue }
+            var entry = totals[iid] ?? (0, 0, d)
+            entry.amount += inv.effectiveAmount
+            entry.deals += 1
+            entry.earliest = min(entry.earliest, d)
+            totals[iid] = entry
+        }
+
+        return totals
+            .sorted { $0.value.amount > $1.value.amount }
+            .prefix(5)
+            .map { iid, entry in
+                let prof = investorProfiles[iid]
+                let name = (prof?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                    ? prof?.displayName ?? "Investor"
+                    : "Investor \(String(iid.prefix(4)))"
+                return SeekerTopInvestor(
+                    id: iid,
+                    displayName: name,
+                    avatarURL: prof?.avatarURL,
+                    totalAmount: entry.amount,
+                    dealsCount: entry.deals,
+                    sinceDate: entry.earliest
+                )
+            }
+    }
+
+    // Chart buckets depend on **Annual / Quarterly / Monthly** (same underlying deals; different grouping).
+    private var chartBuckets: [SeekerHomeChartBucket] {
+        switch earningsPeriod {
+        case .annual:
+            var buckets: [SeekerHomeChartBucket] = []
+            for y in (selectedDashboardYear - 5)...selectedDashboardYear {
+                let rows = investments(inCalendarYear: y)
+                let sums = sumPrincipalGain(rows)
+                buckets.append(
+                    SeekerHomeChartBucket(id: "y-\(y)", axisLabel: "\(y)", principal: sums.principal, interest: sums.gain)
+                )
+            }
+            return buckets
+        case .quarterly:
+            let cal = Calendar.current
+            return (1...4).map { q in
+                let rows = qualifyingInvestments.filter { inv in
+                    guard let d = attributionDate(for: inv) else { return false }
+                    guard cal.component(.year, from: d) == selectedDashboardYear else { return false }
+                    let month = cal.component(.month, from: d)
+                    let iq = (month - 1) / 3 + 1
+                    return iq == q
+                }
+                let sums = sumPrincipalGain(rows)
+                return SeekerHomeChartBucket(id: "q\(q)-\(selectedDashboardYear)", axisLabel: "Q\(q)", principal: sums.principal, interest: sums.gain)
+            }
+        case .monthly:
+            let cal = Calendar.current
+            return (1...12).map { month in
+                let rows = qualifyingInvestments.filter { inv in
+                    guard let d = attributionDate(for: inv) else { return false }
+                    guard cal.component(.year, from: d) == selectedDashboardYear else { return false }
+                    return cal.component(.month, from: d) == month
+                }
+                let sums = sumPrincipalGain(rows)
+                return SeekerHomeChartBucket(
+                    id: "m\(month)-\(selectedDashboardYear)",
+                    axisLabel: shortMonthSymbol(month),
+                    principal: sums.principal,
+                    interest: sums.gain
+                )
+            }
+        }
+    }
+
+    private func shortMonthSymbol(_ month: Int) -> String {
+        var c = DateComponents()
+        c.year = 2000
+        c.month = month
+        c.day = 1
+        guard let date = Calendar.current.date(from: c) else { return "\(month)" }
+        let f = DateFormatter()
+        f.locale = Locale.autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("MMM")
+        return f.string(from: date)
     }
 
     private var chartYMax: Double {
-        let dataMax = yearActivities.map(\.total).max() ?? 0
-        let target = max(dataMax, 100_000)
-        let stepped = ceil(target / 100_000) * 100_000
-        return min(max(stepped, 100_000), 900_000)
+        let dataMax = chartBuckets.map(\.total).max() ?? 0
+        if dataMax <= 0 { return 1 }
+        let padded = dataMax * 1.12
+        let pow10 = pow(10, floor(log10(padded)))
+        let upper = ceil(padded / pow10) * pow10
+        return max(upper, 1)
+    }
+
+    // Top → bottom grid labels (exclude 0 to avoid clutter at baseline).
+    private var chartYTickValues: [Double] {
+        let maxV = chartYMax
+        let divisions = 5
+        return (1...divisions).map { i in
+            maxV * Double(divisions - i + 1) / Double(divisions + 1)
+        }
+    }
+
+    private var chartBarWidth: CGFloat {
+        switch earningsPeriod {
+        case .annual: return 22
+        case .quarterly: return 28
+        case .monthly: return 14
+        }
+    }
+
+    private var chartBarSpacing: CGFloat {
+        switch earningsPeriod {
+        case .annual: return 8
+        case .quarterly: return 12
+        case .monthly: return 3
+        }
+    }
+
+    private var chartAxisLabelFont: Font {
+        earningsPeriod == .monthly ? .system(size: 8) : .system(size: 10)
+    }
+
+    private var chartAxisLabelWidth: CGFloat {
+        earningsPeriod == .monthly ? 22 : 28
+    }
+
+    private var usesDistributedXAxis: Bool {
+        earningsPeriod != .monthly
+    }
+
+    private func openOpportunitySegment(_ segment: SeekerOpportunitySegment) {
+        tabRouter.seekerOpportunitySegment = segment
+        tabRouter.selectedTab = .action
     }
 
     var body: some View {
@@ -190,7 +453,10 @@ struct SeekerHomeDashboardView: View {
                     totalEarningsBlock
                     earningsPeriodSelector
                     earningsStatGrid
+                    projectStatusQuickLinks
                     activitySection
+                    nextPaymentCard
+                    topInvestorsSection
 
                     if let loadError {
                         Text(loadError)
@@ -203,17 +469,17 @@ struct SeekerHomeDashboardView: View {
                             .appCardShadow()
                     }
 
-                    if !myOpportunities.isEmpty {
+                    if !dashboardListings.isEmpty {
                         Text("Your listings")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(.black)
                             .padding(.top, 4)
 
                         LazyVStack(spacing: 12) {
-                            ForEach(myOpportunities) { item in
+                            ForEach(dashboardListings) { item in
                                 NavigationLink {
                                     SeekerOpportunityDetailView(
-                                        opportunity: item,
+                                        opportunity: item.overlayingAcceptedIfPresent(investments: seekerInvestments),
                                         onMutate: { Task { await loadHomeData() } },
                                         onAcceptedRequest: { Task { await loadHomeData() } }
                                     )
@@ -234,24 +500,30 @@ struct SeekerHomeDashboardView: View {
             .toolbar(.hidden, for: .navigationBar)
             .task { await loadHomeData() }
             .refreshable { await loadHomeData() }
+            .onAppear {
+                guard !hasInitializedYearSelection else { return }
+                selectedDashboardYear = currentYear
+                hasInitializedYearSelection = true
+            }
         }
     }
 
     private var dashboardHeader: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .center, spacing: 10) {
             Text("Dashboard")
                 .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(.black)
-            Spacer()
             Menu {
                 ForEach(yearOptions, id: \.self) { y in
-                    Button(String(y)) { /* year picker placeholder */ }
+                    Button(String(y)) {
+                        selectedDashboardYear = y
+                    }
                 }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
-                    Text(String(currentYear))
+                    Text(String(selectedDashboardYear))
                         .font(.system(size: 14, weight: .regular))
                 }
                 .foregroundStyle(dashboardOutline)
@@ -262,37 +534,22 @@ struct SeekerHomeDashboardView: View {
                         .stroke(dashboardOutline, lineWidth: 1)
                 )
             }
+            Spacer(minLength: 0)
         }
     }
 
     private var totalEarningsBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TOTAL EARNINGS")
+            Text("TOTAL RECEIVED")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.secondary)
                 .tracking(0.5)
 
-            HStack(alignment: .center, spacing: 12) {
-                Text("Rs. \(formatAmount(totalEarnings))")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(dashboardBlue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .center, spacing: 4) {
-                    Text("+Rs. \(formatThousandsK(totalInterest))")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(dashboardBlue)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(dashboardLightBlue.opacity(0.55), in: Capsule())
-                    Text("Interest Over Time")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Rs. \(formatAmount(totalEarnings))")
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(dashboardBlue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 
@@ -300,13 +557,15 @@ struct SeekerHomeDashboardView: View {
         HStack(spacing: 4) {
             ForEach(SeekerHomeEarningsPeriod.allCases, id: \.self) { period in
                 Button {
-                    earningsPeriod = period
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        earningsPeriod = period
+                    }
                 } label: {
                     Text(period.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(earningsPeriod == period ? .white : .black)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 8)
+                        .frame(minWidth: 78)
+                        .frame(height: 30)
                         .background(
                             Group {
                                 if earningsPeriod == period {
@@ -319,11 +578,11 @@ struct SeekerHomeDashboardView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
         }
-        .padding(4)
+        .padding(3)
         .background(dashboardTrackFill, in: Capsule())
-        .frame(maxWidth: 280, alignment: .leading)
+        .frame(height: 36)
+        .frame(maxWidth: 248, alignment: .leading)
     }
 
     private var earningsStatGrid: some View {
@@ -331,15 +590,16 @@ struct SeekerHomeDashboardView: View {
             columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
             spacing: 12
         ) {
-            statCard(title: "PRINCIPAL", value: "Rs. \(formatAmount(totalPrincipal))", valueColor: .black)
-            statCard(title: "TOTAL GAIN", value: "Rs. \(formatAmount(totalInterest))", valueColor: dashboardBlue)
-            statCard(title: "PROJECT COUNT", value: "\(myOpportunities.count)", valueColor: .black)
-            statCard(title: "ROI", value: String(format: "+%.1f%%", roi), valueColor: dashboardBlue)
+            statCard(title: "RECEIVED AMOUNT", value: "Rs. \(formatAmount(totalPrincipal))", valueColor: .black)
+            statCard(title: "LIABILITY DUE", value: "Rs. \(formatAmount(totalInterest))", valueColor: dashboardBlue)
+            statCard(title: "ACTIVE INVESTMENTS", value: "\(activeInvestmentsCount)", valueColor: .black)
+            statCard(title: "PENDING REQUESTS", value: "\(pendingRequestsCount)", valueColor: dashboardBlue)
         }
     }
 
-    private func statCard(title: String, value: String, valueColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    @ViewBuilder
+    private func statCard(title: String, value: String, valueColor: Color, action: (() -> Void)? = nil) -> some View {
+        let card = VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.secondary)
@@ -354,6 +614,159 @@ struct SeekerHomeDashboardView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
         .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if action != nil {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(10)
+            }
+        }
+
+        if let action {
+            Button(action: action) { card }
+                .buttonStyle(.plain)
+        } else {
+            card
+        }
+    }
+
+    private var nextPaymentCard: some View {
+        Group {
+            if let next = nextPaymentInfo {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(dashboardBlue)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Next payment in \(next.days) day\(next.days == 1 ? "" : "s")")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(next.title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Text("Rs. \(formatAmount(next.amount))")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(dashboardBlue)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var topInvestorsSection: some View {
+        let rows = topInvestors
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Top Investors")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.black)
+
+                VStack(spacing: 10) {
+                    ForEach(rows) { investor in
+                        topInvestorRow(investor)
+                    }
+                }
+            }
+        }
+    }
+
+    private func topInvestorRow(_ investor: SeekerTopInvestor) -> some View {
+        HStack(spacing: 12) {
+            topInvestorAvatar(investor)
+                .frame(width: 42, height: 42)
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(investor.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                Text("Deals: \(investor.dealsCount) · Since \(monthYearLabel(investor.sinceDate))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+            Text("Rs. \(formatThousandsK(investor.totalAmount))")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(dashboardBlue)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func topInvestorAvatar(_ investor: SeekerTopInvestor) -> some View {
+        if let url = investor.avatarURL, !url.isEmpty {
+            StorageBackedAsyncImage(
+                reference: url,
+                height: 42,
+                cornerRadius: 21,
+                feedThumbnail: true
+            )
+            .frame(width: 42, height: 42)
+        } else {
+            ZStack {
+                Circle().fill(dashboardBlue.opacity(0.14))
+                Text(initials(for: investor.displayName))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(dashboardBlue)
+            }
+        }
+    }
+
+    private var projectStatusQuickLinks: some View {
+        VStack(spacing: 10) {
+            quickStatusLink(
+                title: "Ongoing projects",
+                count: ongoingProjectCount,
+                tint: dashboardBlue,
+                action: { openOpportunitySegment(.ongoing) }
+            )
+            quickStatusLink(
+                title: "Completed projects",
+                count: completedProjectCount,
+                tint: .secondary,
+                action: { openOpportunitySegment(.completed) }
+            )
+        }
+    }
+
+    private func quickStatusLink(title: String, count: Int, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text("\(count)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(tint.opacity(0.14), in: Capsule())
+
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var activitySection: some View {
@@ -363,8 +776,8 @@ struct SeekerHomeDashboardView: View {
                 .foregroundStyle(.black)
 
             HStack(spacing: 18) {
-                legendItem(color: dashboardGray, label: "PRINCIPAL")
-                legendItem(color: dashboardLightBlue, label: "INTEREST")
+                legendItem(color: dashboardGray, label: "RECEIVED")
+                legendItem(color: dashboardLightBlue, label: "LIABILITY")
                 Spacer(minLength: 0)
             }
 
@@ -385,17 +798,19 @@ struct SeekerHomeDashboardView: View {
     }
 
     private var activityChart: some View {
-        let yLabels: [Double] = chartYAxisValues
-        let yMax: Double = chartYMax
-        let activities = yearActivities
+        let yTicks = chartYTickValues
+        let yMax = chartYMax
+        let buckets = chartBuckets
         let chartHeight: CGFloat = 220
-        let yLabelWidth: CGFloat = 36
+        let yLabelWidth: CGFloat = 40
+        let barW = chartBarWidth
+        let barGap = chartBarSpacing
 
         return VStack(spacing: 6) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    ForEach(yLabels, id: \.self) { v in
-                        Text(formatThousandsK(v))
+                    ForEach(yTicks, id: \.self) { v in
+                        Text(axisTickLabel(v))
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -406,7 +821,7 @@ struct SeekerHomeDashboardView: View {
 
                 ZStack(alignment: .bottomLeading) {
                     VStack(spacing: 0) {
-                        ForEach(yLabels.indices, id: \.self) { _ in
+                        ForEach(yTicks.indices, id: \.self) { _ in
                             HStack(spacing: 0) {
                                 Rectangle()
                                     .fill(Color(red: 235 / 255.0, green: 235 / 255.0, blue: 235 / 255.0))
@@ -417,35 +832,77 @@ struct SeekerHomeDashboardView: View {
                     }
                     .frame(height: chartHeight)
 
-                    HStack(alignment: .bottom, spacing: 14) {
-                        ForEach(activities) { item in
-                            stackedBar(for: item, yMax: yMax, totalHeight: chartHeight)
+                    Group {
+                        if usesDistributedXAxis {
+                            HStack(alignment: .bottom, spacing: 0) {
+                                ForEach(buckets) { item in
+                                    stackedBar(for: item, yMax: yMax, totalHeight: chartHeight, barWidth: barW)
+                                        .frame(maxWidth: .infinity)
+                                }
+                            }
+                        } else {
+                            HStack(alignment: .bottom, spacing: barGap) {
+                                ForEach(buckets) { item in
+                                    stackedBar(for: item, yMax: yMax, totalHeight: chartHeight, barWidth: barW)
+                                }
+                            }
                         }
                     }
                     .frame(height: chartHeight, alignment: .bottom)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 4)
                 }
-
-                Spacer(minLength: 0)
             }
 
             HStack(alignment: .top, spacing: 6) {
                 Spacer().frame(width: yLabelWidth)
-                HStack(spacing: 14) {
-                    ForEach(activities) { item in
-                        Text(String(item.year))
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28)
+                Group {
+                    if usesDistributedXAxis {
+                        HStack(spacing: 0) {
+                            ForEach(buckets) { item in
+                                Text(item.axisLabel)
+                                    .font(chartAxisLabelFont)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.5)
+                            }
+                        }
+                    } else {
+                        HStack(spacing: barGap) {
+                            ForEach(buckets) { item in
+                                Text(item.axisLabel)
+                                    .font(chartAxisLabelFont)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: chartAxisLabelWidth)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.5)
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal, 6)
-                Spacer(minLength: 0)
+                .padding(.horizontal, 4)
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: earningsPeriod)
+        .animation(.easeInOut(duration: 0.22), value: selectedDashboardYear)
     }
 
-    private func stackedBar(for item: SeekerHomeYearActivity, yMax: Double, totalHeight: CGFloat) -> some View {
+    private func axisTickLabel(_ value: Double) -> String {
+        if value >= 1_000_000 {
+            let m = value / 1_000_000
+            return m == floor(m) ? "\(Int(m))m" : String(format: "%.1fm", m)
+        }
+        if value >= 1000 {
+            let k = value / 1000
+            return k == floor(k) ? "\(Int(k))k" : String(format: "%.1fk", k)
+        }
+        if value == floor(value) {
+            return "\(Int(value))"
+        }
+        return String(format: "%.0f", value)
+    }
+
+    private func stackedBar(for item: SeekerHomeChartBucket, yMax: Double, totalHeight: CGFloat, barWidth: CGFloat) -> some View {
         let principalHeight = CGFloat(min(item.principal / yMax, 1.0)) * totalHeight
         let interestHeight = CGFloat(min(item.interest / yMax, 1.0)) * totalHeight
         let combined = max(0, totalHeight - (principalHeight + interestHeight))
@@ -454,12 +911,12 @@ struct SeekerHomeDashboardView: View {
             Spacer().frame(height: combined)
             Rectangle()
                 .fill(dashboardLightBlue)
-                .frame(width: 28, height: max(0, interestHeight))
+                .frame(width: barWidth, height: max(0, interestHeight))
             Rectangle()
                 .fill(dashboardGray)
-                .frame(width: 28, height: max(0, principalHeight))
+                .frame(width: barWidth, height: max(0, principalHeight))
         }
-        .frame(width: 28, height: totalHeight, alignment: .bottom)
+        .frame(width: barWidth, height: totalHeight, alignment: .bottom)
     }
 
     private func formatAmount(_ value: Double) -> String {
@@ -478,7 +935,22 @@ struct SeekerHomeDashboardView: View {
         return k == floor(k) ? "\(Int(k))k" : String(format: "%.1fk", k)
     }
 
-    // MARK: - Overview
+    private func initials(for name: String) -> String {
+        let parts = name
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+        let chars = parts.prefix(2).compactMap { $0.first }
+        let s = String(chars).uppercased()
+        return s.isEmpty ? "?" : s
+    }
+
+    private func monthYearLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy MMM"
+        return f.string(from: date)
+    }
+
+// Overview
 
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -613,7 +1085,7 @@ struct SeekerHomeDashboardView: View {
         if let opp {
             NavigationLink {
                 SeekerOpportunityDetailView(
-                    opportunity: opp,
+                    opportunity: opp.overlayingAcceptedIfPresent(investments: seekerInvestments),
                     onMutate: { Task { await loadHomeData() } },
                     onAcceptedRequest: { Task { await loadHomeData() } }
                 )
@@ -645,7 +1117,7 @@ struct SeekerHomeDashboardView: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    Text(formatLKR(inv.investmentAmount))
+                    Text(formatLKR(inv.effectiveAmount))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(auth.accentColor)
                         .multilineTextAlignment(.trailing)
@@ -757,7 +1229,7 @@ struct SeekerHomeDashboardView: View {
                     let n = pendingCount(for: opp.id)
                     NavigationLink {
                         SeekerOpportunityDetailView(
-                            opportunity: opp,
+                            opportunity: opp.overlayingAcceptedIfPresent(investments: seekerInvestments),
                             onMutate: { Task { await loadHomeData() } },
                             onAcceptedRequest: { Task { await loadHomeData() } }
                         )
@@ -812,18 +1284,44 @@ struct SeekerHomeDashboardView: View {
             seekerInvestments = try await invs
             profile = try await p
             HomeWidgetSnapshotWriter.persistAfterSeekerHomeLoad(auth: auth, seekerInvestments: seekerInvestments)
+            await loadTopInvestorProfiles()
         } catch {
             profile = nil
             loadError = FirestoreUserFacingMessage.text(for: error)
         }
     }
 
+    private func loadTopInvestorProfiles() async {
+        let investorIds = Set(
+            qualifyingInvestments.compactMap { inv -> String? in
+                guard let iid = inv.investorId, !iid.isEmpty else { return nil }
+                return iid
+            }
+        )
+        let missing = investorIds.subtracting(investorProfiles.keys)
+        guard !missing.isEmpty else { return }
+
+        await withTaskGroup(of: (String, UserProfile?).self) { group in
+            for iid in missing {
+                group.addTask {
+                    let prof = try? await userService.fetchProfile(userID: iid)
+                    return (iid, prof)
+                }
+            }
+            for await (iid, prof) in group {
+                if let prof {
+                    investorProfiles[iid] = prof
+                }
+            }
+        }
+    }
+
     private func homeListingRow(_ item: OpportunityListing) -> some View {
+        let display = item.overlayingAcceptedIfPresent(investments: seekerInvestments)
         let pending = pendingCount(for: item.id)
         let live = seekerInvestments.contains {
             $0.opportunityId == item.id && ($0.agreementStatus == .active || $0.status.lowercased() == "active")
         }
-        let committed = committedPrincipal(for: item.id)
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
@@ -864,31 +1362,30 @@ struct SeekerHomeDashboardView: View {
                     Text("Funding goal")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("LKR \(item.formattedAmountLKR)")
+                    Text("LKR \(display.formattedAmountLKR)")
                         .font(.caption.weight(.semibold))
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Investor interest")
+                    Text("Final return")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(committed > 0 ? formatLKR(committed) : "—")
+                    Text(projectedFinalReturnText(for: display))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(committed > 0 ? auth.accentColor : .secondary)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Type")
+                    Text("Capacity")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(item.investmentType.displayName)
+                    Text(item.maximumInvestors.map { "\($0) investors" } ?? "Open")
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
                 }
             }
 
-            if !item.termsSummaryLine.isEmpty {
-                Text(item.termsSummaryLine)
+            if !display.termsSummaryLine.isEmpty {
+                Text(display.termsSummaryLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -942,6 +1439,19 @@ struct SeekerHomeDashboardView: View {
         f.maximumFractionDigits = 0
         let s = f.string(from: n) ?? String(format: "%.0f", v)
         return "LKR \(s)"
+    }
+
+    private func projectedFinalReturnText(for item: OpportunityListing) -> String {
+        let principal = item.amountRequested
+        let rate = item.interestRate
+        let months = item.repaymentTimelineMonths
+        guard principal > 0, rate > 0, months > 0 else { return "—" }
+        let total = LoanScheduleGenerator.totalRepayable(
+            principal: principal,
+            annualRatePercent: rate,
+            termMonths: months
+        )
+        return "LKR \(OpportunityFinancialPreview.formatLKRInteger(total))"
     }
 
     private func shortId(_ id: String) -> String {

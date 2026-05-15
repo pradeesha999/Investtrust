@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// Normalizes picker/camera bytes to JPEG for Cloudinary and consistent `image/jpeg` delivery.
+// Converts picker/camera image data to JPEG before uploading to Cloudinary
 enum ImageJPEGUploadPayload {
     static func jpegForUpload(from data: Data) -> Data {
         guard let image = UIImage(data: data) else { return data }

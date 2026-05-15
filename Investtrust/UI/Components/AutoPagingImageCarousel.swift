@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// Identity for `.task(id:)` — tuples of `[String]` are not `Hashable` in Swift.
+// Hashable wrapper for the auto-advance task ID (plain [String] is not Hashable)
 private struct CarouselAutoAdvanceTaskID: Hashable {
     let references: [String]
     let reduceMotionEffective: Bool
 }
 
-/// Horizontally paged images with automatic advance (and manual swipe). Use only when `references` is non-empty.
+// Auto-advancing image carousel used in the opportunity detail media section
 struct AutoPagingImageCarousel: View {
     let references: [String]
     var height: CGFloat = 190
     var cornerRadius: CGFloat = 16
-    /// Seconds between automatic page changes (only when `references.count > 1`).
+    // Seconds between automatic page changes (only when `references.count > 1`).
     var autoAdvanceInterval: TimeInterval = 4
 
     @State private var selection = 0

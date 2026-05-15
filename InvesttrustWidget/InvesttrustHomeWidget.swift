@@ -3,14 +3,19 @@
 //  InvesttrustWidget
 //
 
+// Home screen widget that shows the user's next upcoming loan payment or portfolio event.
+// Reads data from the shared App Group written by HomeWidgetSnapshotWriter in the main app.
+
 import SwiftUI
 import WidgetKit
 
+// One timeline entry holding the snapshot for this widget refresh
 private struct HomeWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: HomeWidgetSnapshot?
 }
 
+// Provides placeholder, snapshot, and timeline data to WidgetKit
 private struct HomeWidgetProvider: TimelineProvider {
     func placeholder(in _: Context) -> HomeWidgetEntry {
         HomeWidgetEntry(
@@ -39,7 +44,7 @@ private struct HomeWidgetProvider: TimelineProvider {
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
 
-    /// Wake the widget around the next shown event (or hourly if nothing scheduled).
+    // Wake the widget right after the soonest event passes, or fall back to hourly
     private func nextReloadDate(snapshot: HomeWidgetSnapshot, after now: Date) -> Date? {
         let events = primaryEvents(snapshot)
         guard let first = events.first else {
@@ -131,6 +136,8 @@ private struct HomeWidgetEntryView: View {
     @ViewBuilder
     private func eventContent(_ event: HomeWidgetEvent, snap: HomeWidgetSnapshot) -> some View {
         let role = snap.activeProfile == "seeker" ? "Your next payment" : "Next expected"
+        let days = Self.daysFromToday(to: event.date)
+        let urgencyColor = Self.urgencyColor(forDays: days)
         VStack(alignment: .leading, spacing: 4) {
             Text("Investtrust")
                 .font(.caption.weight(.semibold))
@@ -138,6 +145,13 @@ private struct HomeWidgetEntryView: View {
             Text(role)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.tertiary)
+
+            Text(Self.daysLabel(days))
+                .font(family == .systemMedium ? .title.weight(.black) : .title2.weight(.black))
+                .foregroundStyle(urgencyColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
             Text(event.title)
                 .font(family == .systemMedium ? .subheadline.weight(.semibold) : .caption.weight(.semibold))
                 .lineLimit(family == .systemMedium ? 2 : 1)
@@ -172,6 +186,30 @@ private struct HomeWidgetEntryView: View {
         f.dateStyle = .medium
         f.timeStyle = .none
         return f.string(from: date)
+    }
+
+    private static func daysFromToday(to date: Date) -> Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let due = cal.startOfDay(for: date)
+        return cal.dateComponents([.day], from: today, to: due).day ?? 0
+    }
+
+    private static func daysLabel(_ days: Int) -> String {
+        if days < 0 {
+            let n = -days
+            return n == 1 ? "1 day overdue" : "\(n) days overdue"
+        }
+        if days == 0 { return "Due today" }
+        if days == 1 { return "1 day left" }
+        return "\(days) days left"
+    }
+
+    private static func urgencyColor(forDays days: Int) -> Color {
+        if days < 0 { return .red }
+        if days <= 1 { return .orange }
+        if days <= 7 { return .pink }
+        return .blue
     }
 }
 

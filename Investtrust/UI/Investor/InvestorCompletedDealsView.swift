@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Investor deals that have fully completed repayment and are closed.
+// "Completed" segment — shows deals that are fully repaid or closed
 struct InvestorCompletedDealsView: View {
+    var searchText: String = ""
+
     @Environment(AuthService.self) private var auth
 
     @State private var investments: [InvestmentListing] = []
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var searchText = ""
 
     private let investmentService = InvestmentService()
 
@@ -16,6 +17,13 @@ struct InvestorCompletedDealsView: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return rows }
         return rows.filter { $0.opportunityTitle.lowercased().contains(query) }
+    }
+
+    private var totalProfitCollected: Double {
+        completedInvestments.reduce(0) { total, inv in
+            let returned = InvestorPortfolioMetrics.returnedValue(for: inv)
+            return total + max(0, returned - inv.effectiveAmount)
+        }
     }
 
     var body: some View {
@@ -43,6 +51,7 @@ struct InvestorCompletedDealsView: View {
                             : "Try a different search term."
                     )
                 } else {
+                    profitHeaderCard
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(completedInvestments) { inv in
                             InvestmentCard(inv: inv) {
@@ -57,7 +66,6 @@ struct InvestorCompletedDealsView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
-        .searchable(text: $searchText, prompt: "Search listing")
         .task { await load() }
         .refreshable { await load() }
     }
@@ -75,6 +83,36 @@ struct InvestorCompletedDealsView: View {
         } catch {
             loadError = (error as NSError).localizedDescription
         }
+    }
+
+    private var profitHeaderCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Profit collected")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("LKR \(formatAmount(totalProfitCollected))")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .foregroundStyle(auth.accentColor)
+            Text("From all completed investments")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(AppTheme.cardPadding)
+        .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous)
+                .stroke(Color(.separator).opacity(0.2), lineWidth: 1)
+        )
+        .appCardShadow()
+    }
+
+    private func formatAmount(_ value: Double) -> String {
+        let n = NSNumber(value: max(0, value))
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: n) ?? String(format: "%.0f", max(0, value))
     }
 }
 

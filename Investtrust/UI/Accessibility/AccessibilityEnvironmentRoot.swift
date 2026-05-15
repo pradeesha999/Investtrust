@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-/// Applies in-app accessibility preferences on top of system settings.
+// Wraps the app's root view to inject in-app accessibility preferences into the SwiftUI environment.
+// Combines system settings (e.g. iOS Reduce Motion) with the user's in-app toggles from Settings.
 struct AccessibilityEnvironmentRoot<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @AppStorage(AppAccessibilityPreferences.reduceMotionInAppKey) private var reduceMotionInApp = false

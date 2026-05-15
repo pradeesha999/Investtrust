@@ -1,8 +1,10 @@
 import SwiftUI
 import UIKit
 
-// MARK: - PNG export (no ObservableObject — avoids re-rendering the whole agreement sheet on every touch)
+// Freehand signature drawing pad used on the MOA signing screen.
+// Renders ink strokes in real time and exports a PNG when the user confirms their signature.
 
+// Isolated helper that renders the drawn strokes to a PNG without triggering a full view rebuild
 private enum SignaturePNGExporter {
     @MainActor
     static func pngData(
@@ -62,16 +64,16 @@ private struct SignatureInkExportView: View {
     }
 }
 
-// MARK: - Interactive pad + actions (local @State only — parent terms view does not re-render per touch)
+// Interactive pad + actions (local @State only — parent terms view does not re-render per touch)
 
-/// Signature capture **outside** a parent `ScrollView` is strongly recommended so gestures stay reliable.
+// Signature capture **outside** a parent `ScrollView` is strongly recommended so gestures stay reliable.
 struct AgreementSignaturePanel: View {
     var accentColor: Color
-    /// Disable Sign when agreement snapshot is missing.
+    // Disable Sign when agreement snapshot is missing.
     var agreementMissing: Bool
     @Binding var isSigning: Bool
     @Binding var errorText: String?
-    /// Called with PNG bytes after user taps Sign & submit.
+    // Called with PNG bytes after user taps Sign & submit.
     var onSign: (Data) async throws -> Void
 
     @State private var strokes: [[CGPoint]] = []

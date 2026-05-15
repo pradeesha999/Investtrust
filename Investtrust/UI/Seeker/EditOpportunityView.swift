@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-/// Edit text, terms, and execution fields for an existing listing (images and video stay as uploaded).
+// Edit screen for an existing opportunity listing.
+// Only text and terms can be changed — images and video stay as originally uploaded.
 struct EditOpportunityView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
@@ -81,16 +82,6 @@ struct EditOpportunityView: View {
                             }
                             .tint(auth.accentColor)
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Risk level")
-                                .font(.subheadline.weight(.semibold))
-                            Picker("Risk", selection: $draft.riskLevel) {
-                                ForEach([RiskLevel.low, .medium, .high], id: \.self) { level in
-                                    Text(level.displayName).tag(level)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
                         field("Location", text: $draft.location, placeholder: "City / region")
                     }
 
@@ -139,32 +130,6 @@ struct EditOpportunityView: View {
                                 textArea("Future goals", text: $draft.futureGoals, placeholder: "Growth roadmap and scaling goals")
                                 field("Demo links (optional)", text: $draft.demoLinks, placeholder: "https://...")
                                 textArea("Exit plan", text: $draft.exitPlan, placeholder: "How investors may realize returns.")
-                            case .revenue_share:
-                                field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
-                                field("Target return amount (LKR)", text: $draft.targetReturnAmount, placeholder: "500000", keyboardType: .numberPad)
-                                field("Maximum duration (months)", text: $draft.maxDurationMonths, placeholder: "24")
-                            case .project:
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Expected return type")
-                                        .font(.subheadline.weight(.semibold))
-                                    Picker("Return type", selection: $draft.expectedReturnType) {
-                                        Text("Fixed").tag(ExpectedReturnType.fixed)
-                                        Text("Product").tag(ExpectedReturnType.product)
-                                        Text("None").tag(ExpectedReturnType.none)
-                                    }
-                                    .pickerStyle(.segmented)
-                                }
-                                field("Expected return (describe)", text: $draft.expectedReturnValue, placeholder: "Describe the return")
-                                DatePicker(
-                                    "Target completion date",
-                                    selection: Binding(
-                                        get: { draft.completionDate ?? Date() },
-                                        set: { draft.completionDate = $0 }
-                                    ),
-                                    displayedComponents: .date
-                                )
-                            case .custom:
-                                textArea("Custom terms summary", text: $draft.customTermsSummary, placeholder: "Plain-language deal terms.")
                             }
                         }
                     }
@@ -294,7 +259,7 @@ struct EditOpportunityView: View {
         return cap >= 2
     }
 
-    /// Each milestone with any content must have valid days-after-acceptance (UI order is independent; rows insert on top).
+    // Each milestone with any content must have valid days-after-acceptance (UI order is independent; rows insert on top).
     private func validateMilestoneDraftOffsets() -> Bool {
         for m in draft.milestones {
             let hasContent =
@@ -372,24 +337,6 @@ struct EditOpportunityView: View {
             d.demoLinks = t.demoLinks ?? ""
             d.equityRoiTimeline = t.equityRoiTimeline ?? .one_year
             d.exitPlan = t.exitPlan ?? ""
-        case .revenue_share:
-            if let p = t.revenueSharePercent {
-                d.revenueSharePercent = String(p)
-            }
-            if let tr = t.targetReturnAmount {
-                d.targetReturnAmount = String(format: "%.0f", tr)
-            }
-            if let mx = t.maxDurationMonths {
-                d.maxDurationMonths = String(mx)
-            }
-        case .project:
-            if let rt = t.expectedReturnType {
-                d.expectedReturnType = rt
-            }
-            d.expectedReturnValue = t.expectedReturnValue ?? ""
-            d.completionDate = t.completionDate
-        case .custom:
-            d.customTermsSummary = t.customTermsSummary ?? ""
         }
         return d
     }

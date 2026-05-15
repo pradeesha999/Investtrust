@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Shows all active chat threads for the current user.
+// Tapping a row opens the full chat room where the investor and seeker can exchange messages and deal cards.
 struct ChatListView: View {
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter

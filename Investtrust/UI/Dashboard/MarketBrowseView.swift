@@ -1,9 +1,15 @@
 import SwiftUI
 
-/// Open market listings (browse) — not the investor portfolio dashboard.
+// The "Explore" market feed showing open opportunity listings.
+// Can run standalone or embedded inside the investor Invest tab with search/filter state owned by the parent.
 struct MarketBrowseView: View {
-    /// When true, hides its own navigation title (used inside `InvestorActionTabView` segmented **Explore**).
+    // When true the parent (InvestorActionTabView) provides search/filter state instead of this view managing it
     var embeddedInInvestTab: Bool = false
+
+    var externalSearchText: String = ""
+    var externalInvestmentType: InvestmentType? = nil
+    var externalFundingBracket: OpportunityFundingBracket = .any
+    var externalSort: MarketExploreSort = .newest
 
     @Environment(AuthService.self) private var auth
 
@@ -12,12 +18,16 @@ struct MarketBrowseView: View {
     @State private var isLoading = false
     @State private var loadError: String?
 
-    // Explore-only (embedded tab): search + filters
+    // Only used when NOT embedded (standalone browse).
     @State private var searchText = ""
     @State private var selectedInvestmentType: InvestmentType?
-    @State private var selectedRisk: RiskLevel?
-    @State private var verifiedOnly = false
+    @State private var fundingBracket: OpportunityFundingBracket = .any
     @State private var sortOption: MarketExploreSort = .newest
+
+    private var activeSearchText: String { embeddedInInvestTab ? externalSearchText : searchText }
+    private var activeInvestmentType: InvestmentType? { embeddedInInvestTab ? externalInvestmentType : selectedInvestmentType }
+    private var activeFundingBracket: OpportunityFundingBracket { embeddedInInvestTab ? externalFundingBracket : fundingBracket }
+    private var activeSortOption: MarketExploreSort { embeddedInInvestTab ? externalSort : sortOption }
 
     private let opportunityService = OpportunityService()
     private let investmentService = InvestmentService()
@@ -28,16 +38,15 @@ struct MarketBrowseView: View {
             .modifier(EmbeddedNavigationTitleModifier(embedded: embeddedInInvestTab))
             .task { await load() }
             .refreshable { await load() }
-            .if(embeddedInInvestTab) { view in
-                view
-                    .searchable(text: $searchText, prompt: "Search title, category, location")
-                    .toolbar { exploreFiltersToolbar }
-            }
     }
 
     private var scrollContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: AppTheme.stackSpacing) {
+                if !embeddedInInvestTab {
+                    exploreSearchAndFilterBar
+                }
+
                 if isLoading && opportunities.isEmpty {
                     ProgressView("Loading opportunities…")
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -82,23 +91,20 @@ struct MarketBrowseView: View {
         }
     }
 
-    /// Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.
+    // Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.
     private var displayedOpportunities: [OpportunityListing] {
         embeddedInInvestTab ? filteredOpportunities : opportunities
     }
 
     private var filteredOpportunities: [OpportunityListing] {
         var list = opportunities
-        if let t = selectedInvestmentType {
+        if let t = activeInvestmentType {
             list = list.filter { $0.investmentType == t }
         }
-        if let r = selectedRisk {
-            list = list.filter { $0.riskLevel == r }
+        if activeFundingBracket != .any {
+            list = list.filter { activeFundingBracket.contains(amount: $0.amountRequested) }
         }
-        if verifiedOnly {
-            list = list.filter { $0.verificationStatus == .verified }
-        }
-        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let q = activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !q.isEmpty {
             list = list.filter { opp in
                 opp.title.localizedCaseInsensitiveContains(q)
@@ -107,7 +113,7 @@ struct MarketBrowseView: View {
                     || opp.description.localizedCaseInsensitiveContains(q)
             }
         }
-        switch sortOption {
+        switch activeSortOption {
         case .newest:
             list.sort { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
         case .amountHigh:
@@ -119,19 +125,52 @@ struct MarketBrowseView: View {
     }
 
     private var hasActiveExploreConstraints: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || selectedInvestmentType != nil
-            || selectedRisk != nil
-            || verifiedOnly
-            || sortOption != .newest
+        !activeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || activeInvestmentType != nil
+            || activeFundingBracket != .any
+            || activeSortOption != .newest
     }
 
-    @ToolbarContentBuilder
-    private var exploreFiltersToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+    private func resetExploreFilters() {
+        searchText = ""
+        selectedInvestmentType = nil
+        fundingBracket = .any
+        sortOption = .newest
+    }
+
+    @ViewBuilder
+    private var exploreSearchAndFilterBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                TextField("Search title, category, location", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.subheadline)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                    .stroke(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+            )
+
             Menu {
                 if hasActiveExploreConstraints {
-                    Button("Reset filters") { resetExploreFilters() }
+                    Button("Reset filters", role: .destructive) { resetExploreFilters() }
                 }
                 Section("Sort") {
                     Picker("Sort", selection: $sortOption) {
@@ -148,30 +187,27 @@ struct MarketBrowseView: View {
                         }
                     }
                 }
-                Section("Risk") {
-                    Picker("Risk", selection: $selectedRisk) {
-                        Text("Any risk").tag(Optional<RiskLevel>.none)
-                        ForEach(RiskLevel.allCases, id: \.self) { r in
-                            Text(r.displayName).tag(Optional(r))
+                Section("Funding goal") {
+                    Picker("Funding goal", selection: $fundingBracket) {
+                        ForEach(OpportunityFundingBracket.allCases) { b in
+                            Text(b.menuTitle).tag(b)
                         }
                     }
                 }
-                Section("Verification") {
-                    Toggle("Verified seekers only", isOn: $verifiedOnly)
-                }
             } label: {
-                Label("Filters", systemImage: hasActiveExploreConstraints ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                Image(systemName: hasActiveExploreConstraints
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle")
+                    .font(.title3)
+                    .foregroundStyle(hasActiveExploreConstraints ? auth.accentColor : .primary)
+                    .padding(8)
+                    .background(AppTheme.cardBackground, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous)
+                            .stroke(Color(uiColor: .separator).opacity(0.3), lineWidth: 1)
+                    )
             }
-            .accessibilityLabel("Filters and sort")
         }
-    }
-
-    private func resetExploreFilters() {
-        searchText = ""
-        selectedInvestmentType = nil
-        selectedRisk = nil
-        verifiedOnly = false
-        sortOption = .newest
     }
 
     private func load() async {
@@ -182,6 +218,13 @@ struct MarketBrowseView: View {
             let all = try await opportunityService.fetchMarketListings()
             if let userID = auth.currentUserID {
                 let myInvestments = try await investmentService.fetchInvestments(forInvestor: userID)
+                let ongoingOpportunityIds = Set(
+                    myInvestments.compactMap { row -> String? in
+                        guard InvestorPortfolioMetrics.isOngoingPortfolioRow(row) else { return nil }
+                        guard let oppId = row.opportunityId, !oppId.isEmpty else { return nil }
+                        return oppId
+                    }
+                )
                 let completedOpportunityIds = Set(
                     myInvestments.compactMap { row -> String? in
                         guard InvestorPortfolioMetrics.isCompletedDeal(row) else { return nil }
@@ -190,7 +233,9 @@ struct MarketBrowseView: View {
                     }
                 )
                 opportunities = all.filter {
-                    $0.ownerId != userID && !completedOpportunityIds.contains($0.id)
+                    $0.ownerId != userID
+                        && !ongoingOpportunityIds.contains($0.id)
+                        && !completedOpportunityIds.contains($0.id)
                 }
                 myLatestRequestsByOpportunityId = latestRequestsMap(from: myInvestments)
             } else {
@@ -231,9 +276,9 @@ struct MarketBrowseView: View {
     }
 }
 
-// MARK: - Explore sort
+// Explore sort
 
-private enum MarketExploreSort: String, CaseIterable {
+enum MarketExploreSort: String, CaseIterable {
     case newest
     case amountHigh
     case amountLow
@@ -247,7 +292,7 @@ private enum MarketExploreSort: String, CaseIterable {
     }
 }
 
-// MARK: - Navigation + conditional view helpers
+// Navigation + conditional view helpers
 
 private struct EmbeddedNavigationTitleModifier: ViewModifier {
     let embedded: Bool

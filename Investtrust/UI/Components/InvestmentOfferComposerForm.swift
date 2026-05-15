@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Shared fields for sending a negotiated investment offer (chat or opportunity detail).
+// Reusable form for composing a counter-offer — used in both the chat room and the opportunity detail sheet
 struct InvestmentOfferComposerForm: View {
     let opportunities: [OpportunityListing]
     @Binding var selectedOpportunityId: String
     let showOpportunityPicker: Bool
-    /// Shown when `opportunities` is empty (e.g. chat-specific hint).
+    // Message shown when there are no listings to attach an offer to
     let emptyListingMessage: String?
     @Binding var amountText: String
     @Binding var rateText: String
@@ -42,6 +42,20 @@ struct InvestmentOfferComposerForm: View {
                     let cap = max(1, selected.maximumInvestors ?? 1)
                     let fixedAmount = Self.offerAmountForOpportunity(selected)
                     let multi = cap > 1
+                    let showRateField = selected.investmentType == .loan || selected.investmentType == .equity
+                    let showTimelineField = true
+                    let rateLabel: String = {
+                        switch selected.investmentType {
+                        case .loan: return "Interest rate (%)"
+                        case .equity: return "Equity share (%)"
+                        }
+                    }()
+                    let timelineLabel: String = {
+                        switch selected.investmentType {
+                        case .loan: return "Repayment timeline (months)"
+                        case .equity: return "ROI timeline (months)"
+                        }
+                    }()
                     Section("Offer terms") {
                         if multi {
                             LabeledContent("Amount") {
@@ -57,13 +71,17 @@ struct InvestmentOfferComposerForm: View {
                                     .keyboardType(.decimalPad)
                             }
                         }
-                        LabeledContent("Interest rate (%)") {
-                            TextField("e.g. 12.5", text: $rateText)
-                                .keyboardType(.decimalPad)
+                        if showRateField {
+                            LabeledContent(rateLabel) {
+                                TextField("e.g. 12.5", text: $rateText)
+                                    .keyboardType(.decimalPad)
+                            }
                         }
-                        LabeledContent("Repayment timeline (months)") {
-                            TextField("e.g. 24", text: $timelineText)
-                                .keyboardType(.numberPad)
+                        if showTimelineField {
+                            LabeledContent(timelineLabel) {
+                                TextField("e.g. 24", text: $timelineText)
+                                    .keyboardType(.numberPad)
+                            }
                         }
                         LabeledContent("Description") {
                             TextField("Optional note to the seeker", text: $descriptionText, axis: .vertical)

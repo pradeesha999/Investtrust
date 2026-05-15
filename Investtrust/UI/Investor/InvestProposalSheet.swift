@@ -1,23 +1,63 @@
 import SwiftUI
+import UIKit
 
-/// Confirms a standard investment request on the listing’s stated terms (no custom amount or checkboxes here—MOA covers legal acceptance).
+// The "Invest" bottom sheet — the investor confirms at the listing's stated terms
+// or switches to "Make Offer" to propose custom amount, rate, and term
 struct InvestProposalSheet: View {
-    enum Submission {
-        case standardRequest
-        case negotiatedOffer(amount: Double?, interestRate: Double, timelineMonths: Int, note: String)
+    private enum RequestMode: String, CaseIterable, Identifiable {
+        case standard
+        case offer
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .standard: return "Invest now"
+            case .offer: return "Make offer"
+            }
+        }
     }
 
     let opportunity: OpportunityListing
-    let onSubmit: (Submission) async throws -> Void
+    let investorId: String
+    // Called on the main actor after a successful submission + chat card delivery.
+    // Receives nothing — the parent should refresh its own view state via its own service.
+    let onSubmitted: () -> Void
+    private let lockToOfferMode: Bool
+    private let lockToStandardMode: Bool
+
+    private let investmentService = InvestmentService()
+    private let chatService = ChatService()
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var confirmStandardRequest = false
+    @State private var showSubmitConfirmation = false
+    @State private var requestMode: RequestMode = .standard
     @State private var offerAmountText = ""
     @State private var offerRateText = ""
     @State private var offerTimelineText = ""
     @State private var offerNote = ""
+    // One-shot guard: SwiftUI may run `.onAppear` more than once. Without this, typed values get
+    // wiped back to listing defaults (so 250k submits as 300k).
+    @State private var didSeedListingDefaults = false
+
+    init(
+        opportunity: OpportunityListing,
+        investorId: String,
+        preferOfferMode: Bool = false,
+        lockToOfferMode: Bool = false,
+        lockToStandardMode: Bool = false,
+        onSubmitted: @escaping () -> Void
+    ) {
+        self.opportunity = opportunity
+        self.investorId = investorId
+        self.lockToOfferMode = lockToOfferMode
+        self.lockToStandardMode = lockToStandardMode
+        self.onSubmitted = onSubmitted
+        // Negotiable listings ALWAYS use the offer form. Non-negotiable stay on the standard form.
+        _requestMode = State(initialValue: (preferOfferMode || opportunity.isNegotiable) ? .offer : .standard)
+    }
 
     var body: some View {
         NavigationStack {
@@ -30,24 +70,49 @@ struct InvestProposalSheet: View {
 
                 if opportunity.isNegotiable {
                     Section("Negotiated terms") {
-                        if max(1, opportunity.maximumInvestors ?? 1) <= 1 {
-                            TextField("Amount (LKR)", text: $offerAmountText)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Investment amount (LKR)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("e.g. 1,200,000", text: $offerAmountText)
                                 .keyboardType(.numberPad)
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Interest rate (%)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("e.g. 12", text: $offerRateText)
+                                .keyboardType(.decimalPad)
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Timeline (months)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("e.g. 12", text: $offerTimelineText)
+                                .keyboardType(.numberPad)
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Offer note (optional)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            TextField("Any context for the seeker", text: $offerNote, axis: .vertical)
+                                .lineLimit(1...3)
+                        }
+                    }
+                } else {
+                    Section("Listed terms") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            termRow("Amount", value: listedAmountLine)
+                            termRow("Interest rate", value: listedRateLine)
+                            termRow("Timeline", value: listedTimelineLine)
+                        }
+                        if !opportunity.isNegotiable {
+                            Toggle("I confirm I want to send a request on listed terms.", isOn: $confirmStandardRequest)
                         } else {
-                            Text("Amount is fixed by investor split for this listing.")
+                            Text("Send a direct request on listed terms. You can switch to “Make offer” to propose different values.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
-                        TextField("Interest rate (%)", text: $offerRateText)
-                            .keyboardType(.decimalPad)
-                        TextField("Timeline (months)", text: $offerTimelineText)
-                            .keyboardType(.numberPad)
-                        TextField("Notes (optional)", text: $offerNote, axis: .vertical)
-                            .lineLimit(1...3)
-                    }
-                } else {
-                    Section {
-                        Toggle("I confirm I want to send a request on listed terms.", isOn: $confirmStandardRequest)
                     }
                 }
 
@@ -59,6 +124,7 @@ struct InvestProposalSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Investment request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -70,22 +136,58 @@ struct InvestProposalSheet: View {
                     if isSubmitting {
                         ProgressView()
                     } else {
-                        Button(opportunity.isNegotiable ? "Send offer request" : "Send request") {
-                            Task { await submit() }
+                        Button(reviewButtonTitle) {
+                            showSubmitConfirmation = true
                         }
                         .disabled(!canSubmit)
                     }
                 }
             }
         }
-        .onAppear {
-            let cap = max(1, opportunity.maximumInvestors ?? 1)
-            if cap <= 1 {
-                offerAmountText = Self.formatLKR(opportunity.amountRequested)
+        .confirmationDialog(
+            confirmationTitle,
+            isPresented: $showSubmitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(confirmButtonTitle) {
+                Task { await submit() }
             }
-            offerRateText = opportunity.interestRate > 0 ? String(format: "%.2f", opportunity.interestRate) : ""
-            offerTimelineText = "\(max(1, opportunity.repaymentTimelineMonths))"
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(confirmationMessage)
         }
+        .onAppear {
+            guard !didSeedListingDefaults else { return }
+            resetOfferFieldsToListingDefaults()
+            didSeedListingDefaults = true
+        }
+    }
+
+    private func listingTicketAmount() -> Double {
+        let cap = max(1, opportunity.maximumInvestors ?? 1)
+        if cap > 1 {
+            return InvestmentService.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+        }
+        return opportunity.amountRequested
+    }
+
+    // True when parsed offer fields are not the same as the listing (used to avoid losing typed terms if the segmented control was on “Invest now”).
+    private var parsedOfferFieldsDifferFromListing: Bool {
+        guard opportunity.isNegotiable else { return false }
+        guard let amt = parsedAmount, let rate = parsedInterestRate, let tm = parsedTimelineMonths else { return false }
+        let listingAmt = listingTicketAmount()
+        let listingTm = max(1, opportunity.repaymentTimelineMonths)
+        let listingRate = opportunity.interestRate
+        return abs(amt - listingAmt) > 0.01
+            || abs(rate - listingRate) > 0.0001
+            || tm != listingTm
+    }
+
+    private func resetOfferFieldsToListingDefaults() {
+        offerAmountText = Self.formatLKR(listingTicketAmount())
+        offerRateText = opportunity.interestRate > 0 ? String(format: "%.2f", opportunity.interestRate) : ""
+        offerTimelineText = "\(max(1, opportunity.repaymentTimelineMonths))"
+        offerNote = ""
     }
 
     private var introCopy: String {
@@ -111,20 +213,88 @@ struct InvestProposalSheet: View {
     }
 
     private var canSubmit: Bool {
+        if opportunity.isNegotiable, effectiveRequestMode == .offer {
+            return parsedAmount != nil && parsedInterestRate != nil && parsedTimelineMonths != nil
+        }
         if opportunity.isNegotiable {
-            guard let _ = parsedInterestRate, let _ = parsedTimelineMonths else { return false }
-            let cap = max(1, opportunity.maximumInvestors ?? 1)
-            if cap <= 1 {
-                return parsedAmount != nil
-            }
             return true
         }
         return confirmStandardRequest
     }
 
-    private var parsedAmount: Double? {
+    private var effectiveRequestMode: RequestMode {
+        if lockToOfferMode { return .offer }
+        if lockToStandardMode { return .standard }
+        return requestMode
+    }
+
+    private var submitButtonTitle: String {
+        if opportunity.isNegotiable {
+            return effectiveRequestMode == .offer ? "Send offer request" : "Send investment request"
+        }
+        return "Send request"
+    }
+
+    private var reviewButtonTitle: String {
+        effectiveRequestMode == .offer ? "Send offer" : "Review request"
+    }
+
+    private var confirmationTitle: String {
+        effectiveRequestMode == .offer ? "Confirm offer details" : "Confirm investment request"
+    }
+
+    private var confirmButtonTitle: String {
+        effectiveRequestMode == .offer ? "Send offer" : "Confirm and send"
+    }
+
+    private var confirmationMessage: String {
+        if effectiveRequestMode == .offer {
+            let amt = parsedAmount ?? 0
+            let rate = parsedInterestRate ?? 0
+            let tm = parsedTimelineMonths ?? 0
+            return """
+            Amount: LKR \(Self.formatLKR(amt))
+            Rate: \(String(format: "%.2f", rate))%
+            Timeline: \(tm) months
+            """
+        }
+        return "You are requesting to invest on the listed terms for this opportunity."
+    }
+
+    private var listedAmountLine: String {
         let cap = max(1, opportunity.maximumInvestors ?? 1)
-        guard cap <= 1 else { return nil }
+        if cap > 1 {
+            let split = InvestmentService.fixedEqualSplitAmount(total: opportunity.amountRequested, investors: cap)
+            return "LKR \(Self.formatLKR(split)) each (\(cap) investors)"
+        }
+        return "LKR \(Self.formatLKR(opportunity.amountRequested))"
+    }
+
+    private var listedRateLine: String {
+        if opportunity.interestRate > 0 {
+            return "\(String(format: "%.2f", opportunity.interestRate))%"
+        }
+        return "As listed"
+    }
+
+    private var listedTimelineLine: String {
+        let months = max(1, opportunity.repaymentTimelineMonths)
+        return "\(months) months"
+    }
+
+    @ViewBuilder
+    private func termRow(_ title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(.semibold)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private var parsedAmount: Double? {
         let cleaned = offerAmountText.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "")
         guard let value = Double(cleaned), value > 0 else { return nil }
         return value
@@ -143,43 +313,93 @@ struct InvestProposalSheet: View {
     }
 
     private func submit() async {
+        await MainActor.run(resultType: Void.self) {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         submitError = nil
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            if opportunity.isNegotiable {
-                guard let rate = parsedInterestRate, let timeline = parsedTimelineMonths else {
-                    submitError = "Enter valid offer terms (rate and timeline)."
-                    return
-                }
-                let cap = max(1, opportunity.maximumInvestors ?? 1)
-                let amount = cap <= 1 ? parsedAmount : nil
-                if cap <= 1, amount == nil {
-                    submitError = "Enter a valid amount."
-                    return
-                }
-                try await onSubmit(.negotiatedOffer(
-                    amount: amount,
-                    interestRate: rate,
-                    timelineMonths: timeline,
-                    note: offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
-                ))
-            } else {
+            if !opportunity.isNegotiable {
                 guard confirmStandardRequest else {
                     submitError = "Please confirm before sending the request."
                     return
                 }
-                try await onSubmit(.standardRequest)
             }
-            await MainActor.run { dismiss() }
+            let amt = parsedAmount ?? listingTicketAmount()
+            let rate = parsedInterestRate ?? opportunity.interestRate
+            let tm = parsedTimelineMonths ?? max(1, opportunity.repaymentTimelineMonths)
+            guard amt > 0, tm > 0 else {
+                submitError = "Please enter valid offer terms."
+                return
+            }
+            let trimmedNote = offerNote.trimmingCharacters(in: .whitespacesAndNewlines)
+            let negotiated = opportunity.isNegotiable
+
+            print("[OFFER] sheet.submit amt=\(amt) rate=\(rate) months=\(tm) note='\(trimmedNote)' negotiated=\(negotiated)")
+
+            let created = try await investmentService.createOrUpdateOfferRequest(
+                opportunity: opportunity,
+                investorId: investorId,
+                proposedAmount: amt,
+                proposedInterestRate: rate,
+                proposedTimelineMonths: tm,
+                description: trimmedNote,
+                source: .detail_sheet
+            )
+            print("[OFFER] sheet.persisted invId=\(created.id) kind=\(created.requestKind.rawValue) amt=\(created.investmentAmount)")
+
+            let requestKindLabel = negotiated ? "Offer request" : "Investment request"
+            let noteText = trimmedNote.isEmpty
+                ? (negotiated ? "Negotiated offer from listing." : "Default investment request from listing.")
+                : trimmedNote
+            let amountText = Self.lkrFormat(created.effectiveAmount)
+            let rateText = created.effectiveFinalInterestRate.map { String(format: "%.2f%%", $0) } ?? "—"
+            let timelineText = created.effectiveFinalTimelineMonths.map { "\($0) months" } ?? "—"
+
+            let chatId = try await chatService.getOrCreateChat(
+                opportunityId: opportunity.id,
+                seekerId: opportunity.ownerId,
+                investorId: investorId,
+                opportunityTitle: opportunity.title
+            )
+            let snapshot = InvestmentRequestSnapshot(
+                investmentId: created.id,
+                opportunityId: opportunity.id,
+                title: opportunity.title,
+                amountText: amountText,
+                interestRateText: rateText,
+                timelineText: timelineText,
+                note: noteText,
+                requestKindLabel: requestKindLabel
+            )
+            _ = try await chatService.sendInvestmentRequestCard(
+                chatId: chatId,
+                senderId: investorId,
+                snapshot: snapshot
+            )
+
+            await MainActor.run(resultType: Void.self) {
+                onSubmitted()
+                dismiss()
+            }
         } catch {
-            await MainActor.run {
-                if let le = error as? LocalizedError, let d = le.errorDescription {
+            await MainActor.run(resultType: Void.self) {
+                if let le = error as? LocalizedError, let d = le.errorDescription, !d.isEmpty {
                     submitError = d
                 } else {
-                    submitError = (error as NSError).localizedDescription
+                    submitError = FirestoreUserFacingMessage.text(for: error)
                 }
             }
         }
+    }
+
+    private static func lkrFormat(_ value: Double) -> String {
+        let n = NSNumber(value: value)
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 2
+        let s = f.string(from: n) ?? String(format: "%.2f", value)
+        return "LKR \(s)"
     }
 }

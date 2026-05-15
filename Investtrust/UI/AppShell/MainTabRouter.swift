@@ -1,7 +1,7 @@
 import Combine
 import SwiftUI
 
-/// Tabs in the signed-in shell (`HomeView`).
+// The four tabs available in the main tab bar
 enum AppTab: Hashable {
     case dashboard
     case action
@@ -9,7 +9,7 @@ enum AppTab: Hashable {
     case settings
 }
 
-/// Deep link into a specific chat room on the Chat tab.
+// Carries the chatId and optional inquiry snapshot when navigating directly to a chat room
 struct ChatDeepLink: Hashable {
     let chatId: String
     let inquirySnapshot: OpportunityInquirySnapshot?
@@ -20,7 +20,7 @@ struct ChatDeepLink: Hashable {
     }
 }
 
-/// Sub-page within the investor **Invest** tab (segmented control).
+// Segments shown in the investor Invest tab's segmented control
 enum InvestorInvestSegment: String, CaseIterable, Hashable {
     case explore
     case myRequests
@@ -37,12 +37,29 @@ enum InvestorInvestSegment: String, CaseIterable, Hashable {
     }
 }
 
-/// Coordinates tab selection and opening chats from anywhere in the shell (e.g. Invest tab, opportunity detail).
+// Segments shown in the seeker Opportunity tab's segmented control
+enum SeekerOpportunitySegment: String, CaseIterable, Hashable {
+    case open
+    case ongoing
+    case completed
+
+    var title: String {
+        switch self {
+        case .open: return "Open"
+        case .ongoing: return "Ongoing"
+        case .completed: return "Completed"
+        }
+    }
+}
+
+// Coordinates tab selection and opening chats from anywhere in the shell (e.g. Invest tab, opportunity detail).
 final class MainTabRouter: ObservableObject {
     @Published var selectedTab: AppTab = .dashboard
     @Published var pendingChatDeepLink: ChatDeepLink?
-    /// Which segment is shown when the **Invest** tab is selected (investor mode only).
+    // Which segment is shown when the **Invest** tab is selected (investor mode only).
     @Published var investorInvestSegment: InvestorInvestSegment = .myRequests
-    /// Triggers seeker create wizard presentation from other tabs (e.g. Home CTA).
+    // Triggers seeker create wizard presentation from other tabs (e.g. Home CTA).
     @Published var openSeekerCreateWizard: Bool = false
+    // Which segment is shown when the **Opportunity** tab is selected (seeker mode only).
+    @Published var seekerOpportunitySegment: SeekerOpportunitySegment = .open
 }

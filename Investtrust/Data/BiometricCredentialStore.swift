@@ -7,7 +7,7 @@ import Foundation
 import LocalAuthentication
 import Security
 
-/// Stores the last email/password sign-in behind Face ID / Touch ID (Keychain + biometric ACL).
+// Stores the last email/password sign-in behind Face ID / Touch ID (Keychain + biometric ACL).
 enum BiometricCredentialStore {
     private static let service = "app.investtrust.biometricFirebaseLogin"
     private static let account = "emailPassword"
@@ -59,7 +59,7 @@ enum BiometricCredentialStore {
         UserDefaults.standard.set(true, forKey: prefsKey)
     }
 
-    /// Reads credentials. Pass the **same** `LAContext` returned after a successful `evaluatePolicy` so Keychain uses that authentication (single Face ID / Touch ID prompt).
+    // Reads credentials. Pass the **same** `LAContext` returned after a successful `evaluatePolicy` so Keychain uses that authentication (single Face ID / Touch ID prompt).
     static func readCredentials(authenticationContext: LAContext) throws -> (email: String, password: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

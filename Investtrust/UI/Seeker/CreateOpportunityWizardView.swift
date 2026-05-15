@@ -1,3 +1,6 @@
+// Multi-step wizard for creating a new opportunity listing.
+// Guides the seeker through media upload, deal type selection, terms entry, and final review.
+
 //
 //  CreateOpportunityWizardView.swift
 //  Investtrust
@@ -9,7 +12,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Loads a picked video file via `Transferable` / `FileRepresentation` (no `PhotosPickerItem.itemProvider`, which isn’t available on all SDKs).
+// Loads a picked video file via `Transferable` / `FileRepresentation` (no `PhotosPickerItem.itemProvider`, which isn’t available on all SDKs).
 private struct PickedVideoData: Transferable {
     let data: Data
 
@@ -260,12 +263,6 @@ struct CreateOpportunityWizardView: View {
             return "Fixed repayments with interest and schedule."
         case .equity:
             return "Ownership stake, valuation, exit plan."
-        case .revenue_share:
-            return "Share of revenue until a target return."
-        case .project:
-            return "Deliverable-based with expected return and completion."
-        case .custom:
-            return "Describe bespoke terms in your own words."
         }
     }
 
@@ -275,12 +272,6 @@ struct CreateOpportunityWizardView: View {
             return "banknote.fill"
         case .equity:
             return "chart.pie.fill"
-        case .revenue_share:
-            return "arrow.trianglehead.2.clockwise.rotate.90"
-        case .project:
-            return "hammer.fill"
-        case .custom:
-            return "slider.horizontal.3"
         }
     }
 
@@ -290,12 +281,6 @@ struct CreateOpportunityWizardView: View {
             return .green
         case .equity:
             return .blue
-        case .revenue_share:
-            return .orange
-        case .project:
-            return .purple
-        case .custom:
-            return auth.accentColor
         }
     }
 
@@ -429,37 +414,6 @@ struct CreateOpportunityWizardView: View {
                     textArea("Future goals", text: $draft.futureGoals, placeholder: "Growth roadmap and scaling goals")
                     field("Demo links (optional)", text: $draft.demoLinks, placeholder: "https://...")
                     textArea("Exit plan", text: $draft.exitPlan, placeholder: "How and when investors may realize returns.")
-                case .revenue_share:
-                    field("Revenue share (%)", text: $draft.revenueSharePercent, placeholder: "5", keyboardType: .decimalPad)
-                    field("Target return amount (LKR)", text: $draft.targetReturnAmount, placeholder: "500000", keyboardType: .numberPad)
-                    field("Maximum duration (months)", text: $draft.maxDurationMonths, placeholder: "24")
-                case .project:
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Expected return type")
-                            .font(.subheadline.weight(.semibold))
-                        Picker("Return type", selection: $draft.expectedReturnType) {
-                            Text("Fixed").tag(ExpectedReturnType.fixed)
-                            Text("Product").tag(ExpectedReturnType.product)
-                            Text("None").tag(ExpectedReturnType.none)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    field("Expected return (describe)", text: $draft.expectedReturnValue, placeholder: "e.g. 15% on completion / product units")
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Target completion date")
-                            .font(.subheadline.weight(.semibold))
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { draft.completionDate ?? Date() },
-                                set: { draft.completionDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                    }
-                case .custom:
-                    textArea("Custom terms summary", text: $draft.customTermsSummary, placeholder: "Spell out the deal in plain language.")
                 }
                 }
             }
@@ -687,20 +641,6 @@ struct CreateOpportunityWizardView: View {
             rows.append(("Venture stage", draft.ventureStage.rawValue.replacingOccurrences(of: "_", with: " ").capitalized))
             rows.append(("Venture", draft.ventureName.isEmpty ? "—" : draft.ventureName))
             rows.append(("Exit", draft.exitPlan.isEmpty ? "—" : String(draft.exitPlan.prefix(120))))
-        case .revenue_share:
-            rows.append(("Rev. share", draft.revenueSharePercent))
-            rows.append(("Target", draft.targetReturnAmount.isEmpty ? "—" : "LKR \(draft.targetReturnAmount)"))
-            rows.append(("Max months", draft.maxDurationMonths))
-        case .project:
-            rows.append(("Return type", draft.expectedReturnType.rawValue.capitalized))
-            rows.append(("Expected return", draft.expectedReturnValue))
-            if let d = draft.completionDate {
-                let f = DateFormatter()
-                f.dateStyle = .medium
-                rows.append(("Completion", f.string(from: d)))
-            }
-        case .custom:
-            rows.append(("Summary", draft.customTermsSummary.isEmpty ? "—" : String(draft.customTermsSummary.prefix(160))))
         }
         return rows
     }
@@ -946,7 +886,8 @@ struct CreateOpportunityWizardView: View {
         guard draft.repaymentFrequency == .weekly else { return }
         let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
         guard let weeks = Int(digits), weeks > 0 else { return }
-        let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+        // Weekly input is converted to months for persistence/scheduling; round up so we never shorten user-entered duration.
+        let months = max(1, Int(ceil(Double(weeks) / LoanScheduleGenerator.weeksPerMonth)))
         draft.repaymentTimeline = "\(months)"
     }
 
@@ -957,7 +898,7 @@ struct CreateOpportunityWizardView: View {
         var copy = draft
         let digits = copy.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
         if let weeks = Int(digits), weeks > 0 {
-            let months = max(1, Int((Double(weeks) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+            let months = max(1, Int(ceil(Double(weeks) / LoanScheduleGenerator.weeksPerMonth)))
             copy.repaymentTimeline = "\(months)"
         }
         return copy
@@ -1024,38 +965,25 @@ struct CreateOpportunityWizardView: View {
         ]
     }
 
-    /// Rough span in days from investment acceptance (for milestone defaults and hints).
+    // Rough span in days from investment acceptance (for milestone defaults and hints).
     private func inferredTenorDaysApproximate() -> Int {
-        let calendar = Calendar.current
         switch draft.investmentType {
         case .loan:
             let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
             guard let timeline = Int(digits), timeline > 0 else { return 180 }
-            let months: Int
             switch draft.repaymentFrequency {
             case .weekly:
-                months = max(1, Int((Double(timeline) / LoanScheduleGenerator.weeksPerMonth).rounded()))
+                // For milestone/date hints, use exact weekly span in days.
+                return min(3650, max(7, timeline * 7))
             case .monthly, .one_time:
-                months = timeline
+                return min(3650, max(30, timeline * 30))
             }
-            return min(3650, max(30, months * 30))
-        case .revenue_share:
-            let m = Int(draft.maxDurationMonths.filter(\.isNumber)) ?? 12
-            return min(3650, max(30, m * 30))
-        case .project:
-            if let end = draft.completionDate {
-                let days = calendar.dateComponents([.day], from: Date(), to: end).day ?? 180
-                return min(3650, max(30, days))
-            }
-            return 180
         case .equity:
             return min(3650, max(30, draft.equityRoiTimeline.months * 30))
-        case .custom:
-            return 180
         }
     }
 
-    /// Each milestone with any content must have a valid “days after acceptance” (list order is free-form; new rows are added on top).
+    // Each milestone with any content must have a valid “days after acceptance” (list order is free-form; new rows are added on top).
     private func validateMilestoneDraftOffsets() -> Bool {
         for m in draft.milestones {
             let hasContent =
@@ -1310,7 +1238,7 @@ struct CreateOpportunityWizardView: View {
         .appCardShadow()
     }
 
-    /// Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
+    // Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
     private func loadVideoData(from item: PhotosPickerItem) async throws -> Data {
         if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
             return data

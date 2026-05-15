@@ -9,16 +9,17 @@ import GoogleSignIn
 import Observation
 import SwiftUI
 
+// Central authentication and session state for the app.
+// Observes Firebase Auth, syncs user profile from Firestore, and exposes sign-in/out actions.
 @MainActor
 @Observable
 final class AuthService {
     var currentUserID: String?
     var currentUserEmail: String?
     var errorMessage: String?
-    /// True during sign-in / sign-up / Google flows. Cleared on success or cancel via `acknowledgeSessionReady()` (also invoked from `HomeView.onAppear` as a no-op when already false).
-    var isLoading = false
+    var isLoading = false  // true while a sign-in/sign-up/Google flow is in progress
 
-    /// Bumps on each successful email/Google sign-in or sign-up so `HomeView` can select the Home tab.
+    // Increments on each successful sign-in so the main tab resets to the Home tab
     private(set) var sessionEpoch = 0
 
     var activeProfile: UserProfile.ActiveProfile = .investor
@@ -26,7 +27,7 @@ final class AuthService {
 
     var isSignedIn: Bool { currentUserID != nil }
 
-    /// True after a successful email/password sign-in saved credentials for Face ID / Touch ID unlock.
+    // True when the user has previously signed in with email/password and stored credentials for biometrics
     var canSignInWithBiometrics: Bool { BiometricCredentialStore.hasStoredCredentials }
 
     private let userService: UserService
@@ -79,7 +80,7 @@ final class AuthService {
         }
     }
 
-    /// `LocalAuthentication` Face ID / Touch ID, then Keychain read, then Firebase sign-in.
+    // `LocalAuthentication` Face ID / Touch ID, then Keychain read, then Firebase sign-in.
     func signInWithBiometrics() async {
         errorMessage = nil
         guard BiometricCredentialStore.hasStoredCredentials else {
@@ -124,7 +125,7 @@ final class AuthService {
         }
     }
 
-    /// Call when the signed-in shell (`HomeView`) is on screen so the post–sign-in loading overlay can dismiss.
+    // Call when the signed-in shell (`HomeView`) is on screen so the post–sign-in loading overlay can dismiss.
     func acknowledgeSessionReady() {
         isLoading = false
     }
@@ -135,7 +136,7 @@ final class AuthService {
         currentUserEmail = user?.email
     }
 
-    /// Sends Firebase’s password-reset email. Does not touch `errorMessage` (used for sign-in).
+    // Sends Firebase’s password-reset email. Does not touch `errorMessage` (used for sign-in).
     func sendPasswordReset(email: String) async throws {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -281,7 +282,7 @@ final class AuthService {
 }
 
 extension AuthService {
-    /// App-wide accent for controls, tab bar, and highlights (depends on `activeProfile`).
+    // App-wide accent for controls, tab bar, and highlights (depends on `activeProfile`).
     var accentColor: Color {
         ProfileTheme.accent(for: activeProfile)
     }

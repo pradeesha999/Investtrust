@@ -1,17 +1,18 @@
 import FirebaseFirestore
 import Foundation
 
+// Firestore deserialisation for InvestmentListing.
+// Handles legacy field layouts, numeric type coercions, and nested maps from older document schemas.
 extension InvestmentListing {
     init?(id: String, data: [String: Any]) {
         let status = (data["status"] as? String)?.lowercased() ?? "unknown"
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue()
+        let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
 
-        // Investment amount
+        // Investment amount (Firestore may store numerics as Int / Int64 / Double / NSNumber.)
         let investmentAmount: Double = {
-            if let v = data["investmentAmount"] as? Double { return v }
-            if let n = data["investmentAmount"] as? NSNumber { return n.doubleValue }
-            if let v = data["finalAmount"] as? Double { return v }
-            if let n = data["finalAmount"] as? NSNumber { return n.doubleValue }
+            if let v = Self.parseDouble(data["investmentAmount"]) { return v }
+            if let v = Self.parseDouble(data["finalAmount"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let amount = v["amount"] {
                 return Self.parseDouble(amount) ?? 0
             }
@@ -19,8 +20,7 @@ extension InvestmentListing {
         }()
 
         let finalInterestRate: Double? = {
-            if let v = data["finalInterestRate"] as? Double { return v }
-            if let n = data["finalInterestRate"] as? NSNumber { return n.doubleValue }
+            if let v = Self.parseDouble(data["finalInterestRate"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let rate = v["interestRate"] {
                 return Self.parseDouble(rate)
             }
@@ -28,8 +28,7 @@ extension InvestmentListing {
         }()
 
         let finalTimelineMonths: Int? = {
-            if let v = data["finalTimelineMonths"] as? Int { return v }
-            if let n = data["finalTimelineMonths"] as? NSNumber { return n.intValue }
+            if let v = Self.parseInt(data["finalTimelineMonths"]) { return v }
             if let v = data["finalTerms"] as? [String: Any], let timeline = v["timelineMonths"] {
                 return Self.parseInt(timeline)
             }
@@ -46,11 +45,14 @@ extension InvestmentListing {
         }()
 
         let receivedAmount: Double = {
-            if let v = data["receivedAmount"] as? Double { return max(0, v) }
-            if let n = data["receivedAmount"] as? NSNumber { return max(0, n.doubleValue) }
-            return 0
+            max(0, Self.parseDouble(data["receivedAmount"]) ?? 0)
         }()
+        let offerMap = data["offer"] as? [String: Any]
         let requestKind: InvestmentRequestKind = {
+            // Prefer explicit offer flags before `requestKind` so Firestore rows stay readable if
+            // `requestKind` is stale but `isOfferRequest` / nested `offer.isOffer` are correct.
+            if Self.parseBool(data["isOfferRequest"]) == true { return .offer_request }
+            if Self.parseBool(offerMap?["isOffer"]) == true { return .offer_request }
             if let raw = data["requestKind"] as? String,
                let kind = InvestmentRequestKind(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 return kind
@@ -62,6 +64,7 @@ extension InvestmentListing {
                let status = InvestmentOfferStatus(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                 return status
             }
+            if requestKind == .offer_request { return .pending }
             return .pending
         }()
         let offerSource: InvestmentOfferSource? = {
@@ -69,19 +72,24 @@ extension InvestmentListing {
             return InvestmentOfferSource(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
         }()
         let offeredAmount: Double? = {
-            guard let v = data["offeredAmount"] else { return nil }
-            return Self.parseDouble(v)
+            if let v = data["offeredAmount"] { return Self.parseDouble(v) }
+            if let v = offerMap?["amount"] { return Self.parseDouble(v) }
+            return nil
         }()
         let offeredInterestRate: Double? = {
-            guard let v = data["offeredInterestRate"] else { return nil }
-            return Self.parseDouble(v)
+            if let v = data["offeredInterestRate"] { return Self.parseDouble(v) }
+            if let v = offerMap?["interestRate"] { return Self.parseDouble(v) }
+            return nil
         }()
         let offeredTimelineMonths: Int? = {
-            guard let v = data["offeredTimelineMonths"] else { return nil }
-            return Self.parseInt(v)
+            if let v = data["offeredTimelineMonths"] { return Self.parseInt(v) }
+            if let v = offerMap?["timelineMonths"] { return Self.parseInt(v) }
+            return nil
         }()
-        let offerDescription = (data["offerDescription"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let offerDescription = (
+            (data["offerDescription"] as? String)
+            ?? (offerMap?["description"] as? String)
+        )?.trimmingCharacters(in: .whitespacesAndNewlines)
         let offerChatId = (data["offerChatId"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let offerChatMessageId = (data["offerChatMessageId"] as? String)?
@@ -109,6 +117,12 @@ extension InvestmentListing {
         let principalReceivedBySeekerAt: Date? = (data["principalReceivedBySeekerAt"] as? Timestamp)?.dateValue()
         let principalInvestorProofImageURLs: [String] = data["principalInvestorProofImageURLs"] as? [String] ?? []
         let principalSeekerProofImageURLs: [String] = data["principalSeekerProofImageURLs"] as? [String] ?? []
+        let principalSeekerNotReceivedAt: Date? = (data["principalSeekerNotReceivedAt"] as? Timestamp)?.dateValue()
+        let principalSeekerNotReceivedReason: String? = {
+            let t = (data["principalSeekerNotReceivedReason"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return t.isEmpty ? nil : t
+        }()
 
         let agreement: InvestmentAgreementSnapshot? = Self.parseAgreementMap(data["agreement"])
 
@@ -229,6 +243,7 @@ extension InvestmentListing {
             id: id,
             status: status,
             createdAt: createdAt,
+            updatedAt: updatedAt,
             opportunityId: opportunityId.isEmpty ? nil : opportunityId,
             investorId: trimmedInvestor.isEmpty ? nil : trimmedInvestor,
             seekerId: seeker.isEmpty ? nil : seeker,
@@ -265,6 +280,8 @@ extension InvestmentListing {
             principalReceivedBySeekerAt: principalReceivedBySeekerAt,
             principalInvestorProofImageURLs: principalInvestorProofImageURLs,
             principalSeekerProofImageURLs: principalSeekerProofImageURLs,
+            principalSeekerNotReceivedAt: principalSeekerNotReceivedAt,
+            principalSeekerNotReceivedReason: principalSeekerNotReceivedReason,
             equityMilestones: equityMilestones,
             equityUpdates: equityUpdates
         )
@@ -354,9 +371,19 @@ extension InvestmentListing {
         )
     }
 
-    private static func parseDouble(_ value: Any) -> Double? {
+    private static func parseBool(_ value: Any?) -> Bool? {
+        if let b = value as? Bool { return b }
+        if let n = value as? NSNumber { return n.boolValue }
+        if let i = value as? Int { return i != 0 }
+        return nil
+    }
+
+    private static func parseDouble(_ value: Any?) -> Double? {
+        guard let value else { return nil }
         if let v = value as? Double { return v }
         if let n = value as? NSNumber { return n.doubleValue }
+        if let v = value as? Int { return Double(v) }
+        if let v = value as? Int64 { return Double(v) }
         if let s = value as? String {
             let cleaned = s.replacingOccurrences(of: ",", with: "")
             return Double(cleaned)
@@ -364,8 +391,10 @@ extension InvestmentListing {
         return nil
     }
 
-    private static func parseInt(_ value: Any) -> Int? {
+    private static func parseInt(_ value: Any?) -> Int? {
+        guard let value else { return nil }
         if let v = value as? Int { return v }
+        if let v = value as? Int64 { return Int(v) }
         if let n = value as? NSNumber { return n.intValue }
         if let s = value as? String {
             let digits = s.filter(\.isNumber)

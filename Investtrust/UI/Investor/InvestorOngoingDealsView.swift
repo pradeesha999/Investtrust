@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Investor deals that are fully signed and still in progress.
+// "Ongoing" segment — shows live deals where the MOA is signed and repayments are in progress
 struct InvestorOngoingDealsView: View {
+    var searchText: String = ""
+
     @Environment(AuthService.self) private var auth
 
     @State private var investments: [InvestmentListing] = []
     @State private var isLoading = false
     @State private var loadError: String?
-    @State private var searchText = ""
 
     private let investmentService = InvestmentService()
 
@@ -18,9 +19,9 @@ struct InvestorOngoingDealsView: View {
         return rows.filter { $0.opportunityTitle.lowercased().contains(query) }
     }
 
-    private var totalRemainingToBePaid: Double {
+    private var totalAmountToBeReceived: Double {
         ongoingInvestments.reduce(0) { partial, inv in
-            partial + remainingAmount(for: inv)
+            partial + remainingAmountToReceive(for: inv)
         }
     }
 
@@ -49,7 +50,7 @@ struct InvestorOngoingDealsView: View {
                             : "Try a different search term."
                     )
                 } else {
-                    remainingHeaderCard
+                    receivableHeaderCard
                     LazyVStack(spacing: AppTheme.stackSpacing) {
                         ForEach(ongoingInvestments) { inv in
                             InvestmentCard(inv: inv) {
@@ -64,17 +65,16 @@ struct InvestorOngoingDealsView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
-        .searchable(text: $searchText, prompt: "Search listing")
         .task { await load() }
         .refreshable { await load() }
     }
 
-    private var remainingHeaderCard: some View {
+    private var receivableHeaderCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Amount remaining to be paid")
+            Text("Amount to be received")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text("LKR \(formatAmount(totalRemainingToBePaid))")
+            Text("LKR \(formatAmount(totalAmountToBeReceived))")
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(auth.accentColor)
         }
@@ -103,7 +103,7 @@ struct InvestorOngoingDealsView: View {
         }
     }
 
-    private func remainingAmount(for inv: InvestmentListing) -> Double {
+    private func remainingAmountToReceive(for inv: InvestmentListing) -> Double {
         if !inv.loanInstallments.isEmpty {
             return inv.loanInstallments
                 .filter { $0.status != .confirmed_paid }

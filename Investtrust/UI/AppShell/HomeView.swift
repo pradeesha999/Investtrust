@@ -5,9 +5,13 @@
 
 import SwiftUI
 
+// Main tab bar container shown to all signed-in users.
+// Switches between Home (dashboard), Invest/Opportunity, Chat, and Settings tabs.
+// Also handles the in-app notification bell and the calendar sync consent prompt.
 struct HomeView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.effectiveReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var tabRouter = MainTabRouter()
 
     @State private var lastSyncedSessionEpoch = -1
@@ -17,6 +21,11 @@ struct HomeView: View {
     private let notificationService = InAppNotificationService()
     private let investmentService = InvestmentService()
     private let opportunityService = OpportunityService()
+    private var dismissedNotificationsDefaultsKey: String {
+        let userId = auth.currentUserID ?? "guest"
+        let profile = String(describing: auth.activeProfile)
+        return "dismissedInAppNotificationIds.\(userId).\(profile)"
+    }
 
     var body: some View {
         TabView(selection: tabSelection) {
@@ -72,6 +81,13 @@ struct HomeView: View {
                 await checkDeferredCalendarConsentPrompt()
             }
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await refreshNotifications()
+                await checkDeferredCalendarConsentPrompt()
+            }
+        }
         .safeAreaInset(edge: .top) {
             HStack {
                 Spacer(minLength: 0)
@@ -85,6 +101,8 @@ struct HomeView: View {
                 await refreshNotifications()
             } onTapNotification: { note in
                 handleNotificationTap(note)
+            } onDeleteNotification: { note in
+                deleteNotification(note)
             }
         }
         .alert("Sync due dates to Calendar?", isPresented: $showCalendarSyncPrompt) {
@@ -159,10 +177,27 @@ struct HomeView: View {
                 userId: userId,
                 activeProfile: auth.activeProfile
             )
-            await MainActor.run { notifications = rows }
+            let visible = rows.filter { !dismissedNotificationIds.contains($0.id) }
+            await MainActor.run { notifications = visible }
         } catch {
             await MainActor.run { notifications = [] }
         }
+    }
+
+    private var dismissedNotificationIds: Set<String> {
+        let array = UserDefaults.standard.stringArray(forKey: dismissedNotificationsDefaultsKey) ?? []
+        return Set(array)
+    }
+
+    private func persistDismissedNotificationIds(_ ids: Set<String>) {
+        UserDefaults.standard.set(Array(ids), forKey: dismissedNotificationsDefaultsKey)
+    }
+
+    private func deleteNotification(_ note: InAppNotification) {
+        var ids = dismissedNotificationIds
+        ids.insert(note.id)
+        persistDismissedNotificationIds(ids)
+        notifications.removeAll { $0.id == note.id }
     }
 
     private func checkDeferredCalendarConsentPrompt() async {

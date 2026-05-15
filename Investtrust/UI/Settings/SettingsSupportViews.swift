@@ -1,11 +1,12 @@
 import SwiftUI
 
+// Help, feedback, and about views shown under the Support section in Settings
 enum AppSupportLinks {
     static let contactEmail = "support@investtrust.app"
     static let helpEmailSubject = "Investtrust help request"
 }
 
-// MARK: - Help center
+// Help center
 
 struct SettingsHelpCenterView: View {
     private let faqs: [(String, String)] = [
@@ -56,7 +57,7 @@ struct SettingsHelpCenterView: View {
     }
 }
 
-// MARK: - Contact us
+// Contact us
 
 struct SettingsContactUsView: View {
     private var mailURL: URL? {
@@ -97,7 +98,7 @@ struct SettingsContactUsView: View {
     }
 }
 
-// MARK: - Terms & conditions
+// Terms & conditions
 
 struct SettingsTermsView: View {
     var body: some View {

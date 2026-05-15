@@ -1,8 +1,8 @@
 import FirebaseStorage
 import Foundation
 
-/// Maps Firebase Storage `NSError`s to short, actionable copy. Raw messages often look like
-/// `Object investments/…/signatures/….png` which is confusing in the UI.
+// Converts raw Firebase Storage errors into readable messages for in-app alerts.
+// Firebase's default messages include file paths that would confuse users.
 enum StorageFriendlyError {
     static func userMessage(for error: Error) -> String {
         let ns = error as NSError
@@ -34,7 +34,7 @@ enum StorageFriendlyError {
         return desc + diagnostics
     }
 
-    /// Firebase often formats failures as `Object investments/…` (**no** leading slash before `investments`).
+    // Detects raw Firebase Storage error messages that contain internal file paths
     private static func isRawFirebaseStorageObjectLine(_ s: String) -> Bool {
         s.hasPrefix("Object ") && s.contains("investments/")
     }

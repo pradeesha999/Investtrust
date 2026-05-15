@@ -1,8 +1,7 @@
 import Foundation
 
-/// Maps Firestore / gRPC errors to actionable copy for in-app alerts.
+// Converts Firestore/gRPC errors into readable messages shown in in-app error alerts
 enum FirestoreUserFacingMessage {
-    /// Standard Firestore iOS error domain (see `FirestoreErrorDomain`).
     private static let firestoreDomain = "FIRFirestoreErrorDomain"
 
     static func text(for error: Error) -> String {
@@ -13,7 +12,7 @@ enum FirestoreUserFacingMessage {
         switch ns.code {
         case 7: // PERMISSION_DENIED
             return """
-            Permission denied when talking to the database. In Firebase Console → Firestore → Rules, ensure signed-in users can read and write their own documents (for example `users/{userId}`) and the collections this app uses. After changing rules, publish and try again.
+            Permission denied when talking to the database. In Firebase Console → Firestore → Rules, publish rules that allow this app’s collections—including `offers` for negotiated offers alongside `investments`. From the project root you can run: npm run firebase -- deploy --only firestore:rules
             """
         case 14: // UNAVAILABLE
             return "The database could not be reached. Check your internet connection and try again."

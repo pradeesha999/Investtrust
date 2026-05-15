@@ -1,6 +1,6 @@
 import Foundation
 
-/// Unsigned video upload to Cloudinary (same preset as images — enable **video** in that upload preset in the Cloudinary console).
+// Uploads MP4/MOV video to Cloudinary — requires the upload preset to have video enabled in the Cloudinary console
 enum CloudinaryVideoUploadClient {
     enum UploadError: LocalizedError {
         case invalidResponse
@@ -32,7 +32,7 @@ enum CloudinaryVideoUploadClient {
         let message: String?
     }
 
-    /// Uploads video bytes; returns delivery URL and optional `public_id` (for deletes).
+    // Uploads video bytes; returns delivery URL and optional `public_id` (for deletes).
     static func uploadVideoData(_ data: Data, filename: String = "video.mp4") async throws -> CloudinaryUploadedAsset {
         let cloud = CloudinaryConfig.cloudName
         let preset = CloudinaryConfig.uploadPreset

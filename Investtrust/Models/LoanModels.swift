@@ -1,7 +1,10 @@
 import FirebaseFirestore
 import Foundation
 
-/// Loan repayment cadence (mirrors `RepaymentFrequency` for opportunities plus explicit naming in services).
+// Loan repayment schedule models used by active deals.
+// LoanScheduleGenerator builds the installment table; each row maps to one payment card on the seeker's screen.
+
+// How often the seeker makes repayments — monthly, weekly, or a single lump sum
 enum LoanRepaymentPlan: String, CaseIterable, Codable, Sendable {
     case monthly
     case weekly
@@ -27,7 +30,7 @@ enum LoanRepaymentPlan: String, CaseIterable, Codable, Sendable {
     var firestoreValue: String { rawValue }
 }
 
-/// Per-installment state for dual-confirmation repayment tracking.
+// Payment status for one installment — both the seeker and investor must confirm before it's fully done
 enum LoanInstallmentStatus: String, Codable, Sendable, CaseIterable {
     case scheduled
     case awaiting_confirmation
@@ -35,7 +38,7 @@ enum LoanInstallmentStatus: String, Codable, Sendable, CaseIterable {
     case disputed
 }
 
-/// One row in the frozen loan schedule (Firestore maps under `loanInstallments`).
+// One payment card on the seeker's repayment screen — part of the frozen schedule on a live loan deal
 struct LoanInstallment: Identifiable, Equatable, Hashable, Sendable {
     var id: String { "\(installmentNo)" }
     var installmentNo: Int
@@ -44,19 +47,14 @@ struct LoanInstallment: Identifiable, Equatable, Hashable, Sendable {
     var interestComponent: Double
     var totalDue: Double
     var status: LoanInstallmentStatus
-    /// Investor acknowledges **receiving** this repayment (funds arrived).
-    var investorMarkedPaidAt: Date?
-    /// Seeker acknowledges **sending** this repayment (after attaching payment proof).
-    var seekerMarkedReceivedAt: Date?
-    /// Payment slip / transfer proof uploaded by the seeker.
-    var seekerProofImageURLs: [String]
-    /// Optional receipt or cash-deposit proof uploaded by the investor.
-    var investorProofImageURLs: [String]
-    /// Latest investor dispute note when payment is reported as not received.
-    var latestDisputeReason: String?
+    var investorMarkedPaidAt: Date?      // investor taps "I received this" 
+    var seekerMarkedReceivedAt: Date?    // seeker taps "I sent this"
+    var seekerProofImageURLs: [String]   // payment slip photos uploaded by seeker
+    var investorProofImageURLs: [String] // receipt photos uploaded by investor (optional)
+    var latestDisputeReason: String?     // investor's note if they dispute the payment
     var latestDisputedAt: Date?
 
-    /// Combined list (seeker first, then investor). Matches legacy `proofImageURLs` in Firestore when not split.
+    // Combined proof list (seeker first). Falls back to legacy `proofImageURLs` field in older docs.
     var proofImageURLs: [String] { seekerProofImageURLs + investorProofImageURLs }
 
     var isFullyConfirmed: Bool {
@@ -64,8 +62,7 @@ struct LoanInstallment: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
-// MARK: - Firestore
-
+// Firestore serialisation — reads and writes individual installment maps on the investment document
 extension LoanInstallment {
     init?(firestoreMap m: [String: Any]) {
         let no = (m["installmentNo"] as? Int) ?? (m["installmentNo"] as? NSNumber)?.intValue
@@ -141,13 +138,12 @@ extension LoanInstallment {
     }
 }
 
-// MARK: - Schedule generation (simple interest, equal installments)
-
+// Builds the full repayment schedule for a loan deal using simple interest and equal installments
 enum LoanScheduleGenerator {
-    /// Weeks per month for converting loan term (months) to weekly count.
+    // Used to convert a weekly-based term into months for interest calculations
     static let weeksPerMonth: Double = 4.345
 
-    /// Total repayable with simple interest: principal + principal * (rate/100) * (months/12).
+    // Calculates the total amount the seeker must repay (principal + simple interest)
     static func totalRepayable(principal: Double, annualRatePercent: Double, termMonths: Int) -> Double {
         guard principal > 0, termMonths > 0 else { return max(0, principal) }
         let years = Double(termMonths) / 12.0
@@ -155,7 +151,7 @@ enum LoanScheduleGenerator {
         return principal + max(0, interest)
     }
 
-    /// Builds installment rows; `startDate` is usually `acceptedAt` or agreement active date.
+    // Generates the full list of installment rows starting from the deal acceptance date
     static func generateSchedule(
         principal: Double,
         annualRatePercent: Double,
@@ -248,7 +244,7 @@ enum LoanScheduleGenerator {
         return rows
     }
 
-    /// Split `total` into `count` parts; remainder goes to last installment (2 decimal places).
+    // Divides a total into equal parts, placing any rounding remainder in the last installment
     static func equalParts(total: Double, count: Int) -> [Double] {
         guard count > 0 else { return [] }
         let raw = total / Double(count)
