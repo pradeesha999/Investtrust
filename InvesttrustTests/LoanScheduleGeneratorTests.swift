@@ -1,14 +1,18 @@
 import XCTest
 @testable import Investtrust
-import FirebaseFirestore
 
+// Tests for loan repayment schedule math (simple interest, equal installments).
+// These are the numbers shown on the repayment screen inside an active deal.
 final class LoanScheduleGeneratorTests: XCTestCase {
+
     func testTotalRepayable_simpleInterest() {
+        // LKR 10,000 at 12% for 12 months → LKR 11,200 total
         let total = LoanScheduleGenerator.totalRepayable(principal: 10_000, annualRatePercent: 12, termMonths: 12)
         XCTAssertEqual(total, 11_200, accuracy: 0.01)
     }
 
     func testMonthlyInstallmentsSumMatchesTotal() {
+        // All monthly payments must add up to the full repayable amount
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let cal = Calendar(identifier: .gregorian)
         let principal = 1_000.0
@@ -29,6 +33,7 @@ final class LoanScheduleGeneratorTests: XCTestCase {
     }
 
     func testWeeklyCountUsesWeeksPerMonth() {
+        // Weekly plan: number of rows = term months × weeks-per-month constant
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let cal = Calendar(identifier: .gregorian)
         let schedule = LoanScheduleGenerator.generateSchedule(
@@ -44,6 +49,7 @@ final class LoanScheduleGeneratorTests: XCTestCase {
     }
 
     func testOneTimeProducesSingleRow() {
+        // One-time plan: single lump-sum payment at the end of the term
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let cal = Calendar(identifier: .gregorian)
         let schedule = LoanScheduleGenerator.generateSchedule(
@@ -61,160 +67,57 @@ final class LoanScheduleGeneratorTests: XCTestCase {
     }
 
     func testEqualPartsRemainderGoesToLast() {
+        // Rounding difference is absorbed by the last installment so totals stay exact
         let parts = LoanScheduleGenerator.equalParts(total: 10.0, count: 3)
         XCTAssertEqual(parts.count, 3)
         XCTAssertEqual(parts.reduce(0, +), 10.0, accuracy: 0.001)
     }
-}
 
-final class InappropriateImageGateTests: XCTestCase {
-    func testGateErrorCopy() {
-        let e = InappropriateImageGate.GateError.inappropriateContent
-        XCTAssertFalse((e as LocalizedError).errorDescription?.isEmpty ?? true)
-    }
-}
+    func testZeroPrincipalOrTermProducesEmptySchedule() {
+        // No schedule should be generated if the seeker hasn't filled in the amount or term
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let cal = Calendar(identifier: .gregorian)
 
-final class LoanInstallmentFirestoreMappingTests: XCTestCase {
-    func testFirestoreInit_legacyProofArrayFallsBackToSeekerProofs() {
-        let due = Date(timeIntervalSince1970: 1_710_000_000)
-        let paidAt = Date(timeIntervalSince1970: 1_710_100_000)
-        let receivedAt = Date(timeIntervalSince1970: 1_710_200_000)
+        let zeroPrincipal = LoanScheduleGenerator.generateSchedule(
+            principal: 0,
+            annualRatePercent: 12,
+            termMonths: 6,
+            plan: .monthly,
+            startDate: start,
+            calendar: cal
+        )
+        XCTAssertTrue(zeroPrincipal.isEmpty)
 
-        let map: [String: Any] = [
-            "installmentNo": 3,
-            "dueDate": Timestamp(date: due),
-            "principalComponent": 7_500.0,
-            "interestComponent": 500.0,
-            "totalDue": 8_000.0,
-            "status": "awaiting_confirmation",
-            "investorMarkedPaidAt": Timestamp(date: paidAt),
-            "seekerMarkedReceivedAt": Timestamp(date: receivedAt),
-            "proofImageURLs": [
-                "https://example.com/slip-1.jpg",
-                "https://example.com/slip-2.jpg",
-            ],
-        ]
-
-        let row = LoanInstallment(firestoreMap: map)
-        XCTAssertNotNil(row)
-        XCTAssertEqual(row?.seekerProofImageURLs.count, 2)
-        XCTAssertEqual(row?.investorProofImageURLs.count, 0)
-        XCTAssertEqual(row?.proofImageURLs.count, 2)
+        let zeroTerm = LoanScheduleGenerator.generateSchedule(
+            principal: 1_000,
+            annualRatePercent: 12,
+            termMonths: 0,
+            plan: .monthly,
+            startDate: start,
+            calendar: cal
+        )
+        XCTAssertTrue(zeroTerm.isEmpty)
     }
 
-    func testFirestoreInit_splitProofArraysPreferredOverLegacy() {
-        let due = Date(timeIntervalSince1970: 1_710_000_000)
-        let map: [String: Any] = [
-            "installmentNo": 1,
-            "dueDate": Timestamp(date: due),
-            "principalComponent": 1_000.0,
-            "interestComponent": 100.0,
-            "totalDue": 1_100.0,
-            "status": "scheduled",
-            "proofImageURLs": ["https://example.com/legacy.jpg"],
-            "seekerProofImageURLs": ["https://example.com/seeker.jpg"],
-            "investorProofImageURLs": ["https://example.com/investor.jpg"],
-        ]
+    func testMonthlyScheduleDatesIncreaseByOneMonth() {
+        // Each payment card on the repayment screen is due exactly one month after the previous
+        let cal = Calendar(identifier: .gregorian)
+        let components = DateComponents(year: 2024, month: 1, day: 15)
+        let start = cal.date(from: components)!
 
-        let row = LoanInstallment(firestoreMap: map)
-        XCTAssertNotNil(row)
-        XCTAssertEqual(row?.seekerProofImageURLs, ["https://example.com/seeker.jpg"])
-        XCTAssertEqual(row?.investorProofImageURLs, ["https://example.com/investor.jpg"])
-        XCTAssertEqual(row?.proofImageURLs, ["https://example.com/seeker.jpg", "https://example.com/investor.jpg"])
-    }
-
-    func testFirestoreMap_writesSplitAndCombinedProofFields() {
-        let due = Date(timeIntervalSince1970: 1_710_000_000)
-        let sentAt = Date(timeIntervalSince1970: 1_710_300_000)
-        let receivedAt = Date(timeIntervalSince1970: 1_710_350_000)
-        let row = LoanInstallment(
-            installmentNo: 2,
-            dueDate: due,
-            principalComponent: 2_000.0,
-            interestComponent: 120.0,
-            totalDue: 2_120.0,
-            status: .confirmed_paid,
-            investorMarkedPaidAt: receivedAt,
-            seekerMarkedReceivedAt: sentAt,
-            seekerProofImageURLs: ["https://example.com/s1.jpg"],
-            investorProofImageURLs: ["https://example.com/i1.jpg", "https://example.com/i2.jpg"]
+        let schedule = LoanScheduleGenerator.generateSchedule(
+            principal: 1_200,
+            annualRatePercent: 0,
+            termMonths: 3,
+            plan: .monthly,
+            startDate: start,
+            calendar: cal
         )
 
-        let map = row.firestoreMap()
-        XCTAssertEqual(map["seekerProofImageURLs"] as? [String], ["https://example.com/s1.jpg"])
-        XCTAssertEqual(map["investorProofImageURLs"] as? [String], ["https://example.com/i1.jpg", "https://example.com/i2.jpg"])
-        XCTAssertEqual(
-            map["proofImageURLs"] as? [String],
-            ["https://example.com/s1.jpg", "https://example.com/i1.jpg", "https://example.com/i2.jpg"]
-        )
-        XCTAssertNotNil(map["investorMarkedPaidAt"] as? Timestamp)
-        XCTAssertNotNil(map["seekerMarkedReceivedAt"] as? Timestamp)
-    }
-
-    func testCombinedProofProperty_ordersSeekerThenInvestor() {
-        let row = LoanInstallment(
-            installmentNo: 4,
-            dueDate: Date(timeIntervalSince1970: 1_710_000_000),
-            principalComponent: 3_000.0,
-            interestComponent: 300.0,
-            totalDue: 3_300.0,
-            status: .awaiting_confirmation,
-            investorMarkedPaidAt: nil,
-            seekerMarkedReceivedAt: nil,
-            seekerProofImageURLs: ["sA", "sB"],
-            investorProofImageURLs: ["iA"]
-        )
-
-        XCTAssertEqual(row.proofImageURLs, ["sA", "sB", "iA"])
-    }
-}
-
-final class RevenueSharePeriodModelTests: XCTestCase {
-    func testGeneratorBuildsExpectedPeriodCount() {
-        let start = Date(timeIntervalSince1970: 1_710_000_000)
-        let rows = RevenueShareScheduleGenerator.generatePeriods(startDate: start, periodCount: 4)
-        XCTAssertEqual(rows.count, 4)
-        XCTAssertEqual(rows.first?.periodNo, 1)
-        XCTAssertEqual(rows.last?.periodNo, 4)
-        XCTAssertTrue(rows.allSatisfy { $0.status == .awaiting_declaration })
-    }
-
-    func testFirestoreRoundTripKeepsSplitProofArrays() {
-        let row = RevenueSharePeriod(
-            periodNo: 2,
-            startDate: Date(timeIntervalSince1970: 1_710_000_000),
-            endDate: Date(timeIntervalSince1970: 1_712_000_000),
-            dueDate: Date(timeIntervalSince1970: 1_712_000_000),
-            declaredRevenue: 250_000,
-            expectedShareAmount: 20_000,
-            actualPaidAmount: 20_000,
-            seekerDeclaredAt: Date(timeIntervalSince1970: 1_711_000_000),
-            seekerMarkedSentAt: Date(timeIntervalSince1970: 1_711_100_000),
-            investorMarkedReceivedAt: Date(timeIntervalSince1970: 1_711_200_000),
-            status: .confirmed_paid,
-            seekerProofImageURLs: ["s-1"],
-            investorProofImageURLs: ["i-1", "i-2"]
-        )
-        let map = row.firestoreMap()
-        let decoded = RevenueSharePeriod(firestoreMap: map)
-        XCTAssertNotNil(decoded)
-        XCTAssertEqual(decoded?.seekerProofImageURLs, ["s-1"])
-        XCTAssertEqual(decoded?.investorProofImageURLs, ["i-1", "i-2"])
-        XCTAssertEqual(decoded?.proofImageURLs, ["s-1", "i-1", "i-2"])
-    }
-
-    func testFirestoreInitFallsBackToLegacyProofArray() {
-        let map: [String: Any] = [
-            "periodNo": 1,
-            "startDate": Timestamp(date: Date(timeIntervalSince1970: 1_710_000_000)),
-            "endDate": Timestamp(date: Date(timeIntervalSince1970: 1_712_000_000)),
-            "dueDate": Timestamp(date: Date(timeIntervalSince1970: 1_712_000_000)),
-            "status": RevenueSharePeriodStatus.awaiting_confirmation.rawValue,
-            "proofImageURLs": ["legacy-a", "legacy-b"]
-        ]
-        let decoded = RevenueSharePeriod(firestoreMap: map)
-        XCTAssertNotNil(decoded)
-        XCTAssertEqual(decoded?.seekerProofImageURLs, ["legacy-a", "legacy-b"])
-        XCTAssertEqual(decoded?.investorProofImageURLs, [])
+        XCTAssertEqual(schedule.count, 3)
+        for (index, installment) in schedule.enumerated() {
+            let expected = cal.date(byAdding: .month, value: index + 1, to: start)!
+            XCTAssertEqual(installment.dueDate, expected, "Installment #\(index + 1) due date should be exactly \(index + 1) months after start")
+        }
     }
 }

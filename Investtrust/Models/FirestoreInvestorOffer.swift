@@ -1,7 +1,8 @@
 import FirebaseFirestore
 import Foundation
 
-/// One row in the `offers` collection — canonical investor-proposed terms for a pending investment request.
+// A counter-offer row stored in the `offers` Firestore collection.
+// Created when an investor proposes custom terms (amount/rate/term) instead of accepting listing defaults.
 struct FirestoreInvestorOffer: Equatable, Sendable, Identifiable {
     let id: String
     let investmentId: String
@@ -57,7 +58,7 @@ struct FirestoreInvestorOffer: Equatable, Sendable, Identifiable {
         self.updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
     }
 
-    /// Fields written to `offers/{docId}` — must stay in sync with `init?(id:data:)` and `firestore.rules` `offerCreateShape`.
+    // Builds the Firestore write payload for a new offer document
     static func creationPayload(
         investmentId: String,
         opportunityId: String,

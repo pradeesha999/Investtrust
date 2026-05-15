@@ -2,7 +2,8 @@ import FirebaseFirestore
 import FirebaseStorage
 import Foundation
 
-/// Writes and reads `opportunities` documents (see `OpportunityListing` + `OpportunityListing+Firestore`).
+// Reads and writes opportunity listings in the `opportunities` Firestore collection.
+// Used by the market browse feed, seeker listing management, and opportunity detail screens.
 final class OpportunityService {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
@@ -168,7 +169,7 @@ final class OpportunityService {
         return OpportunityListing(documentID: opportunityID, data: merged)
     }
 
-    /// If the listing has a Storage path but no `videoURL`, fetch the download URL and save it (owner only). Lets investors play video for listings created before `videoURL` was written.
+    // If the listing has a Storage path but no `videoURL`, fetch the download URL and save it (owner only). Lets investors play video for listings created before `videoURL` was written.
     func syncVideoDownloadURLIfNeeded(opportunityId: String, ownerId: String) async throws -> OpportunityListing? {
         let ref = db.collection("opportunities").document(opportunityId)
         let snapshot = try await ref.getDocument()
@@ -193,10 +194,10 @@ final class OpportunityService {
         return OpportunityListing(documentID: opportunityId, data: merged)
     }
 
-    /// Latest opportunity document (e.g. refresh `videoURL` after seeker sync).
-    ///
-    /// Uses a **collection query** by document ID first so Firestore `list` rules apply — the same as market browse.
-    /// Many projects allow `list` for open listings but omit `get` for non-owners; a plain `getDocument()` then fails for investors.
+    // Latest opportunity document (e.g. refresh `videoURL` after seeker sync).
+    // 
+    // Uses a **collection query** by document ID first so Firestore `list` rules apply — the same as market browse.
+    // Many projects allow `list` for open listings but omit `get` for non-owners; a plain `getDocument()` then fails for investors.
     func fetchOpportunity(opportunityId: String) async throws -> OpportunityListing? {
         let trimmed = opportunityId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -240,8 +241,8 @@ final class OpportunityService {
         return nil
     }
 
-    /// Same as `fetchOpportunity` strategy 1, but always reads from the **server** so UI refreshes after
-    /// local writes (e.g. accepted offer terms) are not stuck on persistence-cache snapshots.
+    // Same as `fetchOpportunity` strategy 1, but always reads from the **server** so UI refreshes after
+    // local writes (e.g. accepted offer terms) are not stuck on persistence-cache snapshots.
     func fetchOpportunityFromServer(opportunityId: String) async throws -> OpportunityListing? {
         let trimmed = opportunityId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -277,7 +278,7 @@ final class OpportunityService {
         return Array(openRows.prefix(limit))
     }
 
-    /// Per opportunity, counts investments that still occupy an investor slot (not declined / withdrawn / …).
+    // Per opportunity, counts investments that still occupy an investor slot (not declined / withdrawn / …).
     private func reservedInvestorSlotCountByOpportunity(opportunityIds: [String]) async throws -> [String: Int] {
         let unique = Array(Set(opportunityIds)).filter { !$0.isEmpty }
         guard !unique.isEmpty else { return [:] }
@@ -310,7 +311,7 @@ final class OpportunityService {
         }
     }
 
-    /// Updates listing fields (media unchanged). Blocked while any non-declined investment request exists for this opportunity.
+    // Updates listing fields (media unchanged). Blocked while any non-declined investment request exists for this opportunity.
     func updateOpportunity(
         opportunityId: String,
         ownerId: String,
@@ -396,8 +397,8 @@ final class OpportunityService {
         return OpportunityListing(documentID: opportunityId, data: merged)
     }
 
-    /// After the seeker accepts an investor’s pending request/offer, overwrite the public listing’s
-    /// funding amount and core terms so browse/detail views match the agreed deal (not the original defaults).
+    // After the seeker accepts an investor’s pending request/offer, overwrite the public listing’s
+    // funding amount and core terms so browse/detail views match the agreed deal (not the original defaults).
     func applyAcceptedInvestmentTermsToListing(
         opportunity: OpportunityListing,
         ownerId: String,
@@ -454,7 +455,7 @@ final class OpportunityService {
         }
     }
 
-    /// Deletes the opportunity and related `investments` rows for this listing. Blocked while any active (non-declined) request exists.
+    // Deletes the opportunity and related `investments` rows for this listing. Blocked while any active (non-declined) request exists.
     func deleteOpportunity(opportunityId: String, ownerId: String) async throws {
         let ref = db.collection("opportunities").document(opportunityId)
         let snapshot = try await ref.getDocument()
@@ -506,7 +507,7 @@ final class OpportunityService {
         return false
     }
 
-    /// Count of listings this user has created (opportunity builder). Used for profile activity metrics.
+    // Count of listings this user has created (opportunity builder). Used for profile activity metrics.
     func countOpportunitiesForOwner(ownerId: String) async throws -> Int {
         let snapshot = try await db.collection("opportunities")
             .whereField("ownerId", isEqualTo: ownerId)
@@ -535,9 +536,9 @@ final class OpportunityService {
         return deduped.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
-    /// Open listings from this seeker. With `refineByInvestorCapacity` (default), filters out listings at max
-    /// investors via `investments` (seeker-only; requires read access to those rows). Set to `false` when the
-    /// caller is an **investor** (e.g. chat “make offer”) — otherwise Firestore denies the batched query.
+    // Open listings from this seeker. With `refineByInvestorCapacity` (default), filters out listings at max
+    // investors via `investments` (seeker-only; requires read access to those rows). Set to `false` when the
+    // caller is an **investor** (e.g. chat “make offer”) — otherwise Firestore denies the batched query.
     func fetchSeekerListingsEligibleForOffers(
         ownerId: String,
         limit: Int = 100,
@@ -549,7 +550,7 @@ final class OpportunityService {
         return try await filterOpenListingsStillAcceptingInvestors(open)
     }
 
-    /// Same rules as `createOpportunity` / `updateOpportunity` — use for client-side step validation.
+    // Same rules as `createOpportunity` / `updateOpportunity` — use for client-side step validation.
     static func validateDraftTerms(_ draft: OpportunityDraft) throws -> OpportunityTerms {
         try validatedTerms(from: draft)
     }
@@ -617,7 +618,7 @@ final class OpportunityService {
         }
     }
 
-    /// Matches display order: days-after-acceptance ascending; drafts without a day sort last (by title).
+    // Matches display order: days-after-acceptance ascending; drafts without a day sort last (by title).
     private static func sortedMilestoneDraftsForPersistence(_ items: [MilestoneDraft]) -> [MilestoneDraft] {
         func dayValue(_ d: MilestoneDraft) -> Int? {
             let digits = d.daysAfterAcceptance.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
@@ -653,7 +654,7 @@ final class OpportunityService {
         return Int(digitsOnly)
     }
 
-    /// Per-investor ticket on the listing: equal split when more than one slot, else the full goal (aligned with `InvestmentService` rounding).
+    // Per-investor ticket on the listing: equal split when more than one slot, else the full goal (aligned with `InvestmentService` rounding).
     private static func storedMinimumInvestment(amountRequested: Double, maxInvestors: Int?) -> Double {
         let cap = max(1, maxInvestors ?? 1)
         guard amountRequested > 0 else { return 0 }

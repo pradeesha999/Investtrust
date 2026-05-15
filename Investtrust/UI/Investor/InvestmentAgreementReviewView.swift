@@ -1,19 +1,14 @@
 import SwiftUI
 
-/// Review MOA terms, draw a signature, and submit (uploads PNG + finalizes PDF when both parties have signed).
-///
-/// The signature panel uses **local `@State` only** (not `ObservableObject`) and sits **outside** the terms
-/// `ScrollView` so SwiftUI does not rebuild a huge `TupleView` on every touch — that prevented stack overflow
-/// (see `ModifiedContent._makeViewList` recursion in crash reports).
+// MOA review and signing screen.
+// Shows the frozen deal terms, a signature pad for drawing, and submits the signature image when the user signs.
 struct InvestmentAgreementReviewView: View {
     @Environment(AuthService.self) private var auth
 
     let investment: InvestmentListing
-    /// When false, the footer signing action is hidden (read-only view).
-    var canSign: Bool = true
+    var canSign: Bool = true              // when false the signing footer is hidden (read-only mode)
     var onSign: (Data) async throws -> Void
-    /// Called on the main actor after a **successful** sign, before this screen dismisses (e.g. close a requests sheet underneath).
-    var onDidFinishSigning: (() -> Void)? = nil
+    var onDidFinishSigning: (() -> Void)? = nil  // called after a successful signing, before dismiss
 
     @Environment(\.dismiss) private var dismiss
     @State private var isSigning = false

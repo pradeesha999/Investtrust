@@ -2,14 +2,14 @@ import AVFoundation
 import FirebaseStorage
 import SwiftUI
 
-/// Plays video from a Firebase Storage path, `gs://` URL, or `https://` download URL.
-/// Inline UI uses `AVPlayerLayer` (see `InlineAVPlayerLayerView`) so video actually appears inside `ScrollView` / `LazyVStack`.
+// Plays opportunity pitch videos from Firebase Storage or Cloudinary URLs
+// Uses AVPlayerLayer so video renders correctly inside scroll views
 struct StorageBackedVideoPlayer: View {
     let reference: String
     var height: CGFloat = 200
     var cornerRadius: CGFloat = 16
     var muted: Bool = true
-    /// Reserved for future custom chrome; inline playback uses a layer (no system scrubber).
+    // Reserved for future custom chrome; inline playback uses a layer (no system scrubber).
     var showsPlaybackControls: Bool = false
     var allowFullscreenOnTap: Bool = false
     var fullscreenPlaysMuted: Bool = false
@@ -180,7 +180,7 @@ struct StorageBackedVideoPlayer: View {
         }
     }
 
-    /// Waits until the item is ready or definitively failed (avoids an “invisible” player stuck in `.unknown`).
+    // Waits until the item is ready or definitively failed (avoids an “invisible” player stuck in `.unknown`).
     private func waitForPlayerItemReady(_ item: AVPlayerItem, timeoutSeconds: TimeInterval) async -> Bool {
         if item.status == .readyToPlay { return true }
         if item.status == .failed { return false }

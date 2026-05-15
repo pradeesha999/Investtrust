@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One row in the chat list: counterparty name + avatar (not opportunity title).
+// A single row in the Chat tab list — shows the other person's name, avatar, and last message preview
 struct ChatThreadRowView: View {
     let thread: ChatThread
     let currentUserId: String?

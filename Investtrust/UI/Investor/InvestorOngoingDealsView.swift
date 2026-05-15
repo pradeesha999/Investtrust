@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Investor deals that are fully signed and still in progress.
+// "Ongoing" segment — shows live deals where the MOA is signed and repayments are in progress
 struct InvestorOngoingDealsView: View {
     var searchText: String = ""
 

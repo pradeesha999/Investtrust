@@ -1,14 +1,12 @@
 import FirebaseFirestore
 import Foundation
 
-/// Firestore: `chats/{chatId}` and `chats/{chatId}/messages/{messageId}`
-/// Canonical chat id is pair-based so each seeker/investor pair has one thread across opportunities.
-///
-/// Deploy rules so only `participantIds` can read/write chat docs and subcollection messages (e.g. `request.auth.uid in resource.data.participantIds`).
+// Manages chat threads and messages stored in Firestore under `chats/{chatId}`.
+// Each seeker/investor pair shares one thread regardless of how many opportunities they discuss.
 final class ChatService {
     private let db = Firestore.firestore()
 
-    /// Creates the chat document if missing. Returns existing id if already present.
+    // Returns the existing chat thread for this pair, or creates one if none exists
     func getOrCreateChat(
         opportunityId: String,
         seekerId: String,
@@ -40,8 +38,7 @@ final class ChatService {
             try? await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: chatId)
             return chatId
         } catch {
-            // Some legacy deployments may have an unreadable canonical doc id.
-            // Fall back to creating a fresh chat document with an auto id.
+            // Fall back to an auto-generated ID when the canonical ID can't be written (legacy deployments)
             let fallbackRef = db.collection("chats").document()
             try await fallbackRef.setData(payload)
             try? await cleanupDuplicatePairChats(seekerId: seekerId, investorId: investorId, keepChatId: fallbackRef.documentID)
@@ -87,7 +84,7 @@ final class ChatService {
         }
     }
 
-    /// For resolving the other participant’s profile (name / avatar) in the chat UI.
+    // For resolving the other participant’s profile (name / avatar) in the chat UI.
     func fetchParticipantIds(chatId: String) async throws -> (seekerId: String, investorId: String)? {
         let snap = try await db.collection("chats").document(chatId).getDocument()
         guard let data = snap.data(),
@@ -98,7 +95,7 @@ final class ChatService {
         return (seeker, investor)
     }
 
-    /// Same two UIDs as on the chat document, in stable order for rules + `array-contains` queries.
+    // Same two UIDs as on the chat document, in stable order for rules + `array-contains` queries.
     private func participantIdsForMessages(chatId: String) async throws -> [String] {
         let snap = try await db.collection("chats").document(chatId).getDocument()
         guard snap.exists, let data = snap.data() else {
@@ -278,8 +275,8 @@ final class ChatService {
         return "pair_\(parts[0])_\(parts[1])"
     }
 
-    /// Backward-compatible chat list query.
-    /// Prefer `participantIds` (current model), then fall back to legacy pair fields.
+    // Backward-compatible chat list query.
+    // Prefer `participantIds` (current model), then fall back to legacy pair fields.
     private func fetchChatDocumentsScoped(to userId: String) async throws -> [QueryDocumentSnapshot] {
         do {
             let snapshot = try await db.collection("chats")
@@ -307,8 +304,8 @@ final class ChatService {
         }
     }
 
-    /// Chats for this exact pair using equality on `seekerId` + `investorId` (both orientations).
-    /// Avoids `participantIds array-contains` queries that can return unrelated docs and fail Firestore rules.
+    // Chats for this exact pair using equality on `seekerId` + `investorId` (both orientations).
+    // Avoids `participantIds array-contains` queries that can return unrelated docs and fail Firestore rules.
     private func queryChatsForPair(seekerId: String, investorId: String) async throws -> [QueryDocumentSnapshot] {
         let forward = try await db.collection("chats")
             .whereField("seekerId", isEqualTo: seekerId)
@@ -326,7 +323,7 @@ final class ChatService {
         return Array(byId.values)
     }
 
-    /// Finds a previously created chat regardless of legacy id format.
+    // Finds a previously created chat regardless of legacy id format.
     private func findExistingPairChatId(seekerId: String, investorId: String) async throws -> String? {
         let canonicalId = canonicalChatId(seekerId: seekerId, investorId: investorId)
         do {
@@ -369,8 +366,8 @@ final class ChatService {
         return nil
     }
 
-    /// Deletes duplicate chat documents for a seeker/investor pair and keeps one.
-    /// Note: Firestore subcollection docs are not recursively deleted by this call.
+    // Deletes duplicate chat documents for a seeker/investor pair and keeps one.
+    // Note: Firestore subcollection docs are not recursively deleted by this call.
     private func cleanupDuplicatePairChats(seekerId: String, investorId: String, keepChatId: String) async throws {
         let pairDocs = try await queryChatsForPair(seekerId: seekerId, investorId: investorId)
         let duplicates = pairDocs.filter { doc in

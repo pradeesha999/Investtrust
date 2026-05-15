@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Shared fields for sending a negotiated investment offer (chat or opportunity detail).
+// Reusable form for composing a counter-offer — used in both the chat room and the opportunity detail sheet
 struct InvestmentOfferComposerForm: View {
     let opportunities: [OpportunityListing]
     @Binding var selectedOpportunityId: String
     let showOpportunityPicker: Bool
-    /// Shown when `opportunities` is empty (e.g. chat-specific hint).
+    // Message shown when there are no listings to attach an offer to
     let emptyListingMessage: String?
     @Binding var amountText: String
     @Binding var rateText: String

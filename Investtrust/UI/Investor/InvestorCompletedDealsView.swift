@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Investor deals that have fully completed repayment and are closed.
+// "Completed" segment — shows deals that are fully repaid or closed
 struct InvestorCompletedDealsView: View {
     var searchText: String = ""
 

@@ -1,6 +1,8 @@
 import FirebaseFirestore
 import SwiftUI
 
+// One-on-one chat room between an investor and a seeker.
+// Messages update in real time via a Firestore listener; supports text, deal request cards, and offer cards.
 struct ChatRoomView: View {
     let chatId: String
 
@@ -146,7 +148,7 @@ struct ChatRoomView: View {
             }
     }
 
-    /// Returns false if the chat document is missing or unreadable (permissions / shape).
+    // Returns false if the chat document is missing or unreadable (permissions / shape).
     private func loadPartnerHeader() async -> Bool {
         guard let uid = auth.currentUserID else { return false }
         do {

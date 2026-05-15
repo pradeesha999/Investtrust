@@ -5,6 +5,7 @@
 
 import SwiftUI
 
+// Sign-in screen. Supports email/password login, Google Sign In, and Face ID/Touch ID auto-login.
 struct LoginView: View {
     @Environment(AuthService.self) private var auth
     @State private var email = ""
@@ -256,7 +257,7 @@ struct LoginView: View {
     }
 }
 
-// MARK: - Forgot password
+// Forgot password
 
 private struct ForgotPasswordSheet: View {
     @Environment(\.dismiss) private var dismiss

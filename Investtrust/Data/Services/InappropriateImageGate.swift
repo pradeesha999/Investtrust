@@ -2,10 +2,10 @@ import Foundation
 import NSFWDetector
 import UIKit
 
-/// On-device NSFW screening before uploads (lovoo `NSFWDetector`). Assistive only; may false-positive/negative.
+// Runs on-device content screening before a photo is uploaded to Cloudinary.
+// Blocks uploads when the NSFW confidence score is above the threshold.
 enum InappropriateImageGate {
-    /// Confidence at or above this blocks upload (0...1).
-    static var nsfwThreshold: Float = 0.85
+    static var nsfwThreshold: Float = 0.85  // 85% confidence required to block the upload
 
     enum GateError: LocalizedError {
         case inappropriateContent
@@ -21,7 +21,7 @@ enum InappropriateImageGate {
         }
     }
 
-    /// Throws if the image is likely inappropriate for the marketplace.
+    // Throws GateError.inappropriateContent if the image fails the NSFW check
     static func validateForUpload(_ image: UIImage) async throws {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             let lock = NSLock()
@@ -44,8 +44,7 @@ enum InappropriateImageGate {
                             cont.resume()
                         }
                     case .error(let error):
-                        // Vision/CoreML may omit the expected "NSFW" observation (orientation, scale, model output).
-                        // Fail open for that case so uploads work; lovoo's callback can also fire more than once — never resume twice.
+                        // Fail open when the model can't produce an NSFW score (e.g. unusual image scale/orientation)
                         let text = error.localizedDescription
                             + " "
                             + (error as NSError).domain
@@ -60,7 +59,7 @@ enum InappropriateImageGate {
         }
     }
 
-    /// Validates `Data` as JPEG/PNG bitmap; skips gate if decoding fails (caller should validate separately).
+    // Convenience wrapper — decodes raw image data and runs the same NSFW check
     static func validateImageDataForUpload(_ data: Data) async throws {
         guard let image = UIImage(data: data) else { return }
         try await validateForUpload(image)

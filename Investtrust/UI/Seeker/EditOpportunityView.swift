@@ -5,7 +5,8 @@
 
 import SwiftUI
 
-/// Edit text, terms, and execution fields for an existing listing (images and video stay as uploaded).
+// Edit screen for an existing opportunity listing.
+// Only text and terms can be changed — images and video stay as originally uploaded.
 struct EditOpportunityView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthService.self) private var auth
@@ -258,7 +259,7 @@ struct EditOpportunityView: View {
         return cap >= 2
     }
 
-    /// Each milestone with any content must have valid days-after-acceptance (UI order is independent; rows insert on top).
+    // Each milestone with any content must have valid days-after-acceptance (UI order is independent; rows insert on top).
     private func validateMilestoneDraftOffsets() -> Bool {
         for m in draft.milestones {
             let hasContent =

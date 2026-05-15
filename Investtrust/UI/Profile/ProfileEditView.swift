@@ -3,7 +3,8 @@ import FirebaseAuth
 import PhotosUI
 import UIKit
 
-/// Shared profile form for investors and opportunity builders (stored in `users.profile`).
+// Profile edit screen for both investors and seekers.
+// Fills in the required fields (name, phone, bio, experience) that gate the "Invest" button.
 struct ProfileEditView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss

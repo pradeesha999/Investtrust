@@ -3,17 +3,13 @@ import FirebaseFirestore
 import XCTest
 @testable import Investtrust
 
-/// Reproduces the exact data shape that `InvestmentService.createOrUpdateOfferRequest`
-/// writes to Firestore, then verifies the seeker-side parsing surfaces the offered
-/// values (not listing defaults).
-///
-/// This is an offline test — we never hit Firestore. We assemble the same dictionary
-/// the service builds, hand it to `InvestmentListing(id:data:)`, and assert the
-/// computed properties used by the seeker UI return what the investor typed.
+// Tests for the investor offer (counter-proposal) flow.
+// When an investor submits a custom amount / rate / term from the opportunity detail sheet,
+// the seeker should see those exact values — not the original listing defaults.
 final class InvestmentOfferFlowTests: XCTestCase {
     override class func setUp() {
         super.setUp()
-        // FieldValue / Timestamp need Firebase configured even in unit tests.
+        // Firebase must be initialised so Timestamp fields can be constructed
         if FirebaseApp.app() == nil {
             let options = FirebaseOptions(
                 googleAppID: "1:000000000000:ios:0000000000000000000000",
@@ -25,8 +21,8 @@ final class InvestmentOfferFlowTests: XCTestCase {
         }
     }
 
-    /// Investor types `100,000 / 18% / 24 months`. The seeker should see exactly that,
-    /// not the listing defaults of `123,123 / 20% / 3 months`.
+    // Investor types LKR 100,000 / 18% / 24 months.
+    // The seeker should see exactly that, not the listing defaults of LKR 123,123 / 20% / 3 months.
     func test_offerWriteShape_seekerReadsOfferedValues_notListingDefaults() throws {
         let now = Date()
         let payload = makeOfferPayload(
@@ -64,9 +60,8 @@ final class InvestmentOfferFlowTests: XCTestCase {
                        "Seeker reads effectiveFinalTimelineMonths → must equal offered months")
     }
 
-    /// Repro for the user's screenshot: a row tagged "Pending decision" with
-    /// listing-default values is necessarily a *standard* request — the offer fields
-    /// are missing — proving the offer create path was never invoked for that row.
+    // A row showing "Pending decision" with listing-default values is a standard request —
+    // the offer fields are missing, proving the offer path was never used for that row.
     func test_standardRequestRow_lacksOfferFields_andShowsPendingDecisionLabel() throws {
         let payload = makeStandardRequestPayload(
             opportunityId: "opp-1",
@@ -95,12 +90,11 @@ final class InvestmentOfferFlowTests: XCTestCase {
         XCTAssertEqual(listing.effectiveFinalTimelineMonths, 3)
 
         XCTAssertEqual(seekerStatusLabel(for: listing), "Pending decision",
-                       "Standard pending → seeker label is 'Pending decision' (matches user's screenshot)")
+                       "Standard pending → seeker label is 'Pending decision'")
     }
 
-    /// When BOTH a stale standard pending row and a fresh offer pending row exist for
-    /// the same investor, the dedup logic must surface the offer so the seeker sees
-    /// the latest negotiated terms.
+    // When both a stale standard row and a fresh offer row exist for the same investor,
+    // the dedup logic should surface the offer so the seeker sees the latest terms.
     func test_pendingDedup_prefersOfferOverStandardForSameInvestor() throws {
         let now = Date()
         let standard = try XCTUnwrap(InvestmentListing(
@@ -136,7 +130,7 @@ final class InvestmentOfferFlowTests: XCTestCase {
         XCTAssertEqual(preferred.effectiveAmount, 100_000)
     }
 
-    // MARK: - Helpers (mirror InvestmentService payload shapes 1:1)
+    // Helpers — mirror InvestmentService payload shapes exactly
 
     private func makeOfferPayload(
         opportunityId: String,
@@ -222,7 +216,7 @@ final class InvestmentOfferFlowTests: XCTestCase {
         ]
     }
 
-    /// Mirrors `SeekerOpportunityDetailView.requestStatusLabel` exactly.
+    // Mirrors SeekerOpportunityDetailView.requestStatusLabel
     private func seekerStatusLabel(for inv: InvestmentListing) -> String {
         if inv.status.lowercased() == "pending" {
             return inv.isOfferRequest ? "Offer pending" : "Pending decision"
@@ -230,7 +224,7 @@ final class InvestmentOfferFlowTests: XCTestCase {
         return inv.lifecycleDisplayTitle
     }
 
-    /// Mirrors `SeekerOpportunityDetailView.pendingRequestRows` per-investor preference.
+    // Mirrors SeekerOpportunityDetailView.pendingRequestRows per-investor preference
     private func preferredPendingRow(_ a: InvestmentListing, _ b: InvestmentListing) -> InvestmentListing {
         if a.isOfferRequest != b.isOfferRequest {
             return a.isOfferRequest ? a : b

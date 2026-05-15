@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Compact entry that opens the full repayment schedule on a separate screen.
+// Summary row in a deal card that opens the full loan repayment schedule when tapped
 struct LoanInstallmentsSection: View {
     let investment: InvestmentListing
     var currentUserId: String?
@@ -92,7 +92,7 @@ struct LoanInstallmentsSection: View {
 }
 
 private extension InvestmentListing {
-    /// Bumps `NavigationLink` identity when installment rows change so the schedule screen picks up fresh data after refresh.
+    // Bumps `NavigationLink` identity when installment rows change so the schedule screen picks up fresh data after refresh.
     var loanScheduleStateId: String {
         let parts = loanInstallments
             .sorted { $0.installmentNo < $1.installmentNo }

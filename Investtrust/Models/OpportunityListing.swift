@@ -1,5 +1,7 @@
 import Foundation
 
+// A funding opportunity created by a seeker and listed on the market browse screen.
+// Contains all listing details, media references, and display helpers used across the app.
 struct OpportunityListing: Identifiable, Equatable, Hashable {
     let id: String
     let ownerId: String
@@ -12,19 +14,19 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     let minimumInvestment: Double
     let maximumInvestors: Int?
 
-    /// Type-specific fields (loan, equity, …) — also see top-level legacy keys in Firestore.
+    // Type-specific fields (loan, equity, …) — also see top-level legacy keys in Firestore.
     let terms: OpportunityTerms
 
     let useOfFunds: String
-    /// How the business generates income to service the deal (seeker narrative).
+    // How the business generates income to service the deal (seeker narrative).
     let incomeGenerationMethod: String
     let milestones: [OpportunityMilestone]
     let location: String
     let riskLevel: RiskLevel
     let verificationStatus: VerificationStatus
-    /// Optional analytics counter from backend.
+    // Optional analytics counter from backend.
     let viewCount: Int?
-    /// If false, investor cannot submit negotiated offer terms.
+    // If false, investor cannot submit negotiated offer terms.
     let isNegotiable: Bool
     let documentURLs: [String]
 
@@ -96,14 +98,14 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
         self.videoPublicId = videoPublicId
     }
 
-    // MARK: - Legacy compatibility (loan metrics)
+    // Convenience accessors for common listing properties used in card and detail views
 
-    /// Loan interest %; for other types typically 0 — use `terms` for full detail.
+    // Interest rate for loan listings; use terms for full detail on other types
     var interestRate: Double {
         terms.effectiveInterestRate
     }
 
-    /// Primary timeline in months (loan repayment, revenue-share max, or 1).
+    // Primary term length in months used for display and schedule calculations
     var repaymentTimelineMonths: Int {
         terms.effectiveTimelineMonths
     }
@@ -132,7 +134,7 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
         return f.string(from: n) ?? String(format: "%.0f", minimumInvestment)
     }
 
-    /// Firestore `status` normalized for comparisons (blank values are treated as open listings).
+    // Firestore `status` normalized for comparisons (blank values are treated as open listings).
     var normalizedListingStatus: String {
         let s = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return s.isEmpty ? "open" : s
@@ -189,10 +191,10 @@ struct OpportunityListing: Identifiable, Equatable, Hashable {
     }
 }
 
-// MARK: - Seeker UI: show agreed deal economics
+// Seeker UI: show agreed deal economics
 
 extension OpportunityListing {
-    /// Matches `OpportunityService`’s per-slot ticket sizing (equal split when `maximumInvestors` > 1).
+    // Matches `OpportunityService`’s per-slot ticket sizing (equal split when `maximumInvestors` > 1).
     static func listingMinimumTicket(amountRequested: Double, maximumInvestors: Int?) -> Double {
         let cap = max(1, maximumInvestors ?? 1)
         guard amountRequested > 0 else { return 0 }
@@ -203,7 +205,7 @@ extension OpportunityListing {
         return amountRequested
     }
 
-    /// Picks the investment row whose economics should represent the listing after acceptance / while ongoing.
+    // Picks the investment row whose economics should represent the listing after acceptance / while ongoing.
     static func primarySeekerDisplayInvestment(rowsForSameOpportunity: [InvestmentListing]) -> InvestmentListing? {
         let candidates = rowsForSameOpportunity.filter { inv in
             let s = inv.status.lowercased()
@@ -220,8 +222,8 @@ extension OpportunityListing {
         }
     }
 
-    /// Builds a listing snapshot using the **accepted** investment’s amount / rate / months so seeker UI
-    /// matches the agreed deal even when the `opportunities` document is still on pre-offer defaults.
+    // Builds a listing snapshot using the **accepted** investment’s amount / rate / months so seeker UI
+    // matches the agreed deal even when the `opportunities` document is still on pre-offer defaults.
     func withSeekerAcceptedEconomics(from inv: InvestmentListing) -> OpportunityListing {
         let amt = inv.effectiveAmount
         guard amt > 0 else { return self }

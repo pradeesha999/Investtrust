@@ -1,5 +1,9 @@
 import Foundation
 
+// Core model for an investment request or active deal.
+// Represents one investor's participation in an opportunity, from initial request through repayment.
+
+// Lifecycle state of one equity milestone on an active equity deal
 enum EquityMilestoneStatus: String, Codable, Sendable, CaseIterable {
     case planned
     case in_progress
@@ -32,12 +36,9 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let createdAt: Date?
     let updatedAt: Date?
 
-    /// Firestore `opportunityId` (or nested `opportunity.id`) — used for seeker request management.
-    let opportunityId: String?
-    /// Investor who made the request.
-    let investorId: String?
-    /// Opportunity owner (seeker); stored for rules and accept validation.
-    let seekerId: String?
+    let opportunityId: String?   // links back to the opportunity listing this request belongs to
+    let investorId: String?      // the user who submitted the investment request
+    let seekerId: String?        // the opportunity owner
 
     let opportunityTitle: String
     let imageURLs: [String]
@@ -46,17 +47,11 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let finalInterestRate: Double?
     let finalTimelineMonths: Int?
 
-    /// Copied from the opportunity when the request is created (for dashboards).
-    let investmentType: InvestmentType
+    let investmentType: InvestmentType  // copied from the opportunity when the request is created
+    let acceptedAt: Date?               // set when the seeker accepts
+    let receivedAmount: Double          // total repayments received so far
 
-    /// Set when the seeker accepts the request.
-    let acceptedAt: Date?
-
-    /// Repayments received to date (optional; defaults to 0 when missing in Firestore).
-    let receivedAmount: Double
-
-    // MARK: - request / offer metadata
-
+    // Counter-offer data when the investor proposed custom terms
     let requestKind: InvestmentRequestKind
     let offerStatus: InvestmentOfferStatus
     let offerSource: InvestmentOfferSource?
@@ -67,36 +62,28 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
     let offerChatId: String?
     let offerChatMessageId: String?
 
-    // MARK: - MOA / agreement
-
+    // MOA signing and agreement data
     let agreementStatus: AgreementStatus
     let fundingStatus: FundingStatus
     let signedByInvestorAt: Date?
     let signedBySeekerAt: Date?
     let agreementGeneratedAt: Date?
-    /// Snapshot created when the seeker accepts (terms frozen for this deal).
-    let agreement: InvestmentAgreementSnapshot?
+    let agreement: InvestmentAgreementSnapshot?  // frozen terms written at seeker acceptance
 
-    /// Generated when a **loan** agreement becomes fully signed (`agreementStatus == active`).
-    let loanInstallments: [LoanInstallment]
-    /// Generated when a **revenue share** agreement becomes fully signed (`agreementStatus == active`).
-    let revenueSharePeriods: [RevenueSharePeriod]
+    let loanInstallments: [LoanInstallment]       // generated when a loan deal goes active
+    let revenueSharePeriods: [RevenueSharePeriod] // generated when a revenue-share deal goes active
 
-    /// Final MOA PDF download URL after both parties sign (Cloudinary/Firebase).
-    let moaPdfURL: String?
+    let moaPdfURL: String?      // final signed PDF stored on Cloudinary/Firebase
+    let moaContentHash: String? // SHA-256 of the PDF bytes for integrity checks
 
-    /// SHA-256 hex of final signed PDF bytes (integrity).
-    let moaContentHash: String?
-
-    /// Signature PNG delivery URLs (Cloudinary HTTPS) after each party signs.
+    // Signature images uploaded by each party when they sign the MOA
     let investorSignatureImageURL: String?
     let seekerSignatureImageURL: String?
     let principalSentByInvestorAt: Date?
     let principalReceivedBySeekerAt: Date?
     let principalInvestorProofImageURLs: [String]
     let principalSeekerProofImageURLs: [String]
-    /// Set when the seeker reports that the claimed principal transfer was not received; cleared when the investor marks sent again.
-    let principalSeekerNotReceivedAt: Date?
+    let principalSeekerNotReceivedAt: Date?       // set when seeker disputes the transfer
     let principalSeekerNotReceivedReason: String?
     let equityMilestones: [EquityMilestoneProgress]
     let equityUpdates: [EquityVentureUpdate]
@@ -193,15 +180,15 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         self.equityUpdates = equityUpdates
     }
 
-    /// Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
+    // Seeker may edit/delete the opportunity only when **no** request is in a “blocking” state (see `nonBlockingStatusesForSeeker`).
     var blocksSeekerFromManagingOpportunity: Bool {
         let s = status.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if s.isEmpty { return true }
         return !Self.nonBlockingStatusesForSeeker.contains(s)
     }
 
-    /// Whether this row should contribute to the top “resolve requests / offers before editing” banner.
-    /// In-flight deals (`agreementStatus == .active` or legacy `active` / `completed` status) are excluded — the copy is about pending requests, not ongoing investments.
+    // Whether this row should contribute to the top “resolve requests / offers before editing” banner.
+    // In-flight deals (`agreementStatus == .active` or legacy `active` / `completed` status) are excluded — the copy is about pending requests, not ongoing investments.
     var triggersSeekerRequestResolutionBanner: Bool {
         guard blocksSeekerFromManagingOpportunity else { return false }
         if agreementStatus == .active { return false }
@@ -210,22 +197,22 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         return true
     }
 
-    /// Statuses that do **not** block the seeker (declined / withdrawn / cancelled).
+    // Statuses that do **not** block the seeker (declined / withdrawn / cancelled).
     static let nonBlockingStatusesForSeeker: Set<String> = [
         "declined", "rejected", "cancelled", "withdrawn"
     ]
 
-    /// Canonical amount to display/use for deal math. Offers override legacy default snapshots.
+    // Canonical amount to display/use for deal math. Offers override legacy default snapshots.
     var effectiveAmount: Double {
         offeredAmount ?? investmentAmount
     }
 
-    /// Canonical rate to display/use for deal math.
+    // Canonical rate to display/use for deal math.
     var effectiveFinalInterestRate: Double? {
         offeredInterestRate ?? finalInterestRate ?? agreement?.termsSnapshot.interestRate
     }
 
-    /// Canonical timeline to display/use for deal math.
+    // Canonical timeline to display/use for deal math.
     var effectiveFinalTimelineMonths: Int? {
         offeredTimelineMonths ?? finalTimelineMonths ?? agreement?.termsSnapshot.effectiveTimelineMonths
     }
@@ -242,9 +229,9 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         return "\(months) months"
     }
 
-    // MARK: - Display
+// Display
 
-    /// User-facing status line for list cards and detail (spec: pending / accepted / awaiting signatures / agreement active).
+    // User-facing status line for list cards and detail (spec: pending / accepted / awaiting signatures / agreement active).
     var lifecycleDisplayTitle: String {
         let s = status.lowercased()
         if s == "completed" || fundingStatus == .closed {
@@ -310,7 +297,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         agreement?.participants.count ?? 2
     }
 
-    /// Sum of installments marked `confirmed_paid` (authoritative for loan repayments when present).
+    // Sum of installments marked `confirmed_paid` (authoritative for loan repayments when present).
     var confirmedLoanRepaymentTotal: Double {
         loanInstallments
             .filter { $0.status == .confirmed_paid }
@@ -321,9 +308,9 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         investmentType == .loan && !loanInstallments.isEmpty
     }
 
-    /// Whether the loan repayment schedule and installment UI should be shown (not the pre-disbursement principal-only flow).
-    /// Includes `.closed` because completed loans move from `disbursed` → `closed` while the schedule remains the source of truth for history.
-    /// Includes `.defaulted` so parties can still see the schedule after default.
+    // Whether the loan repayment schedule and installment UI should be shown (not the pre-disbursement principal-only flow).
+    // Includes `.closed` because completed loans move from `disbursed` → `closed` while the schedule remains the source of truth for history.
+    // Includes `.defaulted` so parties can still see the schedule after default.
     var loanRepaymentsUnlocked: Bool {
         investmentType == .loan && [.disbursed, .closed, .defaulted].contains(fundingStatus)
     }
@@ -339,7 +326,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
         updatedAt ?? createdAt ?? .distantPast
     }
 
-    /// Next installment that still needs action (by due date).
+    // Next installment that still needs action (by due date).
     var nextOpenLoanInstallment: LoanInstallment? {
         loanInstallments
             .filter { $0.status != .confirmed_paid }
@@ -350,7 +337,7 @@ struct InvestmentListing: Identifiable, Equatable, Hashable {
 }
 
 extension InvestmentListing {
-    /// Returns a copy with a different embedded `agreement` snapshot (same Firestore row id).
+    // Returns a copy with a different embedded `agreement` snapshot (same Firestore row id).
     func replacingAgreement(_ newAgreement: InvestmentAgreementSnapshot?) -> InvestmentListing {
         InvestmentListing(
             id: id,
@@ -400,8 +387,8 @@ extension InvestmentListing {
         )
     }
 
-    /// Some write paths attach `agreement` only to one linked `investments` row. The seeker can read all rows
-    /// for an opportunity — copy the snapshot so review/sign UI matches `signAgreement`’s server-side fallback.
+    // Some write paths attach `agreement` only to one linked `investments` row. The seeker can read all rows
+    // for an opportunity — copy the snapshot so review/sign UI matches `signAgreement`’s server-side fallback.
     func withAgreementHydrated(fromSiblingRows rows: [InvestmentListing]) -> InvestmentListing {
         guard agreement == nil else { return self }
         guard let oid = opportunityId, !oid.isEmpty else { return self }

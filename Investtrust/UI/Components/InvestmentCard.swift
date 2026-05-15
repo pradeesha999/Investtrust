@@ -5,10 +5,11 @@
 
 import SwiftUI
 
+// Compact deal card shown in the investor's Ongoing and Completed lists.
+// Shows the deal status, amounts, and quick-action buttons appropriate to the current deal stage.
 struct InvestmentCard: View {
     let inv: InvestmentListing
-    /// Reload parent list after installment or proof actions (optional).
-    var onRefreshLoan: () async -> Void = {}
+    var onRefreshLoan: () async -> Void = {}  // called after installment or proof actions to refresh the parent list
 
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter

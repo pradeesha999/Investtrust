@@ -1,7 +1,8 @@
 import FirebaseStorage
 import UIKit
 
-/// In-memory cache so carousel pages / TabView don’t re-download when swiping back.
+// In-memory image cache used by the opportunity media carousel and profile avatars.
+// Prevents re-downloading the same image when the user swipes through carousel pages.
 enum CachedImageLoader {
     private static let cache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
@@ -20,7 +21,7 @@ enum CachedImageLoader {
         return cache.object(forKey: k as NSString)
     }
 
-    /// Loads from cache or network; stores in cache on success.
+    // Loads from cache or network; stores in cache on success.
     static func loadImage(reference: String) async -> UIImage? {
         let k = key(for: reference)
         guard !k.isEmpty else { return nil }
@@ -33,8 +34,8 @@ enum CachedImageLoader {
         return image
     }
 
-    /// Warm cache for all carousel URLs before auto-advance switches pages.
-    /// Clears in-memory images (e.g. on sign-out). Disk session cache is cleared separately.
+    // Warm cache for all carousel URLs before auto-advance switches pages.
+    // Clears in-memory images (e.g. on sign-out). Disk session cache is cleared separately.
     static func clearMemoryCache() {
         cache.removeAllObjects()
     }

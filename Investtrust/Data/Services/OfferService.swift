@@ -1,11 +1,12 @@
 import FirebaseFirestore
 import Foundation
 
-/// Reads `offers/{offerId}` documents (top-level collection, same pattern as `investments` / `opportunities`).
+// Reads counter-offer documents from the `offers` Firestore collection.
+// Used by the seeker's opportunity detail screen to show what terms each investor proposed.
 final class OfferService {
     private let db = Firestore.firestore()
 
-    /// Loads offer rows for an opportunity. **Must** filter by `listingOwnerSeekerId` (same as `auth.uid` when the seeker loads their listing) so Firestore rules can prove every matching doc passes `offers` read rules.
+    // Fetches all pending offers for an opportunity, keyed by investmentId for quick lookup
     func fetchOffersKeyedByInvestmentId(opportunityId: String, listingOwnerSeekerId: String) async throws -> [String: FirestoreInvestorOffer] {
         let snap = try await db.collection("offers")
             .whereField("opportunityId", isEqualTo: opportunityId)
@@ -28,7 +29,7 @@ final class OfferService {
         return Dictionary(uniqueKeysWithValues: best.map { ($0.key, $0.value.offer) })
     }
 
-    /// Latest offer for an investment when the viewer is the **investor** or **seeker** on that row (required for rules).
+    // Fetches the most recent offer on a single investment for either participant
     func fetchLatestOfferForInvestment(investmentId: String, viewerUid: String) async throws -> FirestoreInvestorOffer? {
         let asSeeker = try await db.collection("offers")
             .whereField("investmentId", isEqualTo: investmentId)

@@ -6,12 +6,8 @@
 import FirebaseCore
 import UIKit
 
-/// Bridges SwiftUI lifecycle to `UIApplicationDelegate` for Firebase / Google SDKs.
-///
-/// `FirebaseApp.configure()` runs here (not only in `App.init`) so it executes after the
-/// `@UIApplicationDelegateAdaptor` has instantiated this object. That ordering avoids the common
-/// GoogleUtilities message: `App Delegate does not conform to UIApplicationDelegate protocol`
-/// (I-SWZ001014) when configure ran before the adaptor wired the delegate.
+// UIApplicationDelegate adapter used to configure Firebase before the SwiftUI scene loads.
+// Keeps Firebase initialisation timing consistent with what Firebase and Google SDKs expect.
 final class AppDelegate: NSObject, UIApplicationDelegate {
     override init() {
         super.init()

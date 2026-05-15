@@ -5,6 +5,9 @@
 
 import SwiftUI
 
+// The first view every user sees after launch.
+// Switches between the sign-in flow and the main app depending on auth state,
+// and shows a full-screen loading overlay while the session is being restored.
 struct RootView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.effectiveReduceMotion) private var reduceMotion
@@ -20,6 +23,7 @@ struct RootView: View {
             }
             .animation(.accessibleContentTransition(reduceMotion: reduceMotion), value: auth.isSignedIn)
 
+            // Full-screen spinner shown while Firebase restores the previous session
             if auth.isLoading {
                 SessionLoadingOverlay()
                     .transition(.opacity)
@@ -27,6 +31,7 @@ struct RootView: View {
             }
         }
         .animation(.accessibleContentTransition(reduceMotion: reduceMotion), value: auth.isLoading)
+        // Clear cached images and video URLs when the user signs out to prevent data leaking between accounts
         .onReceive(NotificationCenter.default.publisher(for: .investtrustSessionMediaDidReset)) { _ in
             CachedImageLoader.clearMemoryCache()
             StorageBackedVideoPlayer.clearURLCache()
@@ -34,6 +39,7 @@ struct RootView: View {
     }
 }
 
+// Blocks interaction while the app restores an existing Firebase session on launch
 private struct SessionLoadingOverlay: View {
     var body: some View {
         ZStack {

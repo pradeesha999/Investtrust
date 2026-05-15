@@ -1,6 +1,8 @@
 import FirebaseFirestore
 import Foundation
 
+// Firestore deserialisation for OpportunityListing.
+// Parses raw Firestore document data into the strongly-typed model used across the app.
 extension OpportunityListing {
     init(document: QueryDocumentSnapshot) {
         self.init(documentID: document.documentID, data: document.data())
@@ -39,7 +41,7 @@ extension OpportunityListing {
 
         var terms = OpportunityFirestoreCoding.parseTerms(from: data, type: investmentType)
 
-        // Legacy listings: only top-level loan fields.
+        // Older listings stored loan fields at the top level instead of inside a `terms` map
         if investmentType == .loan {
             if terms.interestRate == nil {
                 terms.interestRate = Self.parseInterest(from: data)
@@ -175,7 +177,7 @@ extension OpportunityListing {
             ?? 0
     }
 
-    /// Firestore may store numbers as `Double`, `Int`, `Int64`, or `NSNumber`.
+    // Firestore may store numbers as `Double`, `Int`, `Int64`, or `NSNumber`.
     private static func numberToDouble(_ value: Any?) -> Double? {
         guard let value else { return nil }
         if let d = value as? Double { return d }

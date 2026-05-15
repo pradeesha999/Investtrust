@@ -1,5 +1,6 @@
 import SwiftUI
 
+// In-app notification centre sheet — shows action-required and info alerts generated from deal events
 struct InAppNotificationsView: View {
     let notifications: [InAppNotification]
     var onRefresh: () async -> Void

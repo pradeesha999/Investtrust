@@ -1,5 +1,7 @@
 import SwiftUI
 
+// Investor Home tab — shows KPI cards (total invested, profit/loss), earnings chart,
+// upcoming payments list, and active deal cards for quick access
 private enum InvestorEarningsPeriod: String, CaseIterable {
     case annual
     case quarterly
@@ -31,7 +33,7 @@ private struct TopRecipient: Identifiable {
     let totalAmount: Double
 }
 
-/// Investor home: portfolio tracking, not browsing (see `MarketBrowseView`).
+// Investor home: portfolio tracking, not browsing (see `MarketBrowseView`).
 struct InvestorDashboardView: View {
     @Environment(AuthService.self) private var auth
     @EnvironmentObject private var tabRouter: MainTabRouter
@@ -105,7 +107,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Header
+// Header
 
     private var dashboardHeader: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -137,9 +139,9 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Hero summary (profits)
+// Hero summary (profits)
 
-    /// Net profit across the portfolio: all cash received minus all principal ever deployed (excludes pending requests).
+    // Net profit across the portfolio: all cash received minus all principal ever deployed (excludes pending requests).
     private var profitsGainedAllTime: Double {
         InvestorPortfolioMetrics.pureProfitAllTime(investments)
     }
@@ -165,7 +167,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Period selector
+// Period selector
 
     private var earningsPeriodSelector: some View {
         HStack(spacing: 4) {
@@ -199,7 +201,7 @@ struct InvestorDashboardView: View {
         .frame(maxWidth: 248, alignment: .leading)
     }
 
-    // MARK: - Stat grid
+// Stat grid
 
     private var earningsStatGrid: some View {
         LazyVGrid(
@@ -248,7 +250,7 @@ struct InvestorDashboardView: View {
         .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    // MARK: - Activity chart
+// Activity chart
 
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -423,7 +425,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Top recipients
+// Top recipients
 
     @ViewBuilder
     private var topRecipientsSection: some View {
@@ -494,7 +496,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Ongoing listings
+// Ongoing listings
 
     @ViewBuilder
     private var ongoingListingsSection: some View {
@@ -557,7 +559,7 @@ struct InvestorDashboardView: View {
         .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    // MARK: - Empty state
+// Empty state
 
     private var emptyExploreCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -585,7 +587,7 @@ struct InvestorDashboardView: View {
         .background(dashboardCardFill, in: RoundedRectangle(cornerRadius: AppTheme.cardCornerRadius, style: .continuous))
     }
 
-    // MARK: - Computed dashboard data
+// Computed dashboard data
 
     private var currentYear: Int {
         Calendar.current.component(.year, from: Date())
@@ -602,7 +604,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    /// Uses the most recent known lifecycle timestamp so chart bucketing reflects when deal activity actually happened.
+    // Uses the most recent known lifecycle timestamp so chart bucketing reflects when deal activity actually happened.
     private func attributionDate(for inv: InvestmentListing) -> Date? {
         [
             inv.createdAt,
@@ -693,7 +695,7 @@ struct InvestorDashboardView: View {
         max(0, totalProjectedReturn - totalReceived)
     }
 
-    /// Short label tying the liability figure to the chart period controls.
+    // Short label tying the liability figure to the chart period controls.
     private var liabilityStatPeriodSubtitle: String {
         switch earningsPeriod {
         case .annual:
@@ -875,7 +877,7 @@ struct InvestorDashboardView: View {
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
-    // MARK: - Loading
+// Loading
 
     private func load() async {
         loadError = nil
@@ -928,7 +930,7 @@ struct InvestorDashboardView: View {
         }
     }
 
-    // MARK: - Formatters
+// Formatters
 
     private func formatAmount(_ value: Double) -> String {
         let formatter = NumberFormatter()

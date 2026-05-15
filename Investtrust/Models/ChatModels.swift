@@ -1,14 +1,16 @@
 import Foundation
 
+// A conversation between one investor and one seeker, tied to a deal.
+// Chat threads appear on the Chat tab and can be opened from deal detail screens.
 struct ChatThread: Identifiable, Equatable {
     let id: String
     let seekerId: String?
     let investorId: String?
-    /// Legacy Firestore field (opportunity title); UI prefers counterparty profile.
-    let title: String
+    let title: String           // opportunity name — used as a fallback thread label
     let lastMessagePreview: String
     let lastMessageAt: Date?
 
+    // Returns the other person's user ID so the UI can load their avatar and name
     func counterpartyId(currentUserId: String?) -> String? {
         guard let currentUserId else { return nil }
         if seekerId == currentUserId { return investorId }
@@ -17,6 +19,7 @@ struct ChatThread: Identifiable, Equatable {
     }
 }
 
+// Summary card shown inside a chat message when a user shares an opportunity listing
 struct OpportunityInquirySnapshot: Equatable, Hashable {
     let opportunityId: String
     let title: String
@@ -27,6 +30,7 @@ struct OpportunityInquirySnapshot: Equatable, Hashable {
     let timelineText: String
 }
 
+// Summary card shown inside a chat message when an investor sends a default investment request
 struct InvestmentRequestSnapshot: Equatable, Hashable {
     let investmentId: String?
     let opportunityId: String
@@ -38,6 +42,7 @@ struct InvestmentRequestSnapshot: Equatable, Hashable {
     let requestKindLabel: String
 }
 
+// Summary card shown inside a chat message when an investor sends a custom counter-offer
 struct InvestmentOfferSnapshot: Equatable, Hashable {
     let investmentId: String?
     let opportunityId: String
@@ -49,6 +54,7 @@ struct InvestmentOfferSnapshot: Equatable, Hashable {
     let isFixedAmount: Bool
 }
 
+// A single message in a chat thread; kind determines how the bubble is rendered
 struct ChatMessage: Identifiable, Equatable {
     enum Kind: Equatable {
         case text

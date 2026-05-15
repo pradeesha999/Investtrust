@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// List content for Settings, embeddable inside any `NavigationStack` (e.g. tab root or pushed from Home).
+// Settings list content — account, profile, appearance, language, accessibility, and sign-out
 struct SettingsContentView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.effectiveReduceMotion) private var effectiveReduceMotion
@@ -250,7 +250,7 @@ struct SettingsContentView: View {
         return "Active since \(f.string(from: created))"
     }
 
-    /// Short activity code (listings + completed deals), capped at 999 for the badge.
+    // Short activity code (listings + completed deals), capped at 999 for the badge.
     private var activityBadgeText: String {
         let o = activityMetrics?.opportunitiesCreated ?? 0
         let d = activityMetrics?.dealsCompletedAsInvestor ?? 0

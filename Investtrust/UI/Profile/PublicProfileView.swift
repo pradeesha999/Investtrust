@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Read-only profile for any member (e.g. investor viewed by an opportunity builder).
+// Read-only profile screen shown when someone taps on another user's name or avatar
 struct PublicProfileView: View {
     struct ChatContext {
         let opportunityId: String

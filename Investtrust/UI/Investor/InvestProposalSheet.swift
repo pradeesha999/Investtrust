@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// Confirms a standard investment request on the listing’s stated terms (no custom amount or checkboxes here—MOA covers legal acceptance).
+// The "Invest" bottom sheet — the investor confirms at the listing's stated terms
+// or switches to "Make Offer" to propose custom amount, rate, and term
 struct InvestProposalSheet: View {
     private enum RequestMode: String, CaseIterable, Identifiable {
         case standard
@@ -18,8 +19,8 @@ struct InvestProposalSheet: View {
 
     let opportunity: OpportunityListing
     let investorId: String
-    /// Called on the main actor after a successful submission + chat card delivery.
-    /// Receives nothing — the parent should refresh its own view state via its own service.
+    // Called on the main actor after a successful submission + chat card delivery.
+    // Receives nothing — the parent should refresh its own view state via its own service.
     let onSubmitted: () -> Void
     private let lockToOfferMode: Bool
     private let lockToStandardMode: Bool
@@ -37,8 +38,8 @@ struct InvestProposalSheet: View {
     @State private var offerRateText = ""
     @State private var offerTimelineText = ""
     @State private var offerNote = ""
-    /// One-shot guard: SwiftUI may run `.onAppear` more than once. Without this, typed values get
-    /// wiped back to listing defaults (so 250k submits as 300k).
+    // One-shot guard: SwiftUI may run `.onAppear` more than once. Without this, typed values get
+    // wiped back to listing defaults (so 250k submits as 300k).
     @State private var didSeedListingDefaults = false
 
     init(
@@ -170,7 +171,7 @@ struct InvestProposalSheet: View {
         return opportunity.amountRequested
     }
 
-    /// True when parsed offer fields are not the same as the listing (used to avoid losing typed terms if the segmented control was on “Invest now”).
+    // True when parsed offer fields are not the same as the listing (used to avoid losing typed terms if the segmented control was on “Invest now”).
     private var parsedOfferFieldsDifferFromListing: Bool {
         guard opportunity.isNegotiable else { return false }
         guard let amt = parsedAmount, let rate = parsedInterestRate, let tm = parsedTimelineMonths else { return false }

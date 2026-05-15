@@ -5,7 +5,8 @@
 
 import Foundation
 
-/// Preset funding-goal (amount requested) ranges for list filters.
+// Funding-amount filter chips shown on the Market Browse screen.
+// The investor taps a bracket to narrow the listing feed to a specific LKR range.
 enum OpportunityFundingBracket: String, CaseIterable, Identifiable, Hashable {
     case any
     case under500k
@@ -15,6 +16,7 @@ enum OpportunityFundingBracket: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
+    // Label displayed on the filter chip in the UI
     var menuTitle: String {
         switch self {
         case .any: return "Any funding goal"
@@ -25,7 +27,7 @@ enum OpportunityFundingBracket: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// Returns whether `amountRequested` falls in this bracket.
+    // Returns true when the listing's funding goal falls inside this bracket
     func contains(amount: Double) -> Bool {
         switch self {
         case .any:

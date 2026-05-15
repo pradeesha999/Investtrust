@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Seeker types a verification message; on confirm we accept the request and post it to chat.
+// Confirmation sheet shown when the seeker accepts an investor's request.
+// The seeker types a note, then the app creates the MOA and notifies the investor in chat.
 struct AcceptInvestmentSheet: View {
     let investment: InvestmentListing
     let opportunity: OpportunityListing

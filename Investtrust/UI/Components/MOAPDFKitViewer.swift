@@ -2,14 +2,14 @@ import PDFKit
 import SwiftUI
 import UIKit
 
-/// Presents `MOAPDFViewerSheet` after async generation.
+// Wraps the generated MOA PDF data for display in the PDFKit viewer sheet
 struct MOAPDFSheetItem: Identifiable {
     let id = UUID()
     let data: Data
     let filename: String
 }
 
-// MARK: - PDFKit display
+// PDFKit display
 
 struct MOAPDFKitView: UIViewRepresentable {
     let document: PDFDocument?
@@ -32,7 +32,7 @@ struct MOAPDFKitView: UIViewRepresentable {
     }
 }
 
-// MARK: - Full-screen viewer + share
+// Full-screen viewer + share
 
 struct MOAPDFViewerSheet: View {
     let pdfData: Data
@@ -77,7 +77,7 @@ struct MOAPDFViewerSheet: View {
     }
 }
 
-// MARK: - UIActivityViewController wrapper
+// UIActivityViewController wrapper
 
 private struct MOAPDFActivityView: UIViewControllerRepresentable {
     let pdfData: Data

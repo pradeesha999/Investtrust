@@ -1,6 +1,8 @@
 import FirebaseFirestore
 import Foundation
 
+// Firestore deserialisation for InvestmentListing.
+// Handles legacy field layouts, numeric type coercions, and nested maps from older document schemas.
 extension InvestmentListing {
     init?(id: String, data: [String: Any]) {
         let status = (data["status"] as? String)?.lowercased() ?? "unknown"

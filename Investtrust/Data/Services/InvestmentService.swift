@@ -4,6 +4,8 @@ import Foundation
 import UIKit
 import CryptoKit
 
+// Core service for all deal lifecycle operations.
+// Handles investment requests, MOA signing, principal disbursement, loan installments, and equity milestones.
 final class InvestmentService {
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
@@ -15,7 +17,7 @@ final class InvestmentService {
     private static let maxProofBytes: Int = 8 * 1024 * 1024
     private static let overdueGraceDays: Int = 7
 
-    /// Firestore `PERMISSION_DENIED` (rules) — used to fall back when `offers` writes are rejected (e.g. rules not deployed).
+    // Firestore `PERMISSION_DENIED` (rules) — used to fall back when `offers` writes are rejected (e.g. rules not deployed).
     private static func isFirestorePermissionDenied(_ error: Error) -> Bool {
         let ns = error as NSError
         if ns.domain == "FIRFirestoreErrorDomain", ns.code == 7 { return true }
@@ -154,7 +156,7 @@ final class InvestmentService {
         }
     }
 
-    /// Investor cancels a **pending** request by deleting its Firestore document (seeker UI and counts update immediately after refresh).
+    // Investor cancels a **pending** request by deleting its Firestore document (seeker UI and counts update immediately after refresh).
     func withdrawInvestmentRequest(investmentId: String, investorId: String) async throws {
         let ref = db.collection("investments").document(investmentId)
         let snap = try await ref.getDocument()
@@ -174,8 +176,8 @@ final class InvestmentService {
         }
     }
 
-    /// All investment rows for an opportunity (seeker / listing-owner tooling only).
-    /// Do **not** call from an investor-facing flow: the query may include other parties’ documents and Firestore will reject the whole query.
+    // All investment rows for an opportunity (seeker / listing-owner tooling only).
+    // Do **not** call from an investor-facing flow: the query may include other parties’ documents and Firestore will reject the whole query.
     func fetchInvestmentsForOpportunity(opportunityId: String, limit: Int = 100) async throws -> [InvestmentListing] {
         let snap = try await db.collection("investments")
             .whereField("opportunityId", isEqualTo: opportunityId)
@@ -185,8 +187,8 @@ final class InvestmentService {
         return rows.sorted { $0.recencyDate > $1.recencyDate }
     }
 
-    /// Investment rows where this user is the listing owner (`seekerId`), newest first.
-    /// Rows with status `withdrawn` are omitted (revokes now delete the document; this hides any legacy data).
+    // Investment rows where this user is the listing owner (`seekerId`), newest first.
+    // Rows with status `withdrawn` are omitted (revokes now delete the document; this hides any legacy data).
     func fetchInvestmentsForSeeker(seekerId: String, limit: Int = 200) async throws -> [InvestmentListing] {
         let snap = try await db.collection("investments")
             .whereField("seekerId", isEqualTo: seekerId)
@@ -198,7 +200,7 @@ final class InvestmentService {
         return rows.sorted { $0.recencyDate > $1.recencyDate }
     }
 
-    /// Marks a request as declined so the seeker can edit/delete the listing once no blocking requests remain.
+    // Marks a request as declined so the seeker can edit/delete the listing once no blocking requests remain.
     func declineInvestmentRequest(investmentId: String, seekerId: String) async throws {
         let invRef = db.collection("investments").document(investmentId)
         let invSnap = try await invRef.getDocument()
@@ -266,9 +268,9 @@ final class InvestmentService {
         return Array(sorted.prefix(cap))
     }
 
-    /// Latest investment row for this investor + opportunity (any status), newest first.
-    /// Must filter by investor in the query (not only in memory): otherwise Firestore rejects the read
-    /// when another investor’s row exists for the same opportunity.
+    // Latest investment row for this investor + opportunity (any status), newest first.
+    // Must filter by investor in the query (not only in memory): otherwise Firestore rejects the read
+    // when another investor’s row exists for the same opportunity.
     func fetchLatestRequestForInvestor(opportunityId: String, investorId: String) async throws -> InvestmentListing? {
         var merged: [InvestmentListing] = []
         for investorField in ["investorId", "investor"] {
@@ -287,8 +289,8 @@ final class InvestmentService {
         return deduped.sorted { $0.recencyDate > $1.recencyDate }.first
     }
 
-    /// Creates a `pending` investment request (denormalized listing snapshot for investor dashboards).
-    /// For a single-investor listing, amount is the opportunity’s `amountRequested` unless `proposedAmount` is provided.
+    // Creates a `pending` investment request (denormalized listing snapshot for investor dashboards).
+    // For a single-investor listing, amount is the opportunity’s `amountRequested` unless `proposedAmount` is provided.
     func createInvestmentRequest(
         opportunity: OpportunityListing,
         investorId: String,
@@ -361,14 +363,14 @@ final class InvestmentService {
         return created
     }
 
-    /// Creates a **single** pending `investments` row with the requested economics on the primary fields
-    /// `investmentAmount`, `finalInterestRate`, and `finalTimelineMonths` (easy to read in Firebase console).
-    ///
-    /// - **Negotiated offer** (`listedTermsOnly == false`): also writes `offered*` / `offer` and an `offers/{id}` doc.
-    /// - **Listed terms only** (`listedTermsOnly == true`): same primary fields from the opportunity (split ticket when
-    ///   `maximumInvestors > 1`), `requestKind` is `default_request`, no separate `offers` row.
-    ///
-    /// Supersedes any older **pending** rows for this investor/opportunity so the seeker always sees one current row.
+    // Creates a **single** pending `investments` row with the requested economics on the primary fields
+    // `investmentAmount`, `finalInterestRate`, and `finalTimelineMonths` (easy to read in Firebase console).
+    // 
+    // - **Negotiated offer** (`listedTermsOnly == false`): also writes `offered*` / `offer` and an `offers/{id}` doc.
+    // - **Listed terms only** (`listedTermsOnly == true`): same primary fields from the opportunity (split ticket when
+    //   `maximumInvestors > 1`), `requestKind` is `default_request`, no separate `offers` row.
+    // 
+    // Supersedes any older **pending** rows for this investor/opportunity so the seeker always sees one current row.
     func createOrUpdateOfferRequest(
         opportunity: OpportunityListing,
         investorId: String,
@@ -578,7 +580,7 @@ final class InvestmentService {
         return row
     }
 
-    /// Seeker accepts a pending request: updates Firestore and sends the verification message in the investor thread.
+    // Seeker accepts a pending request: updates Firestore and sends the verification message in the investor thread.
     func acceptInvestmentRequest(
         investmentId: String,
         seekerId: String,
@@ -703,7 +705,7 @@ final class InvestmentService {
         )
     }
 
-    /// Records signature image (Cloudinary URL in Firestore), and when both parties have signed builds MOA PDF + loan schedule (loans).
+    // Records signature image (Cloudinary URL in Firestore), and when both parties have signed builds MOA PDF + loan schedule (loans).
     func signAgreement(investmentId: String, userId: String, signaturePNG: Data) async throws {
         guard !signaturePNG.isEmpty, signaturePNG.count <= Self.maxSignatureBytes else {
             throw InvestmentServiceError.emptySignature
@@ -818,7 +820,7 @@ final class InvestmentService {
         )
     }
 
-    /// Builds the memorandum PDF locally (styled layout + embedded signatures when URLs load). Safe for preview before all parties sign.
+    // Builds the memorandum PDF locally (styled layout + embedded signatures when URLs load). Safe for preview before all parties sign.
     func buildMOAPDFDocumentData(for investment: InvestmentListing) async throws -> Data {
         guard let agreement = investment.agreement else {
             throw InvestmentServiceError.agreementUnavailable
@@ -1002,7 +1004,7 @@ final class InvestmentService {
         }
     }
 
-    // MARK: - Loan installments
+// Loan installments
 
     private func buildInitialEquityMilestonePayload(from milestones: [OpportunityMilestone], acceptedAt: Date) -> [[String: Any]] {
         let sorted = OpportunityFirestoreCoding.sortedMilestonesChronologically(milestones)
@@ -1096,7 +1098,7 @@ final class InvestmentService {
         ])
     }
 
-    /// Investor marks that the principal has been sent after agreement activation.
+    // Investor marks that the principal has been sent after agreement activation.
     func markPrincipalSentByInvestor(investmentId: String, userId: String) async throws {
         let invRef = db.collection("investments").document(investmentId)
         let snap = try await invRef.getDocument()
@@ -1128,7 +1130,7 @@ final class InvestmentService {
         ])
     }
 
-    /// Seeker confirms principal receipt; this unlocks loan installment actions.
+    // Seeker confirms principal receipt; this unlocks loan installment actions.
     func confirmPrincipalReceivedBySeeker(investmentId: String, userId: String) async throws {
         let invRef = db.collection("investments").document(investmentId)
         let snap = try await invRef.getDocument()
@@ -1158,7 +1160,7 @@ final class InvestmentService {
         ])
     }
 
-    /// Seeker reports that the principal the investor marked as sent was not received. Clears “sent” and proof URLs so the investor can upload fresh proof and mark sent again.
+    // Seeker reports that the principal the investor marked as sent was not received. Clears “sent” and proof URLs so the investor can upload fresh proof and mark sent again.
     func reportPrincipalNotReceivedBySeeker(
         investmentId: String,
         userId: String,
@@ -1200,7 +1202,7 @@ final class InvestmentService {
         ])
     }
 
-    /// Upload proof for initial principal disbursement so both parties can review evidence.
+    // Upload proof for initial principal disbursement so both parties can review evidence.
     func attachPrincipalDisbursementProof(investmentId: String, userId: String, imageJPEG: Data) async throws {
         let payload = ImageJPEGUploadPayload.jpegForUpload(from: imageJPEG)
         guard !payload.isEmpty else {
@@ -1242,7 +1244,7 @@ final class InvestmentService {
         try await invRef.updateData(updates)
     }
 
-    /// Investor confirms they **received** this repayment (optionally after uploading receipt proof). Requires seeker to have confirmed payment sent first.
+    // Investor confirms they **received** this repayment (optionally after uploading receipt proof). Requires seeker to have confirmed payment sent first.
     func markLoanInstallmentPaidByInvestor(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
             guard userId == inv.investorId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
@@ -1255,8 +1257,8 @@ final class InvestmentService {
         }
     }
 
-    /// Investor reports this installment as not received and sends a reason back to seeker.
-    /// This resets seeker confirmation and seeker proof so seeker must re-upload proof and confirm again.
+    // Investor reports this installment as not received and sends a reason back to seeker.
+    // This resets seeker confirmation and seeker proof so seeker must re-upload proof and confirm again.
     func markLoanInstallmentNotReceivedByInvestor(
         investmentId: String,
         installmentNo: Int,
@@ -1282,7 +1284,7 @@ final class InvestmentService {
         }
     }
 
-    /// Seeker confirms they **sent** this installment payment. Requires at least one seeker payment proof image.
+    // Seeker confirms they **sent** this installment payment. Requires at least one seeker payment proof image.
     func markLoanInstallmentReceivedBySeeker(investmentId: String, installmentNo: Int, userId: String) async throws {
         try await mutateLoanInstallment(investmentId: investmentId, installmentNo: installmentNo, userId: userId) { row, inv in
             guard userId == inv.seekerId else { throw InvestmentServiceError.wrongPartyForInstallmentAction }
@@ -1301,7 +1303,7 @@ final class InvestmentService {
         }
     }
 
-    /// Upload payment proof image for an installment (Cloudinary URL in Firestore); same JPEG pipeline as opportunity photos.
+    // Upload payment proof image for an installment (Cloudinary URL in Firestore); same JPEG pipeline as opportunity photos.
     func attachLoanInstallmentProof(
         investmentId: String,
         installmentNo: Int,
@@ -1443,7 +1445,7 @@ final class InvestmentService {
         return hasDefaultedInstallment ? .defaulted : previous
     }
 
-    // MARK: - Revenue share periods
+// Revenue share periods
 
     func declareRevenueForPeriod(
         investmentId: String,
@@ -1800,7 +1802,7 @@ final class InvestmentService {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Amount for this investor’s ticket: listing split for multi-investor listings unless the caller passes an explicit offer amount.
+    // Amount for this investor’s ticket: listing split for multi-investor listings unless the caller passes an explicit offer amount.
     private static func resolveRequestedTicketAmount(
         opp: OpportunityListing,
         proposedAmount: Double?

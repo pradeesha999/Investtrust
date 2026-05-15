@@ -1,5 +1,6 @@
 import SwiftUI
 
+// "My Requests" segment — shows all investment requests the investor has sent, grouped by status
 struct InvestorMarketView: View {
     var searchText: String = ""
 

@@ -1,6 +1,10 @@
 import FirebaseFirestore
 import Foundation
 
+// Equity deal repayment model. For equity deals, instead of fixed installments the seeker
+// declares revenue each period and pays the investor's agreed percentage share.
+
+// Lifecycle of one revenue-share period on the equity deal screen
 enum RevenueSharePeriodStatus: String, Codable, Sendable, CaseIterable {
     case awaiting_declaration
     case awaiting_payment
@@ -9,15 +13,17 @@ enum RevenueSharePeriodStatus: String, Codable, Sendable, CaseIterable {
     case disputed
 }
 
+// One row on the equity deal repayment screen — the seeker declares their revenue for this window
+// and sends the investor's cut before the period is marked confirmed
 struct RevenueSharePeriod: Identifiable, Equatable, Hashable, Sendable {
     var id: String { "\(periodNo)" }
     var periodNo: Int
     var startDate: Date
     var endDate: Date
     var dueDate: Date
-    var declaredRevenue: Double?
-    var expectedShareAmount: Double?
-    var actualPaidAmount: Double?
+    var declaredRevenue: Double?         // seeker's reported revenue for this window
+    var expectedShareAmount: Double?     // investor's cut (revenue × equity %)
+    var actualPaidAmount: Double?        // what the seeker actually transferred
     var seekerDeclaredAt: Date?
     var seekerMarkedSentAt: Date?
     var investorMarkedReceivedAt: Date?
@@ -91,6 +97,7 @@ extension RevenueSharePeriod {
     }
 }
 
+// Generates the full list of revenue-share periods for an equity deal when the MOA goes active
 enum RevenueShareScheduleGenerator {
     static func generatePeriods(
         startDate: Date,

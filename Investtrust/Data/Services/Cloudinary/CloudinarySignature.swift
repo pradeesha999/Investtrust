@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Cloudinary authentication signatures (SHA-256 digest of `sorted_params + api_secret`).
+// Generates the HMAC-SHA256 signature required by Cloudinary's signed destroy API
 enum CloudinarySignature {
     static func signParameters(_ params: [String: String], apiSecret: String) -> String {
         let sortedKeys = params.keys.sorted()

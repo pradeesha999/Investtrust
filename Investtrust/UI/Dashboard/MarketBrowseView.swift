@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Open market listings (browse) — not the investor portfolio dashboard.
+// The "Explore" market feed showing open opportunity listings.
+// Can run standalone or embedded inside the investor Invest tab with search/filter state owned by the parent.
 struct MarketBrowseView: View {
-    /// When true, hides its own navigation title (used inside `InvestorActionTabView` segmented **Explore**).
+    // When true the parent (InvestorActionTabView) provides search/filter state instead of this view managing it
     var embeddedInInvestTab: Bool = false
 
-    // When embedded, the parent owns search + filter state and passes them in.
     var externalSearchText: String = ""
     var externalInvestmentType: InvestmentType? = nil
     var externalFundingBracket: OpportunityFundingBracket = .any
@@ -91,7 +91,7 @@ struct MarketBrowseView: View {
         }
     }
 
-    /// Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.
+    // Rows shown in the list: raw server order when not embedded; filtered + sorted in Invest **Explore**.
     private var displayedOpportunities: [OpportunityListing] {
         embeddedInInvestTab ? filteredOpportunities : opportunities
     }
@@ -276,7 +276,7 @@ struct MarketBrowseView: View {
     }
 }
 
-// MARK: - Explore sort
+// Explore sort
 
 enum MarketExploreSort: String, CaseIterable {
     case newest
@@ -292,7 +292,7 @@ enum MarketExploreSort: String, CaseIterable {
     }
 }
 
-// MARK: - Navigation + conditional view helpers
+// Navigation + conditional view helpers
 
 private struct EmbeddedNavigationTitleModifier: ViewModifier {
     let embedded: Bool

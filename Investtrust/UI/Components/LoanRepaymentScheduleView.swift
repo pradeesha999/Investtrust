@@ -2,7 +2,8 @@ import PhotosUI
 import SwiftUI
 import VisionKit
 
-/// Full-screen loan repayment schedule: principal flow, live installments, and (when the deal is closed) a full payment history with dates.
+// Full repayment schedule screen for active loan deals.
+// Shows the principal disbursement flow, each installment card with confirmation buttons, and proof images.
 struct LoanRepaymentScheduleView: View {
     private enum ProofUploadTarget: Equatable {
         case installment(Int)
@@ -53,7 +54,7 @@ struct LoanRepaymentScheduleView: View {
         openRows.min(by: { $0.dueDate < $1.dueDate })
     }
 
-    /// One-line explainer for the party viewing this screen (reduces confusion between seeker vs investor steps).
+    // One-line explainer for the party viewing this screen (reduces confusion between seeker vs investor steps).
     private var loanPaymentWorkflowFootnote: String? {
         guard investment.loanRepaymentsUnlocked, !isInvestmentCompleted else { return nil }
         guard let uid = currentUserId else { return nil }
@@ -78,17 +79,17 @@ struct LoanRepaymentScheduleView: View {
         investment.agreementStatus == .active || investment.fundingStatus != .none
     }
 
-    /// Principal transfer / proof lives inline until the seeker confirms receipt and installments unlock.
+    // Principal transfer / proof lives inline until the seeker confirms receipt and installments unlock.
     private var showEmbeddedPrincipalFlow: Bool {
         !investment.loanRepaymentsUnlocked && canOpenPrincipalDisbursement
     }
 
-    /// After disbursement is confirmed, the same details move behind the bar button + sheet.
+    // After disbursement is confirmed, the same details move behind the bar button + sheet.
     private var showPrincipalDisbursementBarButton: Bool {
         investment.loanRepaymentsUnlocked && canOpenPrincipalDisbursement
     }
 
-    /// Identity for `.task` so calendar reminders refresh when the schedule or agreement state changes.
+    // Identity for `.task` so calendar reminders refresh when the schedule or agreement state changes.
     private var calendarSyncTaskId: String {
         let parts = investment.loanInstallments
             .sorted { $0.installmentNo < $1.installmentNo }
@@ -398,7 +399,7 @@ struct LoanRepaymentScheduleView: View {
         .padding(.vertical, 24)
     }
 
-    // MARK: - Closed deal (completed investment)
+// Closed deal (completed investment)
 
     private var closedDealSummaryCard: some View {
         let rateText: String? = {
@@ -639,7 +640,7 @@ struct LoanRepaymentScheduleView: View {
         }
     }
 
-    // MARK: - Summary
+// Summary
 
     private var summaryHero: some View {
         let progress = totalCount > 0 ? Double(confirmedCount) / Double(totalCount) : 0
@@ -839,7 +840,7 @@ struct LoanRepaymentScheduleView: View {
         .appCardShadow()
     }
 
-    // MARK: - Sections
+// Sections
 
     private func scheduleSection(
         title: String,
@@ -1451,7 +1452,7 @@ struct LoanRepaymentScheduleView: View {
     }
 }
 
-/// One-tap photo library access for installment proof (no intermediate sheet).
+// One-tap photo library access for installment proof (no intermediate sheet).
 private struct InstallmentProofLibraryPicker: View {
     let isInvestor: Bool
     var compact: Bool = false

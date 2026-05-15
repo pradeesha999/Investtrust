@@ -1,8 +1,7 @@
 import Foundation
 
-/// Maps Firestore / gRPC errors to actionable copy for in-app alerts.
+// Converts Firestore/gRPC errors into readable messages shown in in-app error alerts
 enum FirestoreUserFacingMessage {
-    /// Standard Firestore iOS error domain (see `FirestoreErrorDomain`).
     private static let firestoreDomain = "FIRFirestoreErrorDomain"
 
     static func text(for error: Error) -> String {

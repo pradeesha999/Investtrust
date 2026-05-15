@@ -1,8 +1,10 @@
 import FirebaseFirestore
 import Foundation
 
-// MARK: - Enums
+// Core enums and schema helpers for opportunity listings.
+// Defines investment types, repayment options, risk levels, and Firestore encoding/decoding.
 
+// The two deal types the seeker can choose when creating an opportunity
 enum InvestmentType: String, CaseIterable, Codable, Sendable {
     case loan
     case equity
@@ -25,8 +27,7 @@ enum InvestmentType: String, CaseIterable, Codable, Sendable {
 enum RepaymentFrequency: String, CaseIterable, Codable, Sendable {
     case monthly
     case weekly
-    /// Single payment at end of term (full principal + simple interest).
-    case one_time
+    case one_time  // full principal + interest paid in one lump sum at maturity
 
     var displayName: String {
         switch self {
@@ -106,18 +107,18 @@ enum VentureStage: String, CaseIterable, Codable, Sendable {
     case scaling
 }
 
-// MARK: - Milestone
+// Milestone
 
 struct OpportunityMilestone: Equatable, Hashable, Codable, Sendable {
     var title: String
     var description: String
-    /// Legacy: calendar target from older listings (creation-based).
+    // Legacy: calendar target from older listings (creation-based).
     var expectedDate: Date?
-    /// Days after investment acceptance this milestone is due (preferred).
+    // Days after investment acceptance this milestone is due (preferred).
     var dueDaysAfterAcceptance: Int?
 }
 
-// MARK: - Terms (stored under `terms` in Firestore)
+// Terms (stored under `terms` in Firestore)
 
 struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     var interestRate: Double?
@@ -151,7 +152,7 @@ struct OpportunityTerms: Equatable, Hashable, Codable, Sendable {
     }
 }
 
-// MARK: - Firestore encode/decode
+// Firestore encode/decode
 
 enum OpportunityFirestoreCoding {
     static func termsDictionary(from t: OpportunityTerms, type: InvestmentType) -> [String: Any] {
@@ -266,7 +267,7 @@ enum OpportunityFirestoreCoding {
         return Self.sortedMilestonesChronologically(parsed)
     }
 
-    /// Earliest `daysAfterAcceptance` first; then legacy `expectedDate`; undated last (stable by title).
+    // Earliest `daysAfterAcceptance` first; then legacy `expectedDate`; undated last (stable by title).
     static func sortedMilestonesChronologically(_ items: [OpportunityMilestone]) -> [OpportunityMilestone] {
         items.sorted { a, b in
             func tierAndSortValue(_ m: OpportunityMilestone) -> (Int, Double, String) {

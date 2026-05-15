@@ -7,9 +7,12 @@ import FirebaseAuth
 import FirebaseFirestore
 import Foundation
 
+// Reads and writes user profile data in the `users` Firestore collection.
+// Called by AuthService on sign-in to load and sync the active profile and roles.
 final class UserService {
     private let db = Firestore.firestore()
 
+    // Fetches the user's profile document (nil when the document doesn't exist yet)
     func fetchProfile(userID: String) async throws -> UserProfile? {
         let ref = db.collection("users").document(userID)
         let snapshot = try await ref.getDocument()
@@ -17,8 +20,7 @@ final class UserService {
         return Self.userProfile(from: data)
     }
 
-    /// Resolves a profile even when the users doc id is not the Firebase uid
-    /// (legacy datasets may store uid under a field like `uid` / `userId` / `id`).
+    // Falls back to querying by UID field when the document ID doesn't match the Firebase UID (legacy data)
     func fetchProfileResolvingLegacyIDs(userID: String) async throws -> UserProfile? {
         if let direct = try await fetchProfile(userID: userID) {
             return direct
@@ -68,7 +70,7 @@ final class UserService {
         )
     }
 
-    /// Persists shared profile fields under `profile` (merge). Legacy `investorProfile` is no longer written.
+    // Persists shared profile fields under `profile` (merge). Legacy `investorProfile` is no longer written.
     func saveProfileDetails(userID: String, details: ProfileDetails) async throws {
         let ref = db.collection("users").document(userID)
         var payload: [String: Any] = [
@@ -96,8 +98,8 @@ final class UserService {
         }
     }
 
-    /// Backfills profile identity fields from Firebase Auth (e.g. Google photo/name)
-    /// without overriding values the user already customized in-app.
+    // Backfills profile identity fields from Firebase Auth (e.g. Google photo/name)
+    // without overriding values the user already customized in-app.
     func syncIdentityFromAuthIfNeeded(for user: User) async throws {
         let ref = db.collection("users").document(user.uid)
         let snapshot = try await ref.getDocument()
@@ -125,7 +127,7 @@ final class UserService {
         try await ref.setData(payload, merge: true)
     }
 
-    /// Opportunity listings created + investment stats (shown on public profile).
+    // Opportunity listings created + investment stats (shown on public profile).
     func fetchProfileActivityMetrics(userID: String) async throws -> ProfileActivityMetrics {
         let opportunityService = OpportunityService()
         let investmentService = InvestmentService()

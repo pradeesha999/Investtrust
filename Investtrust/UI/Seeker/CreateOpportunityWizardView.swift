@@ -1,3 +1,6 @@
+// Multi-step wizard for creating a new opportunity listing.
+// Guides the seeker through media upload, deal type selection, terms entry, and final review.
+
 //
 //  CreateOpportunityWizardView.swift
 //  Investtrust
@@ -9,7 +12,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Loads a picked video file via `Transferable` / `FileRepresentation` (no `PhotosPickerItem.itemProvider`, which isn’t available on all SDKs).
+// Loads a picked video file via `Transferable` / `FileRepresentation` (no `PhotosPickerItem.itemProvider`, which isn’t available on all SDKs).
 private struct PickedVideoData: Transferable {
     let data: Data
 
@@ -962,9 +965,8 @@ struct CreateOpportunityWizardView: View {
         ]
     }
 
-    /// Rough span in days from investment acceptance (for milestone defaults and hints).
+    // Rough span in days from investment acceptance (for milestone defaults and hints).
     private func inferredTenorDaysApproximate() -> Int {
-        let calendar = Calendar.current
         switch draft.investmentType {
         case .loan:
             let digits = draft.repaymentTimeline.trimmingCharacters(in: .whitespacesAndNewlines).filter(\.isNumber)
@@ -981,7 +983,7 @@ struct CreateOpportunityWizardView: View {
         }
     }
 
-    /// Each milestone with any content must have a valid “days after acceptance” (list order is free-form; new rows are added on top).
+    // Each milestone with any content must have a valid “days after acceptance” (list order is free-form; new rows are added on top).
     private func validateMilestoneDraftOffsets() -> Bool {
         for m in draft.milestones {
             let hasContent =
@@ -1236,7 +1238,7 @@ struct CreateOpportunityWizardView: View {
         .appCardShadow()
     }
 
-    /// Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
+    // Tries raw `Data` first, then `FileRepresentation` via `PickedVideoData` (handles large / file-backed clips).
     private func loadVideoData(from item: PhotosPickerItem) async throws -> Data {
         if let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty {
             return data

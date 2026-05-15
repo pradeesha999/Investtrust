@@ -2,9 +2,8 @@ import AVFoundation
 import AVKit
 import SwiftUI
 
-/// Full-screen playback with a dismiss control (used from investment cards and detail).
-/// Uses `AVPlayerViewController` here (not in scroll rows) so layout is reliable and system controls work.
-/// Resolves HTTPS URLs through `SessionMediaCache` so reopening the same video reuses the on-disk copy.
+// Full-screen video player with a dismiss button.
+// Uses AVPlayerViewController for reliable layout and caches the download via SessionMediaCache.
 struct FullscreenVideoPlayer: View {
     let url: URL
     var muted: Bool

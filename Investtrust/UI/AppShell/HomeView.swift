@@ -5,6 +5,9 @@
 
 import SwiftUI
 
+// Main tab bar container shown to all signed-in users.
+// Switches between Home (dashboard), Invest/Opportunity, Chat, and Settings tabs.
+// Also handles the in-app notification bell and the calendar sync consent prompt.
 struct HomeView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.effectiveReduceMotion) private var reduceMotion

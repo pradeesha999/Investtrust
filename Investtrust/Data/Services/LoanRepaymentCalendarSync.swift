@@ -6,7 +6,8 @@
 import EventKit
 import Foundation
 
-/// Adds calendar entries for loan installment due dates (all-day, one-day-before alarm) after the agreement is active.
+// Syncs loan installment and equity milestone due dates to the user's device calendar.
+// Creates all-day events with a one-day-before alarm so neither party misses a payment.
 @MainActor
 enum LoanRepaymentCalendarSync {
     private static let store = EKEventStore()
@@ -16,7 +17,7 @@ enum LoanRepaymentCalendarSync {
     private static let preferenceDecidedKey = "investtrust.calendarSyncDecided.v1"
     private static let oneTimeCleanupKey = "investtrust.calendarOneTimeCleanup.v1"
 
-    /// Replaces any previously synced events for this investment, then adds one all-day event per unpaid installment.
+    // Removes old calendar events for this deal and creates new ones for all unpaid installments
     static func replaceInstallmentReminders(
         investmentId: String,
         opportunityTitle: String,
@@ -73,7 +74,7 @@ enum LoanRepaymentCalendarSync {
         persistRepaymentEventIds(newIds, investmentId: investmentId)
     }
 
-    /// Replaces milestone reminders for one investment context.
+    // Removes old milestone calendar events and creates new ones for upcoming milestones on equity deals
     static func replaceMilestoneReminders(
         investmentId: String,
         opportunityTitle: String,
@@ -136,7 +137,7 @@ enum LoanRepaymentCalendarSync {
         persistMilestoneEventIds(newIds, investmentId: investmentId)
     }
 
-    /// Unified sync entrypoint for post-sign events.
+    // Unified sync entrypoint for post-sign events.
     static func syncPostAgreementEvents(
         investment: InvestmentListing,
         opportunity: OpportunityListing?,
@@ -174,7 +175,7 @@ enum LoanRepaymentCalendarSync {
         )
     }
 
-    /// Removes locally synced calendar rows and UserDefaults keys for this investment (e.g. after revoke or server delete).
+    // Removes locally synced calendar rows and UserDefaults keys for this investment (e.g. after revoke or server delete).
     static func clearReminders(forInvestmentId investmentId: String) {
         removeStoredRepaymentEvents(forInvestmentId: investmentId)
         removeStoredMilestoneEvents(forInvestmentId: investmentId)
@@ -225,7 +226,7 @@ enum LoanRepaymentCalendarSync {
         await ensureCalendarAccess()
     }
 
-    /// Call when the user opens the repayment hub so the other party (who did not run finalization) gets the same reminders.
+    // Call when the user opens the repayment hub so the other party (who did not run finalization) gets the same reminders.
     static func syncIfEligible(investment: InvestmentListing, currentUserId: String?) async {
         guard investment.investmentType == .loan else { return }
         guard investment.agreementStatus == .active else { return }
@@ -247,7 +248,7 @@ enum LoanRepaymentCalendarSync {
         )
     }
 
-    // MARK: - Calendar access
+// Calendar access
 
     private static func ensureCalendarAccess() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
@@ -294,7 +295,7 @@ enum LoanRepaymentCalendarSync {
         saveMilestoneIdMap([:])
     }
 
-    // MARK: - Persistence
+// Persistence
 
     private static func removeStoredRepaymentEvents(forInvestmentId investmentId: String) {
         let map = loadRepaymentIdMap()
@@ -356,7 +357,7 @@ enum LoanRepaymentCalendarSync {
         UserDefaults.standard.set(data, forKey: milestonePersistenceKey)
     }
 
-    // MARK: - Copy
+// Copy
 
     private static func notesForInstallment(
         opportunityTitle: String,

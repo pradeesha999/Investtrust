@@ -2,7 +2,7 @@ import AVKit
 import SwiftUI
 import UIKit
 
-/// UIKit-backed player — SwiftUI `VideoPlayer` often renders a grey frame in scroll views / `LazyVStack`.
+// UIKit-backed video player wrapper — SwiftUI's VideoPlayer can render blank in scroll views
 struct AVPlayerViewControllerSwiftUI: UIViewControllerRepresentable {
     let player: AVPlayer
     var showsPlaybackControls: Bool

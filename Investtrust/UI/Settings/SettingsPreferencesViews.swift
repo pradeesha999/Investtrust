@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Appearance
+// Appearance, language, and accessibility preference views used inside SettingsContentView
 
 enum AppearancePreference: String, CaseIterable, Identifiable {
     case system
@@ -50,7 +50,7 @@ struct SettingsAppearanceView: View {
     }
 }
 
-// MARK: - Language
+// Language
 
 enum AppLanguageOption: String, CaseIterable, Identifiable {
     case system
@@ -97,7 +97,7 @@ struct SettingsLanguageView: View {
     }
 }
 
-// MARK: - Accessibility
+// Accessibility
 
 struct SettingsAccessibilityView: View {
     @AppStorage(AppAccessibilityPreferences.hapticsKey) private var hapticsEnabled = true

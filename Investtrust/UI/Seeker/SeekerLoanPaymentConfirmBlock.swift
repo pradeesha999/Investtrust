@@ -2,8 +2,8 @@ import PhotosUI
 import SwiftUI
 import VisionKit
 
-/// Seeker actions for one installment: confirm receipt + payment slip (camera or photo library).
-/// Mirrors the flow in `LoanRepaymentScheduleView` so the listing detail screen can offer the same actions.
+// Installment confirmation block on the seeker's deal detail screen.
+// Lets the seeker upload a payment slip and mark the installment as sent.
 struct SeekerLoanPaymentConfirmBlock: View {
     let investment: InvestmentListing
     let installmentNo: Int

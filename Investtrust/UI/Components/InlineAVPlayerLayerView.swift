@@ -2,8 +2,8 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Inline playback using `AVPlayerLayer`. `AVPlayerViewController` inside `UIViewControllerRepresentable`
-/// often ends up with a zero or non-updating layout in `ScrollView` / `LazyVStack`, which looks like a grey/black empty box.
+// AVPlayerLayer-based inline video view that renders correctly inside scroll views
+// (AVPlayerViewController inside UIViewControllerRepresentable breaks in ScrollView/LazyVStack)
 struct InlineAVPlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
     var videoGravity: AVLayerVideoGravity
@@ -23,7 +23,7 @@ struct InlineAVPlayerLayerView: UIViewRepresentable {
         uiView.playerLayer.videoGravity = videoGravity
     }
 
-    /// The view’s backing layer is the `AVPlayerLayer`, so it always sizes with the SwiftUI frame.
+    // The view’s backing layer is the `AVPlayerLayer`, so it always sizes with the SwiftUI frame.
     final class PlayerHostingView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
 

@@ -3,14 +3,19 @@
 //  InvesttrustWidget
 //
 
+// Home screen widget that shows the user's next upcoming loan payment or portfolio event.
+// Reads data from the shared App Group written by HomeWidgetSnapshotWriter in the main app.
+
 import SwiftUI
 import WidgetKit
 
+// One timeline entry holding the snapshot for this widget refresh
 private struct HomeWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: HomeWidgetSnapshot?
 }
 
+// Provides placeholder, snapshot, and timeline data to WidgetKit
 private struct HomeWidgetProvider: TimelineProvider {
     func placeholder(in _: Context) -> HomeWidgetEntry {
         HomeWidgetEntry(
@@ -39,7 +44,7 @@ private struct HomeWidgetProvider: TimelineProvider {
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
 
-    /// Wake the widget around the next shown event (or hourly if nothing scheduled).
+    // Wake the widget right after the soonest event passes, or fall back to hourly
     private func nextReloadDate(snapshot: HomeWidgetSnapshot, after now: Date) -> Date? {
         let events = primaryEvents(snapshot)
         guard let first = events.first else {

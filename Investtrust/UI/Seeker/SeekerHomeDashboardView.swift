@@ -1,9 +1,4 @@
-//
-//  SeekerHomeDashboardView.swift
-//  Investtrust
-//
-//  Seeker **Home** tab: capital overview, investor activity, and listings.
-//
+// Seeker Home tab — capital received overview, earnings chart, investor activity, and listing status cards.
 
 import SwiftUI
 
@@ -147,7 +142,7 @@ struct SeekerHomeDashboardView: View {
         Array(((currentYear - 6)...currentYear + 1).reversed())
     }
 
-    /// Investments that affect seeker financial metrics (must be accepted/active/completed, not just pending requests).
+    // Investments that affect seeker financial metrics (must be accepted/active/completed, not just pending requests).
     private var qualifyingInvestments: [InvestmentListing] {
         seekerInvestments.filter { inv in
             let s = inv.status.lowercased()
@@ -156,7 +151,7 @@ struct SeekerHomeDashboardView: View {
         }
     }
 
-    /// Uses the most recent known lifecycle timestamp so chart bucketing reflects when deal activity actually happened.
+    // Uses the most recent known lifecycle timestamp so chart bucketing reflects when deal activity actually happened.
     private func attributionDate(for inv: InvestmentListing) -> Date? {
         [
             inv.createdAt,
@@ -169,9 +164,9 @@ struct SeekerHomeDashboardView: View {
         .max()
     }
 
-    /// Seeker view semantics:
-    /// - principal = capital received
-    /// - gain = liability still owed to investors (projected return - already repaid)
+    // Seeker view semantics:
+    // - principal = capital received
+    // - gain = liability still owed to investors (projected return - already repaid)
     private func principalAndProjectedGain(for inv: InvestmentListing) -> (principal: Double, gain: Double) {
         let principal = inv.effectiveAmount
         let projected = InvestorPortfolioMetrics.projectedMaturityValue(for: inv)
@@ -262,7 +257,7 @@ struct SeekerHomeDashboardView: View {
         }
     }
 
-    /// KPI cards + headline: totals for selected timeline scope.
+    // KPI cards + headline: totals for selected timeline scope.
     private var selectedYearFinancials: (principal: Double, gain: Double, fundedProjectCount: Int) {
         let rows = timelineScopedInvestments
         let sums = sumPrincipalGain(rows)
@@ -278,7 +273,7 @@ struct SeekerHomeDashboardView: View {
         selectedYearFinancials.gain
     }
 
-    /// Primary headline: total capital received for selected timeline.
+    // Primary headline: total capital received for selected timeline.
     private var totalEarnings: Double {
         totalPrincipal
     }
@@ -342,7 +337,7 @@ struct SeekerHomeDashboardView: View {
             }
     }
 
-    /// Chart buckets depend on **Annual / Quarterly / Monthly** (same underlying deals; different grouping).
+    // Chart buckets depend on **Annual / Quarterly / Monthly** (same underlying deals; different grouping).
     private var chartBuckets: [SeekerHomeChartBucket] {
         switch earningsPeriod {
         case .annual:
@@ -408,7 +403,7 @@ struct SeekerHomeDashboardView: View {
         return max(upper, 1)
     }
 
-    /// Top → bottom grid labels (exclude 0 to avoid clutter at baseline).
+    // Top → bottom grid labels (exclude 0 to avoid clutter at baseline).
     private var chartYTickValues: [Double] {
         let maxV = chartYMax
         let divisions = 5
@@ -955,7 +950,7 @@ struct SeekerHomeDashboardView: View {
         return f.string(from: date)
     }
 
-    // MARK: - Overview
+// Overview
 
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 6) {

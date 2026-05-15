@@ -6,8 +6,8 @@
 import Foundation
 import LocalAuthentication
 
-/// Wraps `LocalAuthentication` for high‑assurance actions. Uses **device owner** authentication:
-/// Face ID or Touch ID when enrolled, otherwise the device passcode — not third‑party facial matching.
+// Wraps LocalAuthentication to protect high-trust actions like signing the MOA.
+// Uses Face ID, Touch ID, or the device passcode — whichever is available.
 enum BiometricAuthService {
     enum Failure: LocalizedError {
         case notAvailable
@@ -32,7 +32,7 @@ enum BiometricAuthService {
         }
     }
 
-    /// Requires the person holding the device to authenticate (biometrics and/or passcode).
+    // Prompts Face ID / Touch ID or passcode — used before the user can sign the MOA
     @MainActor
     static func requireDeviceOwner(reason: String) async throws {
         let context = LAContext()
@@ -54,8 +54,7 @@ enum BiometricAuthService {
         }
     }
 
-    /// Face ID / Touch ID only (`LocalAuthentication`), then returns the same `LAContext` for Keychain access.
-    /// Simulator: **Features → Face ID → Enrolled**; success/failure follows **Matching Face** / **Non-matching Face**.
+    // Authenticates with biometrics only (not passcode) and returns the context for subsequent Keychain access
     @MainActor
     static func authenticateWithBiometricsReturningContext(reason: String) async throws -> LAContext {
         let context = LAContext()

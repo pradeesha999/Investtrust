@@ -1,8 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// Downloads remote media (HTTPS) once per app session, stores under Caches, and reuses the **local file URL** for faster `AVPlayer` / `UIImage` loads.
-/// Cleared on sign-out via `clear()`.
+// Downloads remote media files (images, videos) once per session and caches them on disk.
+// Prevents repeated network fetches when the user scrolls through deal media.
 actor SessionMediaCache {
     static let shared = SessionMediaCache()
 
@@ -14,7 +14,7 @@ actor SessionMediaCache {
         return base.appendingPathComponent("InvesttrustSessionMedia", isDirectory: true)
     }
 
-    /// Returns a **file://** URL suitable for `AVPlayer` / `UIImage(contentsOfFile:)`; downloads once then reads from disk.
+    // Returns a local file:// URL for the given remote URL — downloads the file on first access
     func materializeRemoteFile(at remote: URL) async throws -> URL {
         if remote.isFileURL { return remote }
 
@@ -100,6 +100,6 @@ actor SessionMediaCache {
 }
 
 extension Notification.Name {
-    /// Posted after disk session media is cleared (sign-out). UI clears in-memory image/video URL caches.
+    // Posted when the user signs out so UI layers can clear their own image/video caches
     static let investtrustSessionMediaDidReset = Notification.Name("investtrustSessionMediaDidReset")
 }

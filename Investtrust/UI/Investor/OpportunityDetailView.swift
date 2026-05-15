@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Investor-facing detail screen for a market opportunity (layout inspired by `design/invest info.svg`).
-/// Always loads the listing by Firestore document ID so navigation never shows the wrong row.
+// Investor-facing opportunity detail screen.
+// Shows listing media, key financials, MOA status, and the "Contact seeker" and "Invest" actions.
 struct OpportunityDetailView: View {
     let opportunityId: String
 
@@ -45,12 +45,12 @@ struct OpportunityDetailView: View {
         case awaitingSeekerReceiptConfirmation
     }
 
-    /// Production path: load from Firestore by id (avoids `NavigationLink(value:)` / `Hashable` mismatches in lists).
+    // Production path: load from Firestore by id (avoids `NavigationLink(value:)` / `Hashable` mismatches in lists).
     init(opportunityId: String) {
         self.opportunityId = opportunityId
     }
 
-    /// Preview / tests: optional seed while network loads.
+    // Preview / tests: optional seed while network loads.
     init(opportunity: OpportunityListing) {
         opportunityId = opportunity.id
         _opportunity = State(initialValue: opportunity)
@@ -357,10 +357,10 @@ struct OpportunityDetailView: View {
         }
     }
 
-    // MARK: - Card chrome
+// Card chrome
 
-    /// Single reusable card container for the detail view.
-    /// Pass `systemImage: nil` and `title: ""` to render a chrome-only card without a header.
+    // Single reusable card container for the detail view.
+    // Pass `systemImage: nil` and `title: ""` to render a chrome-only card without a header.
     @ViewBuilder
     private func infoCard<Content: View>(
         title: String,
@@ -405,7 +405,7 @@ struct OpportunityDetailView: View {
         .appCardShadow()
     }
 
-    // MARK: - Chips & small helpers
+// Chips & small helpers
 
     private func chip(_ text: String, tint: Color = .secondary, filled: Bool = false) -> some View {
         Text(text)
@@ -439,7 +439,7 @@ struct OpportunityDetailView: View {
         .background(AppTheme.secondaryFill, in: RoundedRectangle(cornerRadius: AppTheme.controlCornerRadius, style: .continuous))
     }
 
-    // MARK: - Detail sections (overview, key numbers, income & timeline)
+// Detail sections (overview, key numbers, income & timeline)
 
     @ViewBuilder
     private func overviewSection(for o: OpportunityListing) -> some View {
@@ -883,7 +883,7 @@ struct OpportunityDetailView: View {
         }
     }
 
-    // MARK: - Status card (lifted to top)
+// Status card (lifted to top)
 
     private func shouldShowStatusCard(for opportunity: OpportunityListing) -> Bool {
         if auth.currentUserID == opportunity.ownerId { return true }
@@ -1169,7 +1169,7 @@ struct OpportunityDetailView: View {
         }
     }
 
-    // MARK: - Terms & execution body
+// Terms & execution body
 
     @ViewBuilder
     private func termsContent(for o: OpportunityListing) -> some View {
@@ -1245,10 +1245,10 @@ struct OpportunityDetailView: View {
         }
     }
 
-    /// Returns the investor's request only when the seeker has actually agreed to the proposed
-    /// terms. While the offer is still `pending`, the opportunity detail page must keep showing
-    /// the seeker's listed values (amount / rate / months) — the offer's economics only become
-    /// the "displayed" terms after acceptance.
+    // Returns the investor's request only when the seeker has actually agreed to the proposed
+    // terms. While the offer is still `pending`, the opportunity detail page must keep showing
+    // the seeker's listed values (amount / rate / months) — the offer's economics only become
+    // the "displayed" terms after acceptance.
     private var activeRequestForDisplay: InvestmentListing? {
         guard let req = myLatestRequest else { return nil }
         let s = req.status.lowercased()
@@ -1426,7 +1426,7 @@ struct OpportunityDetailView: View {
         .appCardShadow()
     }
 
-    // MARK: - Seeker card
+// Seeker card
 
     @ViewBuilder
     private func seekerAvatar(profile: UserProfile, initials: String) -> some View {
@@ -1578,7 +1578,7 @@ struct OpportunityDetailView: View {
         return "\(prefix)…\(suffix)"
     }
 
-    // MARK: - Documents
+// Documents
 
     @ViewBuilder
     private func documentsContent(for opportunity: OpportunityListing) -> some View {
@@ -1704,7 +1704,7 @@ struct OpportunityDetailView: View {
         .disabled(isOpeningChat || !canContactSeeker(for: opportunity))
     }
 
-    /// Hide request / “open my requests” once a deal is underway; keep signing / profile / new-request paths.
+    // Hide request / “open my requests” once a deal is underway; keep signing / profile / new-request paths.
     private func showsPrimaryInvestmentFloatingAction(for listing: OpportunityListing) -> Bool {
         guard auth.currentUserID != nil, auth.currentUserID != listing.ownerId else { return false }
         let req = myLatestRequest
@@ -1768,9 +1768,9 @@ struct OpportunityDetailView: View {
         showInvestSheet = true
     }
 
-    /// The sheet now performs the full submission + chat-card delivery itself, so the parent
-    /// only needs to refresh its local state. This avoids passing typed data across the
-    /// SwiftUI sheet's closure boundary, which was producing corrupted values on this build.
+    // The sheet now performs the full submission + chat-card delivery itself, so the parent
+    // only needs to refresh its local state. This avoids passing typed data across the
+    // SwiftUI sheet's closure boundary, which was producing corrupted values on this build.
     private func handleProposalSubmitted(for opportunity: OpportunityListing) {
         Task {
             await loadMyRequest(for: opportunity)

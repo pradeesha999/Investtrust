@@ -1,6 +1,9 @@
 import Foundation
 
-/// Credibility / experience level (stored under `users/{id}.profile`).
+// User profile data stored under users/{id}.profile in Firestore.
+// Must be filled in before an investor can send a request (checked by isCompleteForInvesting).
+
+// Self-reported experience label shown on the investor's public profile
 enum ProfileExperienceLevel: String, Codable, Sendable, CaseIterable {
     case beginner
     case intermediate
@@ -15,19 +18,16 @@ enum ProfileExperienceLevel: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// Shared identity & credibility for both investors and opportunity builders (`users/{id}.profile`).
-/// Legacy documents may still use `investorProfile`; the app reads both keys.
+// Identity and credibility details for both investors and seekers
 struct ProfileDetails: Codable, Equatable, Sendable {
     var legalFullName: String?
     var phoneNumber: String?
     var country: String?
     var city: String?
-    /// Short bio (2–3 lines): who they are, what they do.
-    var shortBio: String?
+    var shortBio: String?           // 2-3 line summary shown on the public profile card
     var experienceLevel: ProfileExperienceLevel?
     var pastWorkProjects: String?
-    /// Admin-controlled later; shown read-only in the app.
-    var verificationStatus: VerificationStatus
+    var verificationStatus: VerificationStatus  // set by admin; shown as a badge on the profile
 
     init(
         legalFullName: String? = nil,
@@ -49,7 +49,7 @@ struct ProfileDetails: Codable, Equatable, Sendable {
         self.verificationStatus = verificationStatus
     }
 
-    /// Required before sending an investment request (email comes from the auth account).
+    // Returns true only when all required fields are filled in — gates the "Invest" button
     var isCompleteForInvesting: Bool {
         let legal = trimmed(legalFullName)
         let phone = trimmed(phoneNumber)
@@ -78,12 +78,10 @@ struct ProfileDetails: Codable, Equatable, Sendable {
     }
 }
 
-/// Auto-computed activity (not stored on the user doc).
+// Computed from Firestore queries at runtime — not stored on the user document
 struct ProfileActivityMetrics: Equatable, Sendable {
     var opportunitiesCreated: Int
     var dealsCompletedAsInvestor: Int
-    /// Resolved deals only: completed ÷ (completed + declined/rejected).
-    var completionRate: Double
-    /// Sum of principal in investments marked completed (as investor).
-    var totalInvestedCompletedDeals: Double
+    var completionRate: Double              // completed deals ÷ (completed + declined)
+    var totalInvestedCompletedDeals: Double // total principal across all completed investments
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Investor **Invest** tab: Explore, requests pipeline, live deals, and completed deals.
+// The investor "Invest" tab with a segmented control for Explore, My Requests, Ongoing, and Completed
 struct InvestorActionTabView: View {
     @EnvironmentObject private var tabRouter: MainTabRouter
     @Environment(AuthService.self) private var auth

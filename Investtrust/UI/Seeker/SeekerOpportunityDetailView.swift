@@ -1,7 +1,5 @@
-//
-//  SeekerOpportunityDetailView.swift
-//  Investtrust
-//
+// Seeker's own opportunity detail screen.
+// Shows incoming investment requests, MOA signing flow, repayment tracking, and investor management.
 
 import PhotosUI
 import SwiftUI
@@ -79,12 +77,12 @@ struct SeekerOpportunityDetailView: View {
         investments.contains { $0.blocksSeekerFromManagingOpportunity }
     }
 
-    /// Orange “resolve requests first” strip — only while something still looks like an open request/offer, not a live deal.
+    // Orange “resolve requests first” strip — only while something still looks like an open request/offer, not a live deal.
     private var showBlockingRequestsBanner: Bool {
         investments.contains { $0.triggersSeekerRequestResolutionBanner }
     }
 
-    /// Loan is live but principal has not been marked sent yet — seeker waits on the investor.
+    // Loan is live but principal has not been marked sent yet — seeker waits on the investor.
     private var seekerPrincipalBannerMode: SeekerPrincipalFundingBannerMode {
         var anyAwaitingInvestorPrincipal = false
         var anyAwaitingSeekerConfirmation = false
@@ -122,8 +120,8 @@ struct SeekerOpportunityDetailView: View {
         hasAcceptedOrActiveDeal
     }
 
-    /// Financial cards: use agreed economics from an accepted / in-flight investment when the
-    /// `opportunities` snapshot is still on pre-offer defaults (Firestore sync / cache issues).
+    // Financial cards: use agreed economics from an accepted / in-flight investment when the
+    // `opportunities` snapshot is still on pre-offer defaults (Firestore sync / cache issues).
     private var opportunityForSeekerDisplay: OpportunityListing {
         let rows = investments.filter { ($0.opportunityId ?? "") == opportunity.id }
         if let inv = OpportunityListing.primarySeekerDisplayInvestment(rowsForSameOpportunity: rows) {
@@ -172,7 +170,7 @@ struct SeekerOpportunityDetailView: View {
         return investments.first(where: { $0.status.lowercased() == "accepted" })
     }
 
-    /// Loan deals on this listing with a fully active agreement (repayment / funding UI).
+    // Loan deals on this listing with a fully active agreement (repayment / funding UI).
     private var activeLoanDealsForDashboard: [InvestmentListing] {
         investments.filter { inv in
             guard inv.investmentType == .loan else { return false }
@@ -1873,7 +1871,7 @@ struct SeekerOpportunityDetailView: View {
         offersByInvestmentId[inv.id]
     }
 
-    /// True when this row is a negotiated offer (either encoded on the investment doc or stored in `offers`).
+    // True when this row is a negotiated offer (either encoded on the investment doc or stored in `offers`).
     private func seekerTreatsRowAsOffer(_ inv: InvestmentListing) -> Bool {
         inv.isOfferRequest || seekerCanonicalOffer(for: inv) != nil
     }
@@ -2315,7 +2313,7 @@ struct SeekerOpportunityDetailView: View {
 
 }
 
-/// One-tap photo library for principal receiving proof (no intermediate sheet).
+// One-tap photo library for principal receiving proof (no intermediate sheet).
 private struct SeekerPrincipalReceivingPhotoPicker: View {
     @Environment(AuthService.self) private var auth
     let disabled: Bool

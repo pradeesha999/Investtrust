@@ -1,5 +1,7 @@
 import Foundation
 
+// Generates in-app notifications by inspecting the user's active deals.
+// Surfaces action items like "Sign the MOA" or "Upload payment proof" on the notification bell.
 final class InAppNotificationService {
     private let investmentService = InvestmentService()
 

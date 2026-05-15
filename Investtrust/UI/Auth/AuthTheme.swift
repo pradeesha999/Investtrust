@@ -5,21 +5,20 @@
 
 import SwiftUI
 
+// Visual constants shared across the Login, Sign Up, and related auth screens
 enum AuthTheme {
-    /// Grouped-style field surface (adapts in light / dark mode).
     static var fieldBackground: Color {
         Color(uiColor: .secondarySystemGroupedBackground)
     }
 
-    /// Default field outline; focus uses `primaryPink` instead.
     static var fieldBorder: Color {
         Color(uiColor: .separator)
     }
-    static let primaryPink = Color(red: 1, green: 45 / 255, blue: 85 / 255) // #FF2D55
+    static let primaryPink = Color(red: 1, green: 45 / 255, blue: 85 / 255) // #FF2D55 — main brand colour
     static let subtitleMuted = Color.secondary
     static let titleLarge: Font = .system(size: 34, weight: .bold)
 
-    /// Soft wash + blurred brand orbs — used behind login / sign-up so screens feel finished without noise.
+    // Background gradient colours for the auth screens — subtle so the form fields stand out
     static let authGradientTop = Color(red: 0.995, green: 0.985, blue: 0.99)
     static let authGradientMid = Color.white
     static let authGradientBottom = Color(red: 0.96, green: 0.965, blue: 0.98)
@@ -28,7 +27,7 @@ enum AuthTheme {
     static let buttonCornerRadius: CGFloat = 12
 }
 
-/// Full-screen background for auth flows: subtle gradient + soft pink glows (constant, not random).
+// Decorative background for the Login and Sign Up screens — gradient with blurred pink orbs
 struct AuthScreenBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 

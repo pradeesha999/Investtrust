@@ -2,10 +2,10 @@ import CryptoKit
 import PDFKit
 import UIKit
 
-/// Renders a printable, multi-page Memorandum of Agreement PDF (Core Graphics).
-/// Layout is a flowing single-column document that auto-paginates so long terms / signatures never overflow.
+// Generates the Memorandum of Agreement PDF from the frozen agreement snapshot.
+// Uses Core Graphics to lay out a multi-page document that auto-paginates for long terms and signatures.
 enum MOAPDFBuilder {
-    // MARK: - Page geometry (US Letter)
+    // Page size (US Letter) and layout margins
     private static let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
     private static let pageWidth = pageRect.width
     private static let pageHeight = pageRect.height
@@ -15,7 +15,7 @@ enum MOAPDFBuilder {
     private static let contentTop: CGFloat = headerHeight + 18
     private static let contentBottom: CGFloat = pageHeight - footerHeight - 12
 
-    // MARK: - Palette
+    // PDF colour palette
     private static let inkPrimary = UIColor(red: 0.10, green: 0.14, blue: 0.20, alpha: 1)
     private static let inkSecondary = UIColor(red: 0.32, green: 0.36, blue: 0.42, alpha: 1)
     private static let inkMuted = UIColor(red: 0.50, green: 0.54, blue: 0.60, alpha: 1)
@@ -25,8 +25,7 @@ enum MOAPDFBuilder {
     private static let cardStroke = UIColor(red: 0.86, green: 0.89, blue: 0.93, alpha: 1)
     private static let signatureLine = UIColor(red: 0.30, green: 0.34, blue: 0.40, alpha: 1)
 
-    // MARK: - Public API
-
+    // Builds and returns the PDF data for the given agreement and signature images
     static func buildPDF(
         agreement: InvestmentAgreementSnapshot,
         signaturesBySignerId: [String: UIImage]
@@ -90,7 +89,7 @@ enum MOAPDFBuilder {
         }
     }
 
-    /// Wraps `buildPDF` in a `PDFDocument` for `PDFView`.
+    // Wraps `buildPDF` in a `PDFDocument` for `PDFView`.
     static func makePDFDocument(
         agreement: InvestmentAgreementSnapshot,
         signaturesBySignerId: [String: UIImage]
@@ -104,7 +103,7 @@ enum MOAPDFBuilder {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: - Render state / pagination
+// Render state / pagination
 
     private struct RenderState {
         let pdfCtx: UIGraphicsPDFRendererContext
@@ -136,7 +135,7 @@ enum MOAPDFBuilder {
         return state.sectionCount + 5 // sections 1..5 already used above (4/5 vary by type)
     }
 
-    // MARK: - Running header/footer
+// Running header/footer
 
     private static func drawRunningHeader(cg: CGContext, agreement: InvestmentAgreementSnapshot) {
         cg.setFillColor(headerFill.cgColor)
@@ -213,7 +212,7 @@ enum MOAPDFBuilder {
         _ = totalPages
     }
 
-    // MARK: - Title block
+// Title block
 
     private static func drawTitleBlock(state: inout RenderState) {
         state.ensureSpace(140)
@@ -267,7 +266,7 @@ enum MOAPDFBuilder {
         state.y += 6
     }
 
-    // MARK: - Sections
+// Sections
 
     private static func drawSectionHeading(_ title: String, state: inout RenderState) {
         state.ensureSpace(38)
@@ -430,7 +429,7 @@ enum MOAPDFBuilder {
         state.y += 4
     }
 
-    // MARK: - Signature section
+// Signature section
 
     private static func drawSignatureSection(
         state: inout RenderState,
@@ -567,7 +566,7 @@ enum MOAPDFBuilder {
         )
     }
 
-    /// Aspect-fit + center; never stretch the signature.
+    // Aspect-fit + center; never stretch the signature.
     private static func drawSignatureAspectFit(image: UIImage, in rect: CGRect) {
         let imgSize = image.size
         guard imgSize.width > 0, imgSize.height > 0 else { return }
@@ -593,7 +592,7 @@ enum MOAPDFBuilder {
         drawParagraph(note, state: &state)
     }
 
-    // MARK: - Content builders
+// Content builders
 
     private static func partiesRows(_ a: InvestmentAgreementSnapshot) -> [(String, String)] {
         var rows: [(String, String)] = [
@@ -781,7 +780,7 @@ enum MOAPDFBuilder {
         ]
     }
 
-    // MARK: - Loan math
+// Loan math
 
     private struct LoanProjection {
         let installmentCount: Int
@@ -812,7 +811,7 @@ enum MOAPDFBuilder {
         return LoanProjection(installmentCount: installmentCount, perInstallment: per, interest: interest, total: total)
     }
 
-    // MARK: - Helpers
+// Helpers
 
     private static func breakAttributedString(
         _ source: NSAttributedString,
